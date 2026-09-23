@@ -15,8 +15,57 @@ const NP_ALBUM_TRACKS = 2;
 const NP_ALBUM_FILES = 3;
 const NP_TRACK_DETAILS = 0;
 
+// Menu actions for track-info panel (values must match nowplaying-page.js)
+const NP_SHOW_SECT_HEADERS_ACT = 12;
+const NP_INFO_BACKDROP_ACT = 13;
+
 function  nowPlayingHeader(s) {
     return isEmpty(s) ? "" : ("<b>"+s+"</b><br/>");
+}
+
+function nowPlayingArtistPortraitUrl(artistId, portraitId) {
+    if (undefined!=portraitId) {
+        return "/contributor/" + portraitId + "/image" + LMS_IMAGE_SIZE;
+    }
+    if (undefined!=artistId && artistId>=0) {
+        return "/imageproxy/mai/artist/" + artistId + "/image" + LMS_IMAGE_SIZE;
+    }
+    return undefined;
+}
+
+function nowplayingMapLibraryArtist(view, artistName, fetchAlbums) {
+    if (!artistName) {
+        return;
+    }
+    let tab = view.info.tabs[ARTIST_TAB];
+    lmsCommand("", ["material-skin", "map", "artist:"+revertHtmlBrackets(artistName)], tab.reqId).then(({data}) => {
+        if (!data || !data.result || !data.result.artist_id || !view.isCurrent(data, ARTIST_TAB)) {
+            return;
+        }
+        logJsonMessage("RESP", data);
+        let mappedId = parseInt(data.result.artist_id);
+        if (isNaN(mappedId) || mappedId<0) {
+            return;
+        }
+        if (!tab.image) {
+            tab.image = nowPlayingArtistPortraitUrl(mappedId, undefined);
+        }
+        if (undefined==tab.artist_id || tab.artist_id<0) {
+            tab.artist_id = mappedId;
+        }
+        if (fetchAlbums) {
+            nowPlayingGetArtistAlbums(view, mappedId);
+        }
+    }).catch(err => {
+    });
+}
+
+function nowplayingEnsureLibraryArtistPortrait(view, artistName) {
+    let tab = view.info.tabs[ARTIST_TAB];
+    if (!artistName || tab.image) {
+        return;
+    }
+    nowplayingMapLibraryArtist(view, artistName, undefined==tab.artist_id || tab.artist_id<0);
 }
 
 function nowPlayingMAIScroll(ev, tab, id) {
@@ -93,6 +142,11 @@ function nowplayingSetWindowTitle(view) {
 function nowplayingOnPlayerStatus(view, playerStatus) {
     let playStateChanged = false;
     let trackChanged = false;
+    let prevPlaylistIndex = view.playerStatus.playlist.current;
+    let prevTrackId = view.playerStatus.current.id;
+    let prevBarTitle = view.npBarShownTitle ? view.npBarShownTitle() : '';
+    let prevBarSubtitle = view.npBarShownSubtitle ? view.npBarShownSubtitle() : '';
+    let prevMobileBarText = view.mobileBarText;
 
     // Have other items changed
     if (playerStatus.isplaying!=view.playerStatus.isplaying) {
@@ -120,7 +174,8 @@ function nowplayingOnPlayerStatus(view, playerStatus) {
         liveEdgeChanged = undefined==playerStatus.current.live_edge || undefined==view.playerStatus.current.liveEdge;
         view.playerStatus.current.liveEdge = playerStatus.current.live_edge;
     }
-    view.setPosition();
+    // Re-anchor progress bars (CSS compositor run from true server time)
+    view.setPosition({ force: true });
     if (playerStatus.current.id!=view.playerStatus.current.id) {
         view.playerStatus.current.id = playerStatus.current.id;
     }
@@ -321,6 +376,21 @@ function nowplayingOnPlayerStatus(view, playerStatus) {
         }
     }
 
+    if (trackChanged && view.startNpBarTextMorph) {
+        let dir = view.npBarPendingDir;
+        if (undefined==dir) {
+            if (playerStatus.playlist.current!=prevPlaylistIndex) {
+                dir = playerStatus.playlist.current>prevPlaylistIndex ? 1 : -1;
+            } else if (playerStatus.current.id!=prevTrackId) {
+                dir = 1;
+            }
+        }
+        if (undefined!=dir) {
+            view.startNpBarTextMorph(dir, prevBarTitle, prevBarSubtitle, prevMobileBarText);
+        }
+        view.npBarPendingDir = undefined;
+    }
+
     if (playStateChanged) {
         if (view.playerStatus.isplaying) {
             view.startPositionInterval();
@@ -359,10 +429,10 @@ function nowplayingOnPlayerStatus(view, playerStatus) {
     view.disablePrev=(btns && undefined!=btns.rew && 0==parseInt(btns.rew)) || view.disableBtns || queryParams.party;
     view.disableNext=(btns && undefined!=btns.fwd && 0==parseInt(btns.fwd)) || view.disableBtns || queryParams.party;
     if (queryParams.npAutoClose && 0==view.playerStatus.playlist.count && !view.info.show) {
-        if (view.$store.state.desktopLayout && view.largeView) {
-            view.largeView = false;
-        } else if (!view.$store.state.desktopLayout && view.mobileBar==MBAR_REP_NAV && 'now-playing'==view.$store.state.page) {
-            view.$store.commit('setPage', view.$store.state.prevPage);
+        if (view.$store.state.desktopLayout && view.npSheetOpen && view.collapseNpSheetRestore) {
+            view.collapseNpSheetRestore();
+        } else if (!view.$store.state.desktopLayout && MBAR_NONE!=view.mobileBar && view.collapseNpSheetRestore) {
+            view.collapseNpSheetRestore();
         }
     }
 }
@@ -499,6 +569,8 @@ function nowplayingMenuAction(view, item) {
         view.close();
     }  else if (NP_SHOW_IN_TABS_ACT==item.act) {
         view.info.showTabs = !view.info.showTabs;
+    } else if (NP_INFO_EXPAND_ACT==item.act) {
+        view.toggleInfoExpanded();
     } else if (NP_SYNC_ACT==item.act) {
         view.info.sync = !view.info.sync;
     } else if (NP_LYRICS_SCROLL_ACT==item.act) {
@@ -512,6 +584,20 @@ function nowplayingMenuAction(view, item) {
         if (!item.checked) {
             view.setZoom(item.value);
         }
+    } else if (NP_SHOW_SECT_HEADERS_ACT==item.act) {
+        if (view.infoExpandedLayout) {
+            view.$set(view.info, 'showSectHeadersExpanded', !view.info.showSectHeadersExpanded);
+            setLocalStorageVal('npShowSectHeadersExpanded', view.info.showSectHeadersExpanded);
+            item.check = view.info.showSectHeadersExpanded;
+        } else {
+            view.$set(view.info, 'showSectHeaders', !view.info.showSectHeaders);
+            setLocalStorageVal('npShowSectHeaders', view.info.showSectHeaders);
+            item.check = view.info.showSectHeaders;
+        }
+    } else if (NP_INFO_BACKDROP_ACT==item.act) {
+        let backdrop = !view.$store.state.infoBackdrop;
+        view.$store.commit('setUiSettings', {infoBackdrop: backdrop});
+        item.check = backdrop;
     } else if (item.act>=NP_ITEM_ACT) {
         let act = item.act - NP_ITEM_ACT;
         if (ADD_TO_FAV_ACTION==act || REMOVE_FROM_FAV_ACTION==act) {
@@ -823,6 +909,7 @@ function nowplayingFetchArtistInfo(view) {
         view.info.tabs[ARTIST_TAB].texttitle=nowPlayingHeader(artist);
         view.info.tabs[ARTIST_TAB].text=i18n("Fetching...");
         view.info.tabs[ARTIST_TAB].image=undefined;
+        bus.$emit('maiArtistPaletteClear');
         view.info.tabs[ARTIST_TAB].isMsg=true;
         view.info.tabs[ARTIST_TAB].artist=artist;
         view.info.tabs[ARTIST_TAB].artist_id=artist_id;
@@ -846,11 +933,7 @@ function nowplayingFetchArtistInfo(view) {
                                 view.info.tabs[ARTIST_TAB].details.push({weight:i, text:"<b id=\"mai-artist-" + i +"\">"+data.result.artist+"</b><br/>" + replaceNewLines(data.result.biography)});
                             }
                             if (0==i) {
-                                if (undefined!=data.result.portraitid) {
-                                    view.info.tabs[ARTIST_TAB].image=undefined!=data.result.portraitid && ("/contributor/" + data.result.portraitid + "/image" + LMS_IMAGE_SIZE);
-                                } else {
-                                    view.info.tabs[ARTIST_TAB].image="/imageproxy/mai/artist/" + ids[0] + "/image" + LMS_IMAGE_SIZE;
-                                }
+                                view.info.tabs[ARTIST_TAB].image=nowPlayingArtistPortraitUrl(ids[0], data.result.portraitid);
                             }
                         }
                     }
@@ -858,10 +941,9 @@ function nowplayingFetchArtistInfo(view) {
                     if (0 == view.info.tabs[ARTIST_TAB].count) {
                         if (view.info.tabs[ARTIST_TAB].details.length<1) {
                             view.info.tabs[ARTIST_TAB].text = undefined;
-                            if (undefined!=data.result.portraitid) {
-                                view.info.tabs[ARTIST_TAB].image=undefined!=data.result.portraitid && ("/contributor/" + data.result.portraitid + "/image" + LMS_IMAGE_SIZE);
-                            } else {
-                                view.info.tabs[ARTIST_TAB].image="/imageproxy/mai/artist/" + artist_ids[0] + "/image" + LMS_IMAGE_SIZE;
+                            view.info.tabs[ARTIST_TAB].image=nowPlayingArtistPortraitUrl(artist_ids ? artist_ids[0] : undefined, data.result.portraitid);
+                            if (!view.info.tabs[ARTIST_TAB].image) {
+                                nowplayingEnsureLibraryArtistPortrait(view, view.info.tabs[ARTIST_TAB].albumartist || artist);
                             }
                         } else {
                             view.info.tabs[ARTIST_TAB].isMsg=false;
@@ -907,10 +989,9 @@ function nowplayingFetchArtistInfo(view) {
                                     logJsonMessage("RESP", data);
                                     if (data && data.result && view.isCurrent(data, ARTIST_TAB)) {
                                         view.info.tabs[ARTIST_TAB].text=data.result.biography ? replaceNewLines(data.result.biography) : undefined;
-                                        if (undefined!=data.result.portraitid) {
-                                            view.info.tabs[ARTIST_TAB].image=undefined!=data.result.portraitid && ("/contributor/" + data.result.portraitid + "/image" + LMS_IMAGE_SIZE);
-                                        } else {
-                                            view.info.tabs[ARTIST_TAB].image=view.infoTrack.albumartist_ids==undefined ? undefined : ("/imageproxy/mai/artist/" + view.infoTrack.albumartist_ids[0] + "/image" + LMS_IMAGE_SIZE);
+                                        view.info.tabs[ARTIST_TAB].image=nowPlayingArtistPortraitUrl(view.infoTrack.albumartist_ids ? view.infoTrack.albumartist_ids[0] : undefined, data.result.portraitid);
+                                        if (!view.info.tabs[ARTIST_TAB].image) {
+                                            nowplayingEnsureLibraryArtistPortrait(view, view.info.tabs[ARTIST_TAB].albumartist);
                                         }
                                         view.info.tabs[ARTIST_TAB].isMsg=undefined==data.result.biography;
                                     }
@@ -920,10 +1001,9 @@ function nowplayingFetchArtistInfo(view) {
                             }
                         } else {
                             view.info.tabs[ARTIST_TAB].text=data.result.biography ? replaceNewLines(data.result.biography) : undefined;
-                            if (undefined!=data.result.portraitid) {
-                                view.info.tabs[ARTIST_TAB].image=undefined!=data.result.portraitid && ("/contributor/" + data.result.portraitid + "/image" + LMS_IMAGE_SIZE);
-                            } else {
-                                view.info.tabs[ARTIST_TAB].image=artist_ids==undefined ? undefined : ("/imageproxy/mai/artist/" + artist_ids[0] + "/image" + LMS_IMAGE_SIZE);
+                            view.info.tabs[ARTIST_TAB].image=nowPlayingArtistPortraitUrl(artist_ids ? artist_ids[0] : artist_id, data.result.portraitid);
+                            if (!view.info.tabs[ARTIST_TAB].image) {
+                                nowplayingEnsureLibraryArtistPortrait(view, view.info.tabs[ARTIST_TAB].albumartist || artist);
                             }
                             view.info.tabs[ARTIST_TAB].isMsg=undefined==data.result.biography;
                         }
@@ -938,13 +1018,11 @@ function nowplayingFetchArtistInfo(view) {
 
         if (artist_id!=undefined && artist_id>=0) {
             nowPlayingGetArtistAlbums(view, artist_id);
+            if (!view.info.tabs[ARTIST_TAB].image) {
+                view.info.tabs[ARTIST_TAB].image=nowPlayingArtistPortraitUrl(artist_id, undefined);
+            }
         } else if (view.info.tabs[ARTIST_TAB].albumartist || view.info.tabs[ARTIST_TAB].artist) {
-            lmsCommand("", ["material-skin", "map", "artist:"+revertHtmlBrackets(view.info.tabs[ARTIST_TAB].albumartist ? view.info.tabs[ARTIST_TAB].albumartist : view.info.tabs[ARTIST_TAB].artist)], view.info.tabs[ARTIST_TAB].reqId).then(({data}) => {
-                if (data && data.result && data.result.artist_id && view.isCurrent(data, ARTIST_TAB)) {
-                    logJsonMessage("RESP", data);
-                    nowPlayingGetArtistAlbums(view, data.result.artist_id);
-                }
-            });
+            nowplayingMapLibraryArtist(view, view.info.tabs[ARTIST_TAB].albumartist || view.info.tabs[ARTIST_TAB].artist, true);
         }
 
         if (view.info.tabs[ARTIST_TAB].albumartist || view.info.tabs[ARTIST_TAB].artist) {
@@ -965,6 +1043,16 @@ function nowplayingFetchArtistInfo(view) {
         view.info.tabs[ARTIST_TAB].isMsg=true;
         view.info.tabs[ARTIST_TAB].text=undefined;
         view.info.tabs[ARTIST_TAB].sections[NP_ARTIST_MAIN].items=[];
+    }
+}
+
+function nowplayingSyncAlbumTabImage(view) {
+    if (!view.info || !view.info.tabs) {
+        return;
+    }
+    let url = view.infoTrack && view.infoTrack.empty ? undefined : view.coverUrl;
+    if (view.info.tabs[ALBUM_TAB].image!=url) {
+        view.info.tabs[ALBUM_TAB].image=url;
     }
 }
 
@@ -1097,6 +1185,8 @@ function nowplayingFetchAlbumInfo(view) {
         view.info.tabs[ALBUM_TAB].image=/*view.infoTrack.empty ? undefined :*/ view.coverUrl;
         view.info.tabs[ALBUM_TAB].sections[NP_ALBUM_TRACKS].items=[];
         view.info.tabs[ALBUM_TAB].sections[NP_ALBUM_FILES].items=[];
+    } else {
+        nowplayingSyncAlbumTabImage(view);
     }
 }
 
@@ -1195,6 +1285,10 @@ function nowPlayingConfigMenu(view, event) {
     view.menu.show = false;
     view.menu.icons = false;
     view.menu.items = [];
+    if (view.$store.state.desktopLayout) {
+        view.menu.items.push({title:view.info.expanded ? i18n("Contract") : i18n("Expand"), act:NP_INFO_EXPAND_ACT});
+        view.menu.items.push({divider:true});
+    }
     if (view.windowWidth>NP_MIN_WIDTH_FOR_FULL) {
         view.menu.items.push({title:i18n("Show in tabs"), act:NP_SHOW_IN_TABS_ACT, check:view.info.showTabs});
     }
@@ -1202,6 +1296,11 @@ function nowPlayingConfigMenu(view, event) {
     if (view.info.sync && view.info.tabs[TRACK_TAB].lines && (!view.info.showTabs || view.info.tab==TRACK_TAB)) {
         view.menu.items.push({title:i18n("Auto-scroll lyrics"), act:NP_LYRICS_SCROLL_ACT, check:view.info.tabs[TRACK_TAB].scroll});
         view.menu.items.push({title:i18n("Highlight current lyric line"), act:NP_LYRICS_HIGHLIGHT_ACT, check:view.info.tabs[TRACK_TAB].highlight});
+    }
+    if (LMS_P_MAI && (!view.infoUseTabs || ARTIST_TAB==view.info.tab)) {
+        view.menu.items.push({divider:true});
+        view.menu.items.push({title:i18n("Show section headers"), act:NP_SHOW_SECT_HEADERS_ACT, check:view.infoExpandedLayout ? view.info.showSectHeadersExpanded : view.info.showSectHeaders});
+        view.menu.items.push({title:i18n("Draw background"), act:NP_INFO_BACKDROP_ACT, check:view.$store.state.infoBackdrop});
     }
     view.menu.items.push({divider:true});
     view.menu.items.push({title:i18n("Zoom"), header:true});
@@ -1222,7 +1321,7 @@ function nowPlayingClickImage(view, event) {
         view.menu.show = false;
         return;
     }
-    if (view.$store.state.visibleMenus.size>0 || (!view.desktopLayout && view.$store.state.page!='now-playing')) {
+    if (view.$store.state.visibleMenus.size>0 || (!view.desktopLayout && !(MBAR_NONE==view.mobileBar ? view.$store.state.page=='now-playing' : view.npSheetOpen))) {
         return;
     }
     if (view.showOverlay) {
@@ -1234,6 +1333,11 @@ function nowPlayingClickImage(view, event) {
                 let r = elems[e].getBoundingClientRect();
                 if (inRect(cp.x, cp.y, r.x, r.y, r.width, r.height, 16)) {
                     closeOverlay = false;
+                    if ('overlay-menu'==elems[e].id) {
+                        nowplayingShowMenu(view, event);
+                    } else if ('overlay-close'==elems[e].id && typeof view.collapseNpSheetRestore==='function') {
+                        view.collapseNpSheetRestore();
+                    }
                     break
                 }
             }
