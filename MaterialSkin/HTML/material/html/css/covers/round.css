@@ -29,13 +29,13 @@
  border-radius:5px!important;
 }
 
-.np-image, .np-image .np-cover, .np-no-meta-img, .np-image-landscape, .np-image-landscape .np-cover {
+.np-image, .np-image .np-cover, .np-cover-stack, .np-cover-stack .np-cover, .np-cover-stack .np-cover-layer, .np-no-meta-img, .np-image-landscape, .np-image-landscape .np-cover, .np-image-landscape .np-cover-stack, .np-image-landscape-wide .np-cover-stack, .np-image-landscape-wide .np-cover-stack-wide {
  border-radius:max(6px, min(14px, 7%)) !important;
 }
 
 /* For old browsers that dont support min() */
 @supports not (width: min(10px, 5vw)) {
- .np-image, .np-image .np-cover, .np-no-meta-img, .np-image-landscape, .np-image-landscape .np-cover {
+ .np-image, .np-image .np-cover, .np-cover-stack, .np-cover-stack .np-cover, .np-cover-stack .np-cover-layer, .np-no-meta-img, .np-image-landscape, .np-image-landscape .np-cover, .np-image-landscape .np-cover-stack, .np-image-landscape-wide .np-cover-stack, .np-image-landscape-wide .np-cover-stack-wide {
   border-radius:14px!important;
  }
 }
