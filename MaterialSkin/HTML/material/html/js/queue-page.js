@@ -241,7 +241,7 @@ function parseResp(data, showTrackNum, index, showRatings, queueAlbumStyle, queu
                               isWorkHeader: artistAlbumLinesInfo && artistAlbumLinesInfo[2],
                               image: image,
                               dimcover: undefined!=image && image.endsWith(".png") && (image==DEFAULT_COVER || image==DEFAULT_RADIO_COVER || image==RANDOMPLAY_COVER),
-                              actions: [PQ_PLAY_NOW_ACTION, PQ_PLAY_NEXT_ACTION, DIVIDER, REMOVE_ACTION, ADD_TO_PLAYLIST_ACTION, PQ_ZAP_ACTION, DOWNLOAD_ACTION, SELECT_ACTION, COPY_DETAILS_ACTION, PQ_COPY_ACTION, MOVE_HERE_ACTION, CUSTOM_ACTIONS, SHOW_IMAGE_ACTION, MORE_ACTION],
+                              actions: [PQ_PLAY_NOW_ACTION, PQ_PLAY_NEXT_ACTION, DIVIDER, ARTIST_INFO_ACTION, ALBUM_INFO_ACTION, REMOVE_ACTION, ADD_TO_PLAYLIST_ACTION, PQ_ZAP_ACTION, DOWNLOAD_ACTION, SELECT_ACTION, COPY_DETAILS_ACTION, PQ_COPY_ACTION, MOVE_HERE_ACTION, CUSTOM_ACTIONS, SHOW_IMAGE_ACTION, MORE_ACTION],
                               duration: duration,
                               durationStr: undefined!=duration && duration>0 ? formatSeconds(duration) : undefined,
                               key: i.id+"."+index,
@@ -288,9 +288,9 @@ function parseResp(data, showTrackNum, index, showRatings, queueAlbumStyle, queu
 
 var lmsQueue = Vue.component("lms-queue", {
   template: `
-<div :class="[showQueue ? nowPlayingExpanded || maiShown ? 'pq-unpinned-np'+nowPlayingWide : (!pinQueue ? 'pq-unpinned' : '') : '']" id="queue-view">
+<div :class="[pqOverlayClass, pqSlideAnimClass]" id="queue-view">
 <lms-resizer v-if="!pinQueue && windowWide>0" varname="pq-unpinned-width"></lms-resizer>
- <div class="subtoolbar noselect" v-bind:class="{'list-details':pinQueue}" v-if="!desktopLayout || showQueue">
+ <div class="subtoolbar noselect" v-bind:class="{'list-details':pinQueue, 'toolbar-blur':desktopLayout && !pinQueue}" v-if="!desktopLayout || showQueue || $store.state.queueOverlayClosing">
   <v-layout v-if="selection.size>0">
    <v-layout row wrap>
     <v-flex xs12 class="ellipsis subtoolbar-title subtoolbar-pad">{{trans.selectMultiple}}</v-flex>
@@ -304,7 +304,7 @@ var lmsQueue = Vue.component("lms-queue", {
    <v-btn :title="trans.cancel" flat icon class="toolbar-button" @click="clearSelection()"><v-icon>cancel</v-icon></v-btn>
   </v-layout>
   <v-layout v-else-if="searchActive">
-  <v-btn flat icon @click="searchActive=false" class="toolbar-button back-button" :title="trans.goBack"><v-icon>arrow_back</v-icon></v-btn>
+  <v-btn flat icon @click="searchActive=false" class="toolbar-button back-button" :title="trans.goBack"><v-icon>{{BACK_ICON}}</v-icon></v-btn>
    <lms-search-list @scrollTo="highlightItem" :view="this"></lms-search-list>
   </v-layout>
   <v-layout v-else>
@@ -331,54 +331,114 @@ var lmsQueue = Vue.component("lms-queue", {
   <div class="lms-list" id="queue-list" v-bind:class="{'lms-list3':!albumStyle && threeLines,'lms-list-album':albumStyle,'bgnd-blur':drawBgndImage,'backdrop-blur':drawBackdrop}" @drop="drop(-1, $event)" @dragover="dragOver(-1, $event)">
    <div v-if="items.length<1"></div> <!-- RecycleScroller does not like it if 0 items? -->
    <RecycleScroller v-else-if="albumStyle" :items="items" :item-size="null" page-mode key-field="key" :buffer="LMS_SCROLLER_LIST_BUFFER">
-   <v-list-tile avatar class="pq-albumstyle" v-bind:class="{'pq-track':!item.artistAlbum, 'pq-current-album':index!=currentIndex && currentIndex<items.length && item.grpKey==items[currentIndex].grpKey, 'pq-current': index==currentIndex, 'pq-current-first-track': index==currentIndex && item.artistAlbum, 'pq-pulse':index==currentIndex && pulseCurrent, 'list-active': menu.show && index==menu.index, 'drop-target': dragActive && index==dropIndex, 'highlight':index==highlightIndex, 'pq-grp-header':item.isGrpHeader, 'pq-work-header':item.isWorkHeader}" @dragstart="dragStart(index, $event)" @dragenter.prevent="" @dragend="dragEnd()" @dragover.stop="dragOver(index, $event)" @drop.stop="drop(index, $event)" draggable @click.prevent.stop="click(item, index, $event)" slot-scope="{item, index}" key-field="key" @contextmenu.prevent="contextMenu(item, index, $event)">
-    <v-list-tile-avatar :tile="true" v-bind:class="{'radio-image': 0==item.duration}" class="lms-avatar">
-     <v-icon v-if="item.selected" v-bind:class="{'pq-first-track-check':item.artistAlbum}">check_box</v-icon>
-     <img v-else-if="item.artistAlbum" :key="item.image" :src="item.image" onerror="this.src=DEFAULT_COVER" loading="lazy" v-bind:class="{'dimmed':item.dimcover}" class="radio-img allow-drag"></img>
-    </v-list-tile-avatar>
-    <v-layout class="pq-album-header" v-if="item.artistAlbum"><div class="ellipsis" v-html="item.artistAlbum"></div><v-spacer/><div v-if="item.totalDurationStr" class="pq-atime">{{item.totalDurationStr}}</div></v-layout>
-    <v-list-tile-content v-bind:class="{'pq-first-track':item.artistAlbum}">
-     <v-list-tile-title v-html="item.title"></v-list-tile-title>
-    </v-list-tile-content>
-    <v-list-tile-action class="pq-time">{{item.durationStr}}</v-list-tile-action>
-    <v-list-tile-action class="queue-action" v-bind:class="{'pq-first-track-menu':item.artistAlbum}" @click.stop="itemMenu(item, index, $event)">
-     <div class="grid-btn list-btn hover-btn menu-btn" role="button" :aria-label="i18n('%1 (Menu)', item.tooltip)"></div>
-    </v-list-tile-action>
-    <img v-if="index==currentIndex" :class="['pqi-'+iRgb, 'pq-current-indicator']" :src="'pq-current' | indIcon"></img>
-   </v-list-tile>
-  </RecycleScroller>
-  <RecycleScroller v-else :items="items" :item-size="threeLines ? LMS_LIST_3LINE_ELEMENT_SIZE : LMS_LIST_ELEMENT_SIZE"  page-mode key-field="key" :buffer="LMS_SCROLLER_LIST_BUFFER">
-    <v-list-tile avatar v-bind:class="{'pq-current': index==currentIndex, 'pq-pulse':index==currentIndex && pulseCurrent, 'list-active': menu.show && index==menu.index, 'drop-target': dragActive && index==dropIndex, 'highlight':index==highlightIndex, 'pq-have-rating':undefined!=item.rating}" @dragstart="dragStart(index, $event)" @dragenter.prevent="" @dragend="dragEnd()" @dragover.stop="dragOver(index, $event)" @drop.stop="drop(index, $event)" draggable @click.prevent.stop="click(item, index, $event)" slot-scope="{item, index}" key-field="key" @contextmenu.prevent="contextMenu(item, index, $event)">
+   <div slot-scope="{item, index}" v-bind:class="listSwipeRowClass(item, index, 'queue')"
+     @dragover.stop="externalDragOver(index, $event)" @drop.stop="externalDrop(index, $event)"
+     @touchstart.passive="queueDragHoldStart(item, index, $event); listSwipeStart(item, index, 'queue', $event)"
+     @touchmove="queueDragHoldMove($event); listSwipeMove($event)"
+     @touchend.passive="queueDragHoldEnd($event); listSwipeEnd($event)"
+     @touchcancel.passive="queueDragHoldEnd($event); listSwipeEnd($event)"
+     @pointerdown="queueDragHoldStart(item, index, $event); listSwipeStart(item, index, 'queue', $event)"
+     @pointermove="queueDragHoldMove($event); listSwipeMove($event)"
+     @pointerup="queueDragHoldEnd($event); listSwipeEnd($event)"
+     @pointercancel="queueDragHoldEnd($event); listSwipeEnd($event)"
+     @wheel.passive="listSwipeWheel(item, index, 'queue', $event)">
+    <div class="list-swipe-bg list-swipe-bg-remove" aria-hidden="true">
+     <v-icon>delete_outline</v-icon>
+     <span class="list-swipe-label">{{ACTIONS[REMOVE_ACTION].title}}</span>
+    </div>
+    <v-list-tile avatar class="pq-albumstyle list-swipe-tile" :style="listSwipeStyle(item, index, 'queue')" :id="'pqitem'+index" v-bind:class="{'pq-track':!item.artistAlbum, 'pq-current-album':index!=currentIndex && currentIndex<items.length && item.grpKey==items[currentIndex].grpKey, 'pq-current': index==currentIndex, 'pq-current-first-track': index==currentIndex && item.artistAlbum, 'pq-pulse':index==currentIndex && pulseCurrent, 'list-active': menu.show && index==menu.index, 'highlight':index==highlightIndex, 'pq-grp-header':item.isGrpHeader, 'pq-work-header':item.isWorkHeader}" :draggable="queueItemHtmlDraggable(item)" @dragstart="queueHtmlDragStart(index, $event)" @dragend="queueHtmlDragEnd()" @dragover.stop="dragOver(index, $event)" @drop.stop="drop(index, $event)" @click.prevent.stop="click(item, index, $event)" key-field="key" @contextmenu.prevent="contextMenu(item, index, $event)">
      <v-list-tile-avatar :tile="true" v-bind:class="{'radio-image': 0==item.duration}" class="lms-avatar">
-      <v-icon v-if="item.selected">check_box</v-icon>
-      <img v-else :key="item.image" :src="item.image" onerror="this.src=DEFAULT_COVER" loading="lazy" v-bind:class="{'dimmed':item.dimcover}" class="radio-img allow-drag"></img>
+      <v-icon v-if="item.selected" v-bind:class="{'pq-first-track-check':item.artistAlbum}">check_box</v-icon>
+      <img v-else-if="item.artistAlbum" :key="item.image" :src="item.image" onerror="this.src=DEFAULT_COVER" loading="lazy" v-bind:class="{'dimmed':item.dimcover}" class="radio-img allow-drag"></img>
      </v-list-tile-avatar>
-     <v-list-tile-content v-if="undefined==item.size"> <!-- hacky work-around for view refresh when change album/track style -->
+     <v-layout class="pq-album-header" v-if="item.artistAlbum"><div class="ellipsis" v-html="item.artistAlbum"></div><v-spacer/><div v-if="item.totalDurationStr" class="pq-atime">{{item.totalDurationStr}}</div></v-layout>
+     <v-list-tile-content v-bind:class="{'pq-first-track':item.artistAlbum}">
       <v-list-tile-title v-html="item.title"></v-list-tile-title>
-      <v-list-tile-sub-title v-if="threeLines && queueContext" v-html="item.artistAlbum[2]"></v-list-tile-sub-title>
-      <v-list-tile-sub-title v-else-if="threeLines" v-html="item.artistAlbum[0]"></v-list-tile-sub-title>
-      <v-list-tile-sub-title v-else-if="queueContext" v-html="item.artistAlbum[2]+' '+item.artistAlbum[3]"></v-list-tile-sub-title>
-      <v-list-tile-sub-title v-else v-html="item.artistAlbum[0]+SEPARATOR+item.artistAlbum[1]"></v-list-tile-sub-title>
-      <v-list-tile-sub-title v-if="threeLines && queueContext" v-html="item.artistAlbum[3]"></v-list-tile-sub-title>
-      <v-list-tile-sub-title v-else-if="threeLines" v-html="item.artistAlbum[1]"></v-list-tile-sub-title>
      </v-list-tile-content>
      <v-list-tile-action class="pq-time">{{item.durationStr}}</v-list-tile-action>
-     <v-list-tile-action class="queue-action" @click.stop="itemMenu(item, index, $event)">
+     <v-list-tile-action class="queue-action" v-bind:class="{'pq-first-track-menu':item.artistAlbum}" @click.stop="itemMenu(item, index, $event)">
       <div class="grid-btn list-btn hover-btn menu-btn" role="button" :aria-label="i18n('%1 (Menu)', item.tooltip)"></div>
      </v-list-tile-action>
-     <v-rating v-if="undefined!=item.rating" class="pq-rating" v-bind:class="{'pq-rating-3':threeLines}" v-model="item.rating" half-increments readonly></v-rating>
      <img v-if="index==currentIndex" :class="['pqi-'+iRgb, 'pq-current-indicator']" :src="'pq-current' | indIcon"></img>
     </v-list-tile>
+   </div>
+  </RecycleScroller>
+  <RecycleScroller v-else :items="items" :item-size="queueListItemSize" page-mode key-field="key" :buffer="LMS_SCROLLER_LIST_BUFFER">
+    <div slot-scope="{item, index}" v-bind:class="listSwipeRowClass(item, index, 'queue')"
+     @dragover.stop="externalDragOver(index, $event)" @drop.stop="externalDrop(index, $event)"
+     @touchstart.passive="queueDragHoldStart(item, index, $event); listSwipeStart(item, index, 'queue', $event)"
+     @touchmove="queueDragHoldMove($event); listSwipeMove($event)"
+     @touchend.passive="queueDragHoldEnd($event); listSwipeEnd($event)"
+     @touchcancel.passive="queueDragHoldEnd($event); listSwipeEnd($event)"
+     @pointerdown="queueDragHoldStart(item, index, $event); listSwipeStart(item, index, 'queue', $event)"
+     @pointermove="queueDragHoldMove($event); listSwipeMove($event)"
+     @pointerup="queueDragHoldEnd($event); listSwipeEnd($event)"
+     @pointercancel="queueDragHoldEnd($event); listSwipeEnd($event)"
+     @wheel.passive="listSwipeWheel(item, index, 'queue', $event)">
+     <div class="list-swipe-bg list-swipe-bg-remove" aria-hidden="true">
+      <v-icon>delete_outline</v-icon>
+      <span class="list-swipe-label">{{ACTIONS[REMOVE_ACTION].title}}</span>
+     </div>
+     <v-list-tile avatar class="list-swipe-tile" :style="listSwipeStyle(item, index, 'queue')" :id="'pqitem'+index" v-bind:class="{'pq-current': index==currentIndex, 'pq-pulse':index==currentIndex && pulseCurrent, 'list-active': menu.show && index==menu.index, 'highlight':index==highlightIndex, 'pq-have-rating':undefined!=item.rating}" :draggable="queueItemHtmlDraggable(item)" @dragstart="queueHtmlDragStart(index, $event)" @dragend="queueHtmlDragEnd()" @dragover.stop="dragOver(index, $event)" @drop.stop="drop(index, $event)" @click.prevent.stop="click(item, index, $event)" key-field="key" @contextmenu.prevent="contextMenu(item, index, $event)">
+      <v-list-tile-avatar :tile="true" v-bind:class="{'radio-image': 0==item.duration}" class="lms-avatar">
+       <v-icon v-if="item.selected">check_box</v-icon>
+       <img v-else :key="item.image" :src="item.image" onerror="this.src=DEFAULT_COVER" loading="lazy" v-bind:class="{'dimmed':item.dimcover}" class="radio-img allow-drag"></img>
+      </v-list-tile-avatar>
+      <v-list-tile-content v-if="undefined==item.size"> <!-- hacky work-around for view refresh when change album/track style -->
+       <v-list-tile-title v-html="item.title"></v-list-tile-title>
+       <v-list-tile-sub-title v-if="threeLines && queueContext" v-html="item.artistAlbum[2]"></v-list-tile-sub-title>
+       <v-list-tile-sub-title v-else-if="threeLines" v-html="item.artistAlbum[0]"></v-list-tile-sub-title>
+       <v-list-tile-sub-title v-else-if="queueContext" v-html="item.artistAlbum[2]+' '+item.artistAlbum[3]"></v-list-tile-sub-title>
+       <v-list-tile-sub-title v-else v-html="item.artistAlbum[0]+SEPARATOR+item.artistAlbum[1]"></v-list-tile-sub-title>
+       <v-list-tile-sub-title v-if="threeLines && queueContext" v-html="item.artistAlbum[3]"></v-list-tile-sub-title>
+       <v-list-tile-sub-title v-else-if="threeLines" v-html="item.artistAlbum[1]"></v-list-tile-sub-title>
+      </v-list-tile-content>
+      <v-list-tile-action class="pq-time">{{item.durationStr}}</v-list-tile-action>
+      <v-list-tile-action class="queue-action" @click.stop="itemMenu(item, index, $event)">
+       <div class="grid-btn list-btn hover-btn menu-btn" role="button" :aria-label="i18n('%1 (Menu)', item.tooltip)"></div>
+      </v-list-tile-action>
+      <v-rating v-if="undefined!=item.rating" class="pq-rating" v-bind:class="{'pq-rating-3':threeLines}" v-model="item.rating" half-increments readonly></v-rating>
+      <img v-if="index==currentIndex" :class="['pqi-'+iRgb, 'pq-current-indicator']" :src="'pq-current' | indIcon"></img>
+     </v-list-tile>
+    </div>
    </RecycleScroller>
+   <div class="scroll-block-bottom-pad" v-if="!desktopLayout"></div>
   </div>
  </div>
 
- <v-menu offset-y v-model="menu.show" :position-x="menu.x" :position-y="menu.y">
+ <div v-if="menu.show && !desktopLayout" class="msk-context-scrim" @click="ctxSheetClose()" @touchend="ctxSheetScrimTouchEnd($event)" @touchmove.prevent=""></div>
+ <v-menu offset-y v-model="menu.show" :position-x="menu.x" :position-y="menu.y" :content-class="!desktopLayout ? 'msk-context-sheet' : undefined" absolute :close-on-content-click="desktopLayout" :close-on-click="desktopLayout">
+  <!-- Mobile sheet chrome: drag handle + sticky item header -->
+  <div class="msk-ctx-chrome" v-if="!desktopLayout"
+       @touchstart.passive="ctxSheetTouchStart"
+       @pointerdown="ctxSheetTouchStart"
+       @mousedown="ctxSheetTouchStart">
+   <div class="msk-ctx-handle" aria-hidden="true"></div>
+   <div class="msk-ctx-header" v-if="menu.item && !(menu.info && menu.info.open)">
+    <div class="msk-ctx-art">
+     <img v-if="menuItemMeta.image" class="msk-ctx-cover" :src="menuItemMeta.image" onerror="this.src='/material/html/images/nocover.png'"></img>
+     <img v-else-if="menuItemMeta.svg" class="svg-img" :src="menuItemMeta.svg | svgIcon(darkUi)"></img>
+     <v-icon v-else-if="menuItemMeta.icon">{{menuItemMeta.icon}}</v-icon>
+     <v-icon v-else>music_note</v-icon>
+    </div>
+    <div class="msk-ctx-meta">
+     <div class="msk-ctx-title">{{menuItemMeta.title}}</div>
+     <div class="msk-ctx-sub" v-for="(line, li) in menuItemMeta.lines" :key="'qctxl'+li">{{line}}</div>
+    </div>
+   </div>
+  </div>
+  <div v-bind:class="{'msk-ctx-panels': !desktopLayout, 'msk-ctx-panels-info': !desktopLayout && menu.info && menu.info.open}">
+  <div v-bind:class="{'msk-ctx-panel': !desktopLayout, 'msk-ctx-body': !desktopLayout}"
+       @scroll.passive="ctxSheetOnBodyScroll"
+       @touchstart.passive="ctxSheetBodyTouchStart"
+       @touchmove="ctxSheetBodyTouchMove"
+       @touchend="ctxSheetBodyTouchEnd"
+       @touchcancel="ctxSheetBodyTouchEnd">
   <v-list v-if="menu.item">
    <template v-for="(action, index) in menu.item.actions">
     <v-divider v-if="DIVIDER==action"></v-divider>
     <template v-for="(cact, cindex) in queueCustomActions" v-else-if="CUSTOM_ACTIONS==action">
-     <v-list-tile role="menuitem" @click="itemCustomAction(cact, menu.item, menu.index, $event)">
+     <v-list-tile role="menuitem" @click="queueMenuAction(CUSTOM_ACTIONS, menu.item, menu.index, $event, cact)">
       <v-list-tile-avatar>
        <v-icon v-if="undefined==cact.svg">{{cact.icon}}</v-icon>
        <img v-else class="svg-img" :src="cact.svg | svgIcon(darkUi)"></img>
@@ -386,7 +446,7 @@ var lmsQueue = Vue.component("lms-queue", {
       <v-list-tile-title>{{cact.title}}</v-list-tile-title>
      </v-list-tile>
     </template>
-    <v-list-tile role="menuitem" v-else-if="action==SELECT_ACTION && menu.item.selected" @click="itemAction(UNSELECT_ACTION, menu.item, menu.index, $event)">
+    <v-list-tile role="menuitem" v-else-if="action==SELECT_ACTION && menu.item.selected" @click="queueMenuAction(UNSELECT_ACTION, menu.item, menu.index, $event)">
      <v-list-tile-avatar>
       <v-icon>{{ACTIONS[UNSELECT_ACTION].icon}}</v-icon>
      </v-list-tile-avatar>
@@ -396,7 +456,7 @@ var lmsQueue = Vue.component("lms-queue", {
      <v-list-group v-model="menuExpanded" @click.stop="">
       <template v-slot:activator><v-list-tile role="menuitem"><v-list-tile-content><v-list-tile-title>{{ACTIONS[REMOVE_ACTION].title}}</v-list-tile-title></v-list-tile-content><v-list-tile></template>
       <template v-for="subAction in PQ_REMOVE_ACTIONS">
-       <v-list-tile role="menuitem" @click="itemAction(subAction, menu.item, menu.index, $event)" v-if="(PQ_REMOVE_DISC_ACTION==subAction && undefined!=menu.item.disc && menu.item.disc>0) || (PQ_REMOVE_ALBUM_ACTION==subAction && undefined!=menu.item.album_id) || (PQ_REMOVE_ARTIST_ACTION==subAction && undefined!=menu.item.artist_id) || (PQ_REMOVE_WORK_ACTION==subAction && undefined!=menu.item.work_id) || PQ_REMOVE_TRACK_ACTION==subAction">
+       <v-list-tile role="menuitem" @click="queueMenuAction(subAction, menu.item, menu.index, $event)" v-if="(PQ_REMOVE_DISC_ACTION==subAction && undefined!=menu.item.disc && menu.item.disc>0) || (PQ_REMOVE_ALBUM_ACTION==subAction && undefined!=menu.item.album_id) || (PQ_REMOVE_ARTIST_ACTION==subAction && undefined!=menu.item.artist_id) || (PQ_REMOVE_WORK_ACTION==subAction && undefined!=menu.item.work_id) || PQ_REMOVE_TRACK_ACTION==subAction">
         <v-list-tile-avatar>
          <v-icon v-if="undefined==ACTIONS[subAction].svg">{{ACTIONS[subAction].icon}}</v-icon>
          <img v-else class="svg-img" :src="ACTIONS[subAction].svg | svgIcon(darkUi)"></img>
@@ -407,12 +467,13 @@ var lmsQueue = Vue.component("lms-queue", {
      </v-list-group>
      <v-divider></v-divider>
     </div>
-    <v-list-tile role="menuitem" v-else-if="action==PQ_COPY_ACTION ? browseSelection : action==MOVE_HERE_ACTION ? (selection.size>0 && !menu.item.selected) : action==PQ_ZAP_ACTION ? LMS_P_CS : action==DOWNLOAD_ACTION ? lmsOptions.allowDownload && menu.item.isLocal : (action!=PQ_PLAY_NEXT_ACTION || (menu.index!=currentIndex && menu.index!=currentIndex+1))" @click="itemAction(action, menu.item, menu.index, $event)">
+    <v-list-tile role="menuitem" v-else-if="action==ARTIST_INFO_ACTION ? (LMS_P_MAI && menu.item && (menu.item.artist_id || menu.item.artist)) : action==ALBUM_INFO_ACTION ? (LMS_P_MAI && menu.item && (menu.item.album_id || menu.item.album)) : action==PQ_COPY_ACTION ? browseSelection : action==MOVE_HERE_ACTION ? (selection.size>0 && !menu.item.selected) : action==PQ_ZAP_ACTION ? LMS_P_CS : action==DOWNLOAD_ACTION ? lmsOptions.allowDownload && menu.item.isLocal : (action!=PQ_PLAY_NEXT_ACTION || (menu.index!=currentIndex && menu.index!=currentIndex+1))" @click="queueMenuAction(action, menu.item, menu.index, $event)">
      <v-list-tile-avatar>
       <v-icon v-if="undefined==ACTIONS[action].svg">{{ACTIONS[action].icon}}</v-icon>
       <img v-else class="svg-img" :src="ACTIONS[action].svg | svgIcon(darkUi)"></img>
      </v-list-tile-avatar>
      <v-list-tile-title>{{ACTIONS[action].title}}</v-list-tile-title>
+     <v-list-tile-action v-if="action==ARTIST_INFO_ACTION || action==ALBUM_INFO_ACTION" class="menu-subind"><v-icon>chevron_right</v-icon></v-list-tile-action>
     </v-list-tile>
    </template>
   </v-list>
@@ -420,7 +481,7 @@ var lmsQueue = Vue.component("lms-queue", {
    <template v-for="(action, index) in menu.actions">
     <v-divider v-if="DIVIDER==action"></v-divider>
     <div style="height:0px!important" v-else-if="(action==PQ_PIN_ACTION && (pinQueue || !desktopLayout || windowWide<2 || nowPlayingExpanded || maiShown)) || (action==PQ_UNPIN_ACTION && (!pinQueue || !desktopLayout || windowWide<2))"/>
-    <v-list-tile role="menuitem" @click="headerAction(action, $event)" v-bind:class="{'disabled':(items.length<1 && PQ_REQUIRE_AT_LEAST_1_ITEM.has(action)) || (items.length<2 && PQ_REQUIRE_MULTIPLE_ITEMS.has(action))}" v-else-if="(!LMS_KIOSK_MODE || !HIDE_FOR_KIOSK.has(action)) && (action==PQ_SAVE_ACTION ? wide<2 : action!=PQ_MOVE_QUEUE_ACTION || showMoveAction)">
+    <v-list-tile role="menuitem" @click="headerAction(action, $event); menu.show=false" v-bind:class="{'disabled':(items.length<1 && PQ_REQUIRE_AT_LEAST_1_ITEM.has(action)) || (items.length<2 && PQ_REQUIRE_MULTIPLE_ITEMS.has(action))}" v-else-if="(!LMS_KIOSK_MODE || !HIDE_FOR_KIOSK.has(action)) && (action==PQ_SAVE_ACTION ? wide<2 : action!=PQ_MOVE_QUEUE_ACTION || showMoveAction)">
      <v-list-tile-avatar>
       <v-icon v-if="action==PQ_TOGGLE_VIEW_ACTION && albumStyle">music_note</v-icon>
       <v-icon v-else-if="undefined==ACTIONS[action].svg">{{ACTIONS[action].icon}}</v-icon>
@@ -432,6 +493,16 @@ var lmsQueue = Vue.component("lms-queue", {
     </v-list-tile>
    </template>
   </v-list>
+  </div><!-- msk-ctx-panel actions -->
+  <div v-if="!desktopLayout" class="msk-ctx-panel msk-ctx-panel-info">
+   <div class="msk-ctx-info-bar">
+    <v-btn icon flat small @click.stop="ctxSheetInfoBack" :title="i18n('Back')"><v-icon>{{BACK_ICON}}</v-icon></v-btn>
+    <div class="msk-ctx-info-title">{{menu.info && menu.info.title ? menu.info.title : ''}}</div>
+   </div>
+   <div v-if="menu.info && menu.info.loading" class="msk-ctx-info-loading"><v-progress-circular indeterminate size="36" width="3"></v-progress-circular></div>
+   <div v-else class="msk-ctx-info-body" v-bind:class="{'msk-ctx-info-error': menu.info && menu.info.error}" v-html="menu.info && menu.info.html ? menu.info.html : ''"></div>
+  </div>
+  </div><!-- msk-ctx-panels -->
  </v-menu>
 </div>
 `,
@@ -459,7 +530,6 @@ var lmsQueue = Vue.component("lms-queue", {
             wide: 0,
             dstm: false,
             dragActive: false,
-            dropIndex: -1,
             highlightIndex: -1,
             searchActive: false,
             coverUrl: undefined,
@@ -468,12 +538,31 @@ var lmsQueue = Vue.component("lms-queue", {
             maiShown: false,
             nowPlayingWide:0,
             windowWide:2,
-            iRgb: '000'
+            iRgb: '000',
+            pqSlideAnim: '',
+            pqSlideTimer: undefined,
+            listSwipe: null,
+            listSwipeSuppress: false,
+            listSwipeRemoving: null,
+            listSwipeFlashKey: null,
+            listSwipeFlashKind: null,
+            queueDragHoldMs: 500
         }
     },
     computed: {
         darkUi () {
             return this.$store.state.darkUi
+        },
+        queueListItemSize() {
+            let base = this.threeLines ? LMS_LIST_3LINE_ELEMENT_SIZE : LMS_LIST_ELEMENT_SIZE;
+            try {
+                let prop = this.threeLines ? '--list-elem-3line-height' : '--list-elem-height';
+                let parsed = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(prop));
+                if (!isNaN(parsed) && parsed > 0) {
+                    base = parsed;
+                }
+            } catch (e) {}
+            return Math.max(36, Math.round(base));
         },
         albumStyle() {
             return this.$store.state.queueAlbumStyle
@@ -490,11 +579,32 @@ var lmsQueue = Vue.component("lms-queue", {
         desktopLayout() {
             return this.$store.state.desktopLayout
         },
+        /* Mobile context-sheet header meta for the open queue item menu */
+        menuItemMeta() {
+            return typeof contextMenuItemMeta==='function'
+                ? contextMenuItemMeta(this.menu && this.menu.item)
+                : { title: '', lines: [], image: undefined, icon: undefined, svg: undefined };
+        },
         showQueue() {
             return this.nowPlayingExpanded || this.maiShown ? this.$store.state.showQueueNp : this.$store.state.showQueue
         },
+        pqOverlayClass() {
+            if (!this.desktopLayout || this.pinQueue) {
+                return '';
+            }
+            if (!this.showQueue && !this.$store.state.queueOverlayClosing) {
+                return '';
+            }
+            if (this.nowPlayingExpanded || this.maiShown) {
+                return 'pq-unpinned-np'+this.nowPlayingWide;
+            }
+            return 'pq-unpinned';
+        },
+        pqSlideAnimClass() {
+            return ''!=this.pqSlideAnim ? 'pq-slide-'+this.pqSlideAnim : '';
+        },
         pinQueue() {
-            return this.$store.state.pinQueue && this.windowWide>1 && !this.nowPlayingExpanded
+            return this.$store.state.pinQueue && this.windowWide>1;
         },
         noPlayer() {
             return !this.$store.state.player
@@ -529,6 +639,10 @@ var lmsQueue = Vue.component("lms-queue", {
         this.items = [];
         this.autoScrollRequired = false;
         this.previousScrollPos = 0;
+        this._queueDragHold = null;
+        this._queueDropIndex = -1;
+        this._queueDropTargetEl = null;
+        this._queueDragWindowBound = false;
     },
     mounted() {
         this.listSize=0;
@@ -571,10 +685,10 @@ var lmsQueue = Vue.component("lms-queue", {
             if (playerStatus.playlist.randomplay!=this.playerStatus.randomplay) {
                 this.playerStatus.randomplay = playerStatus.playlist.randomplay;
             }
-            // If queue is being cleared switch to browse view
-            if (!this.$store.state.desktopLayout && 0==playerStatus.playlist.count && (this.items.length>0 || MBAR_REP_NAV==this.$store.state.mobileBar) && 'queue'==this.$store.state.page) {
-                this.$store.commit('setPage', 'browse');
-            }
+            // Stay on queue after removing tracks (including the last one via swipe).
+            // Previously navigated to browse when the queue became empty, which felt like
+            // "removing an entry kicks you home." Empty queue stays visible instead.
+
             if (playerStatus.playlist.count!=this.listSize && 0==playerStatus.playlist.count && 0==playerStatus.playlist.timestamp) {
                 this.listSize=0;
                 this.items=[];
@@ -646,7 +760,15 @@ var lmsQueue = Vue.component("lms-queue", {
                             this.items[index].duration = duration;
                             this.getDuration();
                         }
-                        this.$forceUpdate();
+                        // Coalesce status-driven repaints (was forceUpdate per track change)
+                        if (!this._queueFuPending) {
+                            this._queueFuPending = true;
+                            var qself = this;
+                            requestAnimationFrame(function() {
+                                qself._queueFuPending = false;
+                                qself.$forceUpdate();
+                            });
+                        }
                     }
                 }
             }
@@ -685,7 +807,7 @@ var lmsQueue = Vue.component("lms-queue", {
         }.bind(this));
 
         bus.$on('escPressed', function() {
-            if (this.dragActive) {
+            if (this.dragActive || this.queueDragHoldActive()) {
                 return;
             }
             if (this.$store.state.desktopLayout ? !this.nowPlayingExpanded && !this.maiShown : this.$store.state.page=='queue') {
@@ -713,14 +835,50 @@ var lmsQueue = Vue.component("lms-queue", {
             this.nowPlayingExpanded = val;
         }.bind(this));
         this.maiShown = false;
+        this.maiExpanded = false;
         bus.$on('infoDialog', function(val) {
             this.maiShown = val;
+            if (!val) {
+                this.maiExpanded = false;
+            }
+        }.bind(this));
+        bus.$on('infoExpanded', function(val) {
+            this.maiExpanded = val;
         }.bind(this));
         bus.$on('nowPlayingWide', function(val) {
             this.nowPlayingWide = val;
         }.bind(this));
+        bus.$on('scrollCurrentToTop', function() {
+            if (!this.$store.state.desktopLayout && this.$store.state.page!='queue') {
+                return;
+            }
+            if (this.$store.state.npSheetOpen) {
+                return;
+            }
+            let el = this.scrollElement || document.getElementById('queue-list');
+            if (el) {
+                try {
+                    el.style['-webkit-overflow-scrolling'] = 'auto';
+                    if (typeof el.scrollTo==='function') {
+                        el.scrollTo({ top: 0, behavior: 'smooth' });
+                    } else {
+                        el.scrollTop = 0;
+                    }
+                    setTimeout(function() {
+                        try { el.style['-webkit-overflow-scrolling'] = 'touch'; } catch (e2) {}
+                    }, 450);
+                } catch (e) {
+                    el.scrollTop = 0;
+                }
+            }
+        }.bind(this));
         this.scrollElement = document.getElementById("queue-list");
         this.scrollElement.addEventListener("scroll", this.handleScroll, PASSIVE_SUPPORTED ? { passive: true } : false);
+        this.scrollElement.addEventListener("touchstart", this.queueTouchStart, PASSIVE_SUPPORTED ? { passive: true } : false);
+        this.scrollElement.addEventListener("touchmove", this.queueTouchMove, PASSIVE_SUPPORTED ? { passive: false } : false);
+        this.scrollElement.addEventListener("touchend", this.queueTouchEnd, PASSIVE_SUPPORTED ? { passive: true } : false);
+        this.scrollElement.addEventListener("touchcancel", this.queueTouchEnd, PASSIVE_SUPPORTED ? { passive: true } : false);
+        this.scrollElement.addEventListener("mousedown", this.queuePointerDown, false);
         msRegister(this, this.scrollElement);
         this.viewElement = document.getElementById("queue-view");
         document.addEventListener("click", this.clickListener, PASSIVE_SUPPORTED ? { passive: true } : false);
@@ -796,8 +954,8 @@ var lmsQueue = Vue.component("lms-queue", {
             if (!queryParams.party && (!LMS_KIOSK_MODE || !HIDE_FOR_KIOSK.has(PQ_MOVE_QUEUE_ACTION))) {
                 bindKey(LMS_MOVE_QUEUE_KEYBOARD, 'mod');
             }
-            bindKey('pageup', 'alt', true);
-            bindKey('pagedown', 'alt', true);
+            bindKey('pageup', IS_APPLE ? 'mod' : 'alt', true);
+            bindKey('pagedown', IS_APPLE ? 'mod' : 'alt', true);
             bindKey(LMS_SEARCH_KEYBOARD, 'mod+shift');
             bus.$on('keyboard', function(key, modifier) {
                 if (this.$store.state.openDialogs.length>0 || (this.$store.state.visibleMenus.size>0 && !this.$store.state.visibleMenus.has('queue')) || (!this.$store.state.desktopLayout && this.$store.state.page!="queue")) {
@@ -811,8 +969,12 @@ var lmsQueue = Vue.component("lms-queue", {
                         this.clear();
                     } else if (LMS_QUEUE_ADD_URL_KEYBOARD==key || LMS_SCROLL_QUEUE_KEYBOARD==key || LMS_MOVE_QUEUE_KEYBOARD==key || LMS_SORT_QUEUE_KEYBOARD==key) {
                         this.headerAction(LMS_QUEUE_ADD_URL_KEYBOARD==key ? PQ_ADD_URL_ACTION : LMS_SCROLL_QUEUE_KEYBOARD==key ? PQ_SCROLL_ACTION : LMS_SORT_QUEUE_KEYBOARD==key ? PQ_SORT_ACTION : PQ_MOVE_QUEUE_ACTION);
+                    } else if (IS_APPLE && 'pageup'==key) {
+                        this.scrollElement.scrollBy(0, -1*this.scrollElement.clientHeight);
+                    } else if (IS_APPLE && 'pagedown'==key) {
+                        this.scrollElement.scrollBy(0, this.scrollElement.clientHeight);
                     }
-                } else if ('alt'==modifier || (undefined==modifier && !this.$store.state.desktopLayout && this.$store.state.page=="queue")) {
+                } else if ((!IS_APPLE && 'alt'==modifier) || (undefined==modifier && !this.$store.state.desktopLayout && this.$store.state.page=="queue")) {
                     if ('pageup'==key) {
                         this.scrollElement.scrollBy(0, -1*this.scrollElement.clientHeight);
                     } else if ('pagedown'==key) {
@@ -831,7 +993,7 @@ var lmsQueue = Vue.component("lms-queue", {
         bus.$on('dragActive', function(act) {
             this.dragActive = act;
             if (!act) {
-                this.dropIndex = -1;
+                this.queueDropTargetClear();
             }
         }.bind(this));
         this.browseSelection=false;
@@ -859,7 +1021,7 @@ var lmsQueue = Vue.component("lms-queue", {
             }
         }.bind(this));
     },
-    methods: {
+    methods: Object.assign({
         initItems() {
             this.trans= { ok:i18n('OK'), cancel: i18n('Cancel'), clear:i18n("Clear queue"), goBack:i18n("Go back"),
                           repeatAll:i18n("Repeat queue"), repeatOne:i18n("Repeat single track"), repeatOff:i18n("No repeat"),
@@ -878,6 +1040,9 @@ var lmsQueue = Vue.component("lms-queue", {
         },
         handleScroll() {
             this.menu.show = false;
+            if (!this.$store.state.desktopLayout && this.scrollElement) {
+                bus.$emit('mobileContentScroll', this.scrollElement.scrollTop || 0);
+            }
             if (undefined==this.scrollAnim) {
                 this.scrollAnim = requestAnimationFrame(() => {
                     this.scrollAnim = undefined;
@@ -1030,6 +1195,10 @@ var lmsQueue = Vue.component("lms-queue", {
             }.bind(this), 5);
         },
         click(item, index, event) {
+            if (this.listSwipeClickGuard && this.listSwipeClickGuard()) { return; }
+            if (undefined!=this.suppressQueueClickUntil && Date.now()<this.suppressQueueClickUntil) {
+                return;
+            }
             storeClickOrTouchPos(event, this.menu);
             this.resetCloseTimer();
             if (queryParams.party) {
@@ -1064,20 +1233,257 @@ var lmsQueue = Vue.component("lms-queue", {
             }
         },
         singleClick(item, index, event) {
+            if (undefined!=this.suppressQueueClickUntil && Date.now()<this.suppressQueueClickUntil) {
+                return;
+            }
             if (!queryParams.party) {
                 this.itemMenu(item, index, event);
             }
         },
         doubleClick(item, index, event) {
+            if (undefined!=this.suppressQueueClickUntil && Date.now()<this.suppressQueueClickUntil) {
+                return;
+            }
             if (!queryParams.party) {
                 this.itemAction(PQ_PLAY_NOW_ACTION, item, index, event);
             }
+        },
+        queuePointerFromEvent(ev) {
+            if (ev.touches && ev.touches.length>0) {
+                return { x:ev.touches[0].clientX, y:ev.touches[0].clientY, touch:true };
+            }
+            if (ev.changedTouches && ev.changedTouches.length>0) {
+                return { x:ev.changedTouches[0].clientX, y:ev.changedTouches[0].clientY, touch:true };
+            }
+            if (undefined!=ev.clientX) {
+                return { x:ev.clientX, y:ev.clientY, touch:false };
+            }
+            return undefined;
+        },
+        queueJumpTo(index) {
+            if (index < 0 || index >= this.items.length) {
+                return;
+            }
+            this.highlightIndex = index;
+            this.$nextTick(function() {
+                let el = document.getElementById('pqitem' + index);
+                if (el && el.scrollIntoView) {
+                    el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                } else if (this.scrollElement) {
+                    let h = this.queueListItemSize || 48;
+                    setElemScrollTop(this.scrollElement, Math.max(0, index * h - 8));
+                }
+            }.bind(this));
+        },
+        queueFindSwipeRow(target) {
+            if (!target || !target.closest) {
+                return undefined;
+            }
+            let row = target.closest('[id^="pqitem"]');
+            if (row && row.id && /^pqitem\d+$/.test(row.id)) {
+                return row;
+            }
+            return undefined;
+        },
+        queueSwipeableItem(item) {
+            if (!item || queryParams.party) {
+                return false;
+            }
+            // Album/work group headers are not removable as a single track swipe
+            if (item.isGrpHeader || item.isWorkHeader || item.header) {
+                return false;
+            }
+            return true;
+        },
+        queueItemSwipeBegin(pt, ev) {
+            // Prefer shared list-swipe library when wired
+            if (typeof listSwipeMethods!=='undefined') {
+                return;
+            }
+            this.queueItemSwipe = undefined;
+            if (queryParams.party || this.$store.state.npSheetOpen) {
+                return;
+            }
+            let row = this.queueFindSwipeRow(ev && ev.target);
+            if (!row || !row.id || !/^pqitem\d+$/.test(row.id)) {
+                return;
+            }
+            let index = parseInt(row.id.replace(/^pqitem/, ''), 10);
+            if (isNaN(index) || index<0 || index>=this.items.length) {
+                return;
+            }
+            let item = this.items[index];
+            if (!this.queueSwipeableItem(item)) {
+                return;
+            }
+            let el = row.classList && row.classList.contains('v-list__tile')
+                ? row
+                : (row.querySelector && row.querySelector('.v-list__tile')) || row;
+            this.queueItemSwipe = {
+                x: pt.x,
+                y: pt.y,
+                index: index,
+                item: item,
+                el: el,
+                row: row,
+                mode: undefined,
+                dx: 0,
+                wasDraggable: !!(row.draggable)
+            };
+            try { row.draggable = false; } catch (ex) {}
+            this._queueSwipeBlockDrag = function(e) {
+                try { e.preventDefault(); } catch (ex) {}
+                try { e.stopPropagation(); } catch (ex) {}
+            };
+            row.addEventListener('dragstart', this._queueSwipeBlockDrag, true);
+        },
+        queueItemSwipeRestoreDraggable(sw) {
+            let row = sw && (sw.row || sw.el);
+            if (row && this._queueSwipeBlockDrag) {
+                row.removeEventListener('dragstart', this._queueSwipeBlockDrag, true);
+            }
+            this._queueSwipeBlockDrag = undefined;
+            if (row) {
+                try { row.draggable = !!sw.wasDraggable; } catch (ex) {}
+            }
+        },
+        queueItemSwipeMove(pt, ev) {
+            if (!this.queueItemSwipe) {
+                return false;
+            }
+            let dx = pt.x - this.queueItemSwipe.x;
+            let dy = pt.y - this.queueItemSwipe.y;
+            if (undefined==this.queueItemSwipe.mode) {
+                if (Math.abs(dx)<12 && Math.abs(dy)<12) {
+                    return false;
+                }
+                if (Math.abs(dx)>Math.abs(dy)*1.05 && Math.abs(dx)>=12) {
+                    this.queueItemSwipe.mode = 'h';
+                    bus.$emit('browseItemSwipeActive', true);
+                } else if (Math.abs(dy)>=12) {
+                    this.queueItemSwipeRestoreDraggable(this.queueItemSwipe);
+                    this.queueItemSwipe = undefined;
+                    return false;
+                } else {
+                    return false;
+                }
+            }
+            if ('h'!=this.queueItemSwipe.mode) {
+                return false;
+            }
+            if (ev && ev.cancelable) {
+                try { ev.preventDefault(); } catch (ex) {}
+            }
+            // Prefer left swipe for remove; allow limited right travel for release-back
+            this.queueItemSwipe.dx = Math.max(-110, Math.min(40, dx));
+            if (this.queueItemSwipe.el) {
+                this.queueItemSwipe.el.style.transition = 'none';
+                this.queueItemSwipe.el.style.transform = 'translateX(' + this.queueItemSwipe.dx + 'px)';
+                this.queueItemSwipe.el.classList.add('queue-item-swiping');
+                this.queueItemSwipe.el.classList.toggle('queue-item-swipe-remove', this.queueItemSwipe.dx<-24);
+            }
+            return true;
+        },
+        queueItemSwipeEnd(ev) {
+            if (!this.queueItemSwipe) {
+                return;
+            }
+            let sw = this.queueItemSwipe;
+            this.queueItemSwipe = undefined;
+            let el = sw.el;
+            let pt = this.queuePointerFromEvent(ev);
+            let dx = sw.dx || 0;
+            if (pt && 'h'==sw.mode) {
+                dx = Math.max(-110, Math.min(40, pt.x - sw.x));
+            }
+            this.queueItemSwipeRestoreDraggable(sw);
+            if (el) {
+                el.style.transition = 'transform 0.2s ease';
+                el.style.transform = '';
+                el.classList.remove('queue-item-swiping', 'queue-item-swipe-remove');
+                setTimeout(function() {
+                    if (el) { el.style.transition = ''; }
+                }, 220);
+            }
+            bus.$emit('browseItemSwipeActive', false);
+            if ('h'!=sw.mode || dx>-48) {
+                return;
+            }
+            this.suppressQueueClickUntil = Date.now() + 450;
+            bus.$emit('browseItemSwipeHandled');
+            this.itemAction(REMOVE_ACTION, sw.item, sw.index, ev);
+            bus.$emit('showMessage', ACTIONS[REMOVE_ACTION].title || i18n('Remove'));
+        },
+        queueTouchStart(ev) {
+            if (this.$store.state.npSheetOpen || undefined==this.scrollElement) {
+                return;
+            }
+            let pt = this.queuePointerFromEvent(ev);
+            if (pt) {
+                this.queueItemSwipeBegin(pt, ev);
+            }
+        },
+        queueTouchMove(ev) {
+            let pt = this.queuePointerFromEvent(ev);
+            if (pt) {
+                this.queueItemSwipeMove(pt, ev);
+            }
+        },
+        queueTouchEnd(ev) {
+            this.queueItemSwipeEnd(ev);
+        },
+        queuePointerDown(ev) {
+            if (this.$store.state.npSheetOpen || (ev.button!==undefined && ev.button!==0)) {
+                return;
+            }
+            if (ev.target && ev.target.closest && ev.target.closest('button, .v-btn, a, input, .menu-btn, .grid-btn, .list-btn, .queue-action')) {
+                return;
+            }
+            let pt = this.queuePointerFromEvent(ev);
+            if (pt) {
+                this.queueItemSwipeBegin(pt, ev);
+                if (this.queueItemSwipe) {
+                    window.addEventListener("mousemove", this.queuePointerMove, false);
+                    window.addEventListener("mouseup", this.queuePointerUp, false);
+                }
+            }
+        },
+        queuePointerMove(ev) {
+            if (!this.queueItemSwipe) {
+                return;
+            }
+            let pt = this.queuePointerFromEvent(ev);
+            if (pt) {
+                this.queueItemSwipeMove(pt, ev);
+            }
+        },
+        queuePointerUp(ev) {
+            window.removeEventListener("mousemove", this.queuePointerMove, false);
+            window.removeEventListener("mouseup", this.queuePointerUp, false);
+            this.queueItemSwipeEnd(ev);
         },
         removeIndexes(indexes) {
             indexes.sort(function(a, b) { return a<b ? 1 : -1; });
             lmsCommand(this.$store.state.player.id, ["material-skin-client", "remove-queue", "indexes:"+indexes.join(",")]).then(({data}) => {
                 bus.$emit("updatePlayer", this.$store.state.player.id);
             });
+        },
+        /** Menu tile click with close-on-content-click disabled on mobile sheet */
+        queueMenuAction(act, item, index, event, cact) {
+            if (!this.desktopLayout && this.menu && this.menu.show &&
+                (act==ARTIST_INFO_ACTION || act==ALBUM_INFO_ACTION) &&
+                typeof this.ctxSheetLoadInfo==='function') {
+                this.ctxSheetLoadInfo(item, act==ARTIST_INFO_ACTION);
+                return;
+            }
+            if (!this.desktopLayout && this.menu) {
+                this.menu.show = false;
+            }
+            if (act===CUSTOM_ACTIONS && cact) {
+                this.itemCustomAction(cact, item, index, event);
+            } else {
+                this.itemAction(act, item, index, event);
+            }
         },
         itemAction(act, item, index, event) {
             storeClickOrTouchPos(event, this.menu);
@@ -1136,6 +1542,62 @@ var lmsQueue = Vue.component("lms-queue", {
                     this.$store.commit('setPage', 'browse');
                 }
                 this.clearSelection();
+            } else if (ARTIST_INFO_ACTION===act || ALBUM_INFO_ACTION===act) {
+                // Mobile: handled by queueMenuAction → ctxSheetLoadInfo (in-sheet panel)
+                if (!this.desktopLayout && this.menu && this.menu.show && typeof this.ctxSheetLoadInfo==='function') {
+                    this.ctxSheetLoadInfo(item, ARTIST_INFO_ACTION===act);
+                    return;
+                }
+                if (!LMS_P_MAI) {
+                    bus.$emit('showMessage', i18n('Music Artist Info plugin not available'));
+                    return;
+                }
+                let isArtist = ARTIST_INFO_ACTION===act;
+                let artistId = item.artist_id;
+                let albumId = item.album_id;
+                let artistName = item.artist;
+                let albumName = item.album;
+                let cmd;
+                if (isArtist) {
+                    if (undefined==artistId && !artistName) {
+                        bus.$emit('showMessage', i18n('No artist information available'));
+                        return;
+                    }
+                    cmd = ['musicartistinfo', 'biography', 'html:1'];
+                    if (undefined!=artistId) { cmd.push('artist_id:'+artistId); }
+                    else { cmd.push('artist:'+artistName); }
+                } else {
+                    if (undefined==albumId && !albumName) {
+                        bus.$emit('showMessage', i18n('No album information available'));
+                        return;
+                    }
+                    // Same as Now Playing: album_id alone when known
+                    cmd = ['musicartistinfo', 'albumreview', 'html:1'];
+                    if (undefined!=albumId) {
+                        cmd.push('album_id:'+albumId);
+                    } else {
+                        cmd.push('album:'+albumName);
+                        if (undefined!=artistId) { cmd.push('artist_id:'+artistId); }
+                        else if (artistName) { cmd.push('artist:'+artistName); }
+                    }
+                }
+                let title = ACTIONS[act].title + SEPARATOR + stripTags(isArtist ? (artistName||'') : (albumName||''));
+                if (this.$store.state.desktopLayout) {
+                    if (!this.$store.state.pinQueue) {
+                        this.$store.commit('setShowQueue', false);
+                    }
+                    bus.$emit('closeNowPlaying');
+                } else {
+                    this.$store.commit('setPage', 'browse');
+                }
+                this.clearSelection();
+                bus.$emit('browseMai', {
+                    command: cmd,
+                    title: title,
+                    isArtist: isArtist,
+                    image: item.image,
+                    id: isArtist ? ('mai-artist:'+(artistId||artistName)) : ('mai-album:'+(albumId||albumName))
+                });
             } else if (SELECT_ACTION===act) {
                 if (!this.selection.has(index)) {
                     if (0==this.selection.size) {
@@ -1447,11 +1909,11 @@ var lmsQueue = Vue.component("lms-queue", {
                         this.updateItems();
                     });
                 } else {
-                    if (this.$store.state.autoScrollQueue) {
-                        this.$nextTick(function () {
+                    this.$nextTick(function () {
+                        if (this.$store.state.autoScrollQueue) {
                             this.scrollToCurrent();
-                        });
-                    }
+                        }
+                    });
                 }
             }).catch(err => {
                 this.fetchingItems = false;
@@ -1533,7 +1995,7 @@ var lmsQueue = Vue.component("lms-queue", {
                                     pos += loop[i].size;
                                 }
                             } else {
-                                pos = (index-3)*(this.$store.state.queueThreeLines ? LMS_LIST_3LINE_ELEMENT_SIZE : LMS_LIST_ELEMENT_SIZE);
+                                pos = (index-3)*this.queueListItemSize;
                             }
                         }
                         setScrollTop(this, pos>0 ? pos : 0);
@@ -1559,31 +2021,346 @@ var lmsQueue = Vue.component("lms-queue", {
                 this.scrollToIndex(false, index);
             }
         },
-        dragStart(which, ev) {
-            if (queryParams.party) {
-                ev.preventDefault();
-                ev.stopPropagation();
+        queueDragItemDraggable(item) {
+            if (queryParams.party || this.searchActive) {
+                return false;
+            }
+            return !(item && (item.isGrpHeader || item.isWorkHeader));
+        },
+        queueItemHtmlDraggable(item) {
+            return this.$store.state.desktopLayout && this.queueDragItemDraggable(item);
+        },
+        queueHtmlDragStart(index, ev) {
+            if (!this.queueDragItemDraggable(this.items[index])) {
+                try { ev.preventDefault(); } catch (ex) {}
                 return;
             }
             bus.$emit('dragActive', true);
             ev.dataTransfer.dropEffect = 'move';
-            ev.dataTransfer.setData('text/plain', this.items[which].title);
-            this.dragElem = ev.target.nodeName=='IMG' ? ev.srcElement.parentNode.parentNode.parentNode : ev.srcElement;
+            try { ev.dataTransfer.setData('text/plain', ''); } catch (ex) {}
+            this.dragElem = document.getElementById('pqitem'+index);
+            if (!this.dragElem && ev.target) {
+                this.dragElem = ev.target.closest ? ev.target.closest('[id^="pqitem"]') : ev.target;
+            }
             setListElemClass(this.dragElem, 'dragging', true);
-            ev.dataTransfer.setDragImage(this.dragElem, 0, 0);
-            this.dragIndex = which;
+            if (this.dragElem && ev.dataTransfer && ev.dataTransfer.setDragImage) {
+                try { ev.dataTransfer.setDragImage(this.dragElem, 0, 0); } catch (ex) {}
+            }
+            this.dragIndex = index;
             this.stopScrolling = false;
-            if (this.selection.size>0 && !this.selection.has(which)) {
+            if (this.selection.size>0 && !this.selection.has(index)) {
                 this.clearSelection();
             }
             window.mskQueueDrag = this.getSelectedUrls();
+        },
+        queueHtmlDragEnd() {
+            this.dragEnd();
+            setTimeout(function () { bus.$emit('dragActive', false); }.bind(this), 250);
+        },
+        queueDragAttachWindow() {
+            if (this._queueDragWindowBound) {
+                return;
+            }
+            this._queueDragWindowBound = true;
+            this._queueDragWindowMove = function(ev) {
+                if (this._queueDragHold && this._queueDragHold.dragging) {
+                    this.queueDragPointerMove(ev);
+                } else if (this._queueDragHold) {
+                    this.queueDragHoldMove(ev);
+                }
+            }.bind(this);
+            this._queueDragWindowEnd = function(ev) {
+                if (this._queueDragHold) {
+                    this.queueDragHoldEnd(ev);
+                }
+            }.bind(this);
+            window.addEventListener('touchmove', this._queueDragWindowMove, PASSIVE_SUPPORTED ? { passive: false } : false);
+            window.addEventListener('touchend', this._queueDragWindowEnd, PASSIVE_SUPPORTED ? { passive: true } : false);
+            window.addEventListener('touchcancel', this._queueDragWindowEnd, PASSIVE_SUPPORTED ? { passive: true } : false);
+            window.addEventListener('pointermove', this._queueDragWindowMove, false);
+            window.addEventListener('pointerup', this._queueDragWindowEnd, false);
+            window.addEventListener('pointercancel', this._queueDragWindowEnd, false);
+        },
+        queueDragDetachWindow() {
+            if (!this._queueDragWindowBound) {
+                return;
+            }
+            this._queueDragWindowBound = false;
+            window.removeEventListener('touchmove', this._queueDragWindowMove, PASSIVE_SUPPORTED ? { passive: false } : false);
+            window.removeEventListener('touchend', this._queueDragWindowEnd, PASSIVE_SUPPORTED ? { passive: true } : false);
+            window.removeEventListener('touchcancel', this._queueDragWindowEnd, PASSIVE_SUPPORTED ? { passive: true } : false);
+            window.removeEventListener('pointermove', this._queueDragWindowMove, false);
+            window.removeEventListener('pointerup', this._queueDragWindowEnd, false);
+            window.removeEventListener('pointercancel', this._queueDragWindowEnd, false);
+            this._queueDragWindowMove = undefined;
+            this._queueDragWindowEnd = undefined;
+        },
+        queueDragResolveDropIndex(pt) {
+            if (!pt) {
+                return -1;
+            }
+            let dragId = undefined!=this.dragIndex ? ('pqitem'+this.dragIndex) : null;
+            if (document.elementsFromPoint) {
+                let nodes = document.elementsFromPoint(pt.x, pt.y);
+                for (let i=0, len=nodes.length; i<len; ++i) {
+                    let row = nodes[i].closest ? nodes[i].closest('[id^="pqitem"]') : null;
+                    if (row && row.id && row.id!==dragId) {
+                        let idx = parseInt(row.id.replace(/^pqitem/, ''), 10);
+                        if (!isNaN(idx) && idx>=0) {
+                            return idx;
+                        }
+                    }
+                }
+            }
+            let list = document.getElementById('queue-list');
+            if (!list) {
+                return -1;
+            }
+            let rows = list.querySelectorAll('[id^="pqitem"]');
+            let best = -1;
+            let bestDist = Infinity;
+            for (let i=0, len=rows.length; i<len; ++i) {
+                let row = rows[i];
+                if (!row.id || row.id===dragId) {
+                    continue;
+                }
+                let r = row.getBoundingClientRect();
+                if (pt.y >= r.top && pt.y <= r.bottom) {
+                    let idx = parseInt(row.id.replace(/^pqitem/, ''), 10);
+                    if (!isNaN(idx) && idx>=0) {
+                        return idx;
+                    }
+                }
+                let cy = (r.top + r.bottom) / 2;
+                let d = Math.abs(pt.y - cy);
+                if (d < bestDist) {
+                    bestDist = d;
+                    best = parseInt(row.id.replace(/^pqitem/, ''), 10);
+                }
+            }
+            return isNaN(best) ? -1 : best;
+        },
+        queueDropTargetClear() {
+            if (this._queueDropTargetEl) {
+                this._queueDropTargetEl.classList.remove('drop-target');
+                this._queueDropTargetEl = null;
+            }
+            this._queueDropIndex = -1;
+        },
+        queueDropTargetSet(index) {
+            if (index<=0 || index===this._queueDropIndex) {
+                return;
+            }
+            this.queueDropTargetClear();
+            this._queueDropIndex = index;
+            let el = document.getElementById('pqitem'+index);
+            if (el) {
+                el.classList.add('drop-target');
+                this._queueDropTargetEl = el;
+            }
+        },
+        queueDragHoldActive() {
+            return !!(this._queueDragHold && (this._queueDragHold.ready || this._queueDragHold.dragging));
+        },
+        queueDragHoldCancel() {
+            if (this._queueDragHold && this._queueDragHold.timer) {
+                clearTimeout(this._queueDragHold.timer);
+            }
+            if (this._queueDragHold && this._queueDragHold.tile) {
+                setListElemClass(this._queueDragHold.tile, 'dragging', false);
+                this._queueDragHold.tile.classList.remove('pq-drag-chosen');
+                this._queueDragHold.tile.style.pointerEvents = '';
+            }
+            let list = document.getElementById('queue-list');
+            if (list) {
+                list.classList.remove('pq-reorder-active');
+            }
+            this.queueDragDetachWindow();
+            this._queueDragHold = null;
+        },
+        queueDragHoldStart(item, index, ev) {
+            if (!this.queueDragItemDraggable(item)) {
+                return;
+            }
+            if (this.$store.state.desktopLayout) {
+                let touchLike = ev && ((ev.type && ev.type.indexOf('touch')===0) ||
+                    (ev.pointerType && ev.pointerType==='touch'));
+                if (!touchLike) {
+                    return;
+                }
+            }
+            if (ev && ev.type && ev.type.indexOf('pointer')===0 && ev.pointerType==='touch') {
+                return;
+            }
+            if (ev && ev.button!==undefined && ev.button!==0) {
+                return;
+            }
+            if (ev && ev.target && ev.target.closest && ev.target.closest('button, .v-btn, a, input, .menu-btn, .grid-btn, .list-btn, .queue-action')) {
+                return;
+            }
+            this.queueDragHoldCancel();
+            let tile = document.getElementById('pqitem'+index);
+            let pt = typeof listSwipePointFromEvent==='function' ? listSwipePointFromEvent(ev) : this.queuePointerFromEvent(ev);
+            if (!tile || !pt) {
+                return;
+            }
+            let vm = this;
+            this._queueDragHold = {
+                index: index,
+                item: item,
+                tile: tile,
+                x: pt.x,
+                y: pt.y,
+                t: Date.now(),
+                ready: false,
+                dragging: false,
+                timer: setTimeout(function() {
+                    let h = vm._queueDragHold;
+                    if (!h || h.index!==index) {
+                        return;
+                    }
+                    h.ready = true;
+                    if (h.tile) {
+                        h.tile.classList.add('pq-drag-chosen');
+                    }
+                }, vm.queueDragHoldMs)
+            };
+            this.queueDragAttachWindow();
+        },
+        queueDragHoldMove(ev) {
+            if (!this._queueDragHold) {
+                return;
+            }
+            if (this._queueDragHold.dragging) {
+                this.queueDragPointerMove(ev);
+                return;
+            }
+            let pt = typeof listSwipePointFromEvent==='function' ? listSwipePointFromEvent(ev) : this.queuePointerFromEvent(ev);
+            if (!pt) {
+                return;
+            }
+            let h = this._queueDragHold;
+            let dx = pt.x - h.x;
+            let dy = pt.y - h.y;
+            if (!h.ready) {
+                if (Math.abs(dx)<8 && Math.abs(dy)<8) {
+                    return;
+                }
+                if (Date.now() - h.t < 400 && Math.abs(dx) > Math.abs(dy) && Math.abs(dx)>=12) {
+                    this.queueDragHoldCancel();
+                    return;
+                }
+                if (Math.abs(dy) >= Math.abs(dx)) {
+                    this.queueDragHoldCancel();
+                    return;
+                }
+                return;
+            }
+            if (Math.abs(dx)>=8 || Math.abs(dy)>=8) {
+                this.queueDragPointerStart();
+            }
+        },
+        queueDragPointerStart() {
+            let h = this._queueDragHold;
+            if (!h || !h.ready || h.dragging) {
+                return;
+            }
+            h.dragging = true;
+            h.ready = false;
+            this.listSwipe = null;
+            if (h.tile) {
+                h.tile.classList.remove('pq-drag-chosen');
+                setListElemClass(h.tile, 'dragging', true);
+                h.tile.style.pointerEvents = 'none';
+                this.dragElem = h.tile;
+            }
+            let list = document.getElementById('queue-list');
+            if (list) {
+                list.classList.add('pq-reorder-active');
+            }
+            this.dragIndex = h.index;
+            this.stopScrolling = false;
+            if (this.selection.size>0 && !this.selection.has(h.index)) {
+                this.clearSelection();
+            }
+            window.mskQueueDrag = this.getSelectedUrls();
+            this._queuePointerDrag = true;
+        },
+        queueDragPointerMove(ev) {
+            if (!this._queueDragHold || !this._queueDragHold.dragging) {
+                return;
+            }
+            let pt = typeof listSwipePointFromEvent==='function' ? listSwipePointFromEvent(ev) : this.queuePointerFromEvent(ev);
+            if (!pt) {
+                return;
+            }
+            let idx = this.queueDragResolveDropIndex(pt);
+            if (idx>=0 && idx!==this.dragIndex) {
+                this.dragOver(idx, { clientY: pt.y, preventDefault: function(){} });
+            }
+            if (ev.cancelable) {
+                try { ev.preventDefault(); } catch (ex) {}
+            }
+        },
+        queueDragHoldEnd(ev) {
+            if (!this._queueDragHold) {
+                return;
+            }
+            if (this._queueDragHold.dragging) {
+                let to = this._queueDropIndex>=0 ? this._queueDropIndex : this.dragIndex;
+                this.queuePerformMove(to);
+            }
+            this.queueDragHoldCancel();
+            this.dragEnd();
+        },
+        queuePerformMove(to) {
+            if (undefined==this.dragIndex || to<0) {
+                return;
+            }
+            if (to!=this.dragIndex) {
+                if (this.selection.size>0) {
+                    if (!this.selection.has(to)) {
+                        var selection = Array.from(this.selection);
+                        bus.$emit('moveQueueItems', selection.sort(function(a, b) { return a<b ? -1 : 1; }), to);
+                    }
+                } else {
+                    bus.$emit('playerCommand', ["playlist", "move", this.dragIndex, to]);
+                }
+                this.clearSelection();
+                this.$nextTick(function() { this.updateItems(); }.bind(this));
+            }
+        },
+        dragEnd() {
+            setListElemClass(this.dragElem, 'dragging', false);
+            this.dragElem = undefined;
+            this.stopScrolling = true;
+            this.dragIndex = undefined;
+            this.queueDropTargetClear();
+            window.mskQueueDrag = undefined;
+            if (this._queuePointerDrag) {
+                this._queuePointerDrag = false;
+            }
+        },
+        externalDragOver(index, ev) {
+            if (undefined==window.mskBrowseDrag) {
+                return;
+            }
+            this.dragOver(index, ev);
+        },
+        externalDrop(index, ev) {
+            this.stopScrolling = true;
+            try { ev.preventDefault(); } catch (ex) {}
+            if (undefined!=window.mskBrowseDrag) {
+                bus.$emit('browseQueueDrop', window.mskBrowseDrag, index, this.listSize);
+                this.queueDropTargetClear();
+            }
         },
         getSelectedUrls() {
             var selection = []
             if (this.selection.size>0) {
                 selection = Array.from(this.selection);
                 selection.sort(function(a, b) { return a<b ? -1 : 1; });
-            } else {
+            } else if (undefined!=this.dragIndex) {
                 selection.push(this.dragIndex);
             }
             var urls = [];
@@ -1594,19 +2371,9 @@ var lmsQueue = Vue.component("lms-queue", {
             }
             return urls;
         },
-        dragEnd() {
-            setListElemClass(this.dragElem, 'dragging', false);
-            this.dragElem = undefined;
-            this.stopScrolling = true;
-            this.dragIndex = undefined;
-            this.dropIndex = -1;
-            window.mskQueueDrag = undefined;
-            // Delay setting drag inactive so that we ignore a potential 'Esc' that cancelled drag
-            setTimeout(function () { bus.$emit('dragActive', false); }.bind(this), 250);
-        },
         dragOver(index, ev) {
-            if (index>0 && index!=this.dropIndex) {
-                this.dropIndex = index;
+            if (index>0 && index!=this._queueDropIndex) {
+                this.queueDropTargetSet(index);
                 // Drag over item at top/bottom of list to start scrolling
                 this.stopScrolling = true;
                 if (ev.clientY < (queryParams.topPad + 110)) {
@@ -1648,20 +2415,11 @@ var lmsQueue = Vue.component("lms-queue", {
             this.stopScrolling = true;
             ev.preventDefault();
             if (to<0) {
-                to=this.dragIndex!=undefined ? this.items.length-1 : this.items.length;
+                to = this.dragIndex!=undefined ? this.items.length-1 : this.items.length;
             }
             if (this.dragIndex!=undefined) {
-                if (to!=this.dragIndex) {
-                    if (this.selection.size>0) {
-                        if (!this.selection.has(to)) {
-                            var selection = Array.from(this.selection);
-                            bus.$emit('moveQueueItems', selection.sort(function(a, b) { return a<b ? -1 : 1; }), to);
-                        }
-                    } else {
-                        bus.$emit('playerCommand', ["playlist", "move", this.dragIndex, to]);
-                    }
-                    this.clearSelection();
-                }
+                this.queuePerformMove(to);
+                this.dragIndex = undefined;
             } else if (ev.dataTransfer) {
                 if (undefined!=window.mskBrowseDrag) {
                     bus.$emit('browseQueueDrop', window.mskBrowseDrag, to, this.listSize);
@@ -1669,7 +2427,7 @@ var lmsQueue = Vue.component("lms-queue", {
                     this.droppedFileHandler(ev);
                 }
             }
-            this.dragIndex = undefined;
+            this.queueDropTargetClear();
         },
         setBgndCover() {
             var url = this.$store.state.queueBackdrop ? this.coverUrl : undefined;
@@ -1807,8 +2565,56 @@ var lmsQueue = Vue.component("lms-queue", {
             } else {
                 this.cancelCloseTimer();
             }
+        },
+        clearPqSlideTimer() {
+            if (undefined!=this.pqSlideTimer) {
+                clearTimeout(this.pqSlideTimer);
+                this.pqSlideTimer = undefined;
+            }
+        },
+        startPqSlideIn() {
+            if (!this.desktopLayout || this.pinQueue) {
+                return;
+            }
+            this.clearPqSlideTimer();
+            this.$store.commit('setQueueOverlayClosing', false);
+            this.pqSlideAnim = 'in';
+            this.pqSlideTimer = setTimeout(function() {
+                this.pqSlideAnim = '';
+                this.pqSlideTimer = undefined;
+            }.bind(this), 200);
+        },
+        startPqSlideOut() {
+            if (!this.desktopLayout || this.pinQueue) {
+                this.visibilityToggled(false);
+                return;
+            }
+            this.clearPqSlideTimer();
+            this.cancelCloseTimer();
+            this.$store.commit('setQueueOverlayClosing', true);
+            this.pqSlideAnim = 'out';
+            this.pqSlideTimer = setTimeout(function() {
+                this.$store.commit('setQueueOverlayClosing', false);
+                this.pqSlideAnim = '';
+                this.pqSlideTimer = undefined;
+                this.visibilityToggled(false);
+            }.bind(this), 200);
+        },
+        handleQueueVisibility(shown) {
+            if (shown) {
+                this.visibilityToggled(true);
+                this.startPqSlideIn();
+            } else if (this.desktopLayout && !this.pinQueue) {
+                if (this.$store.state.queueOverlayClosing || 'out'==this.pqSlideAnim) {
+                    return;
+                }
+                this.startPqSlideOut();
+            } else {
+                this.visibilityToggled(false);
+            }
         }
-    },
+    }, typeof listSwipeMethods!=='undefined' ? listSwipeMethods : {},
+       typeof contextSheetMethods!=='undefined' ? contextSheetMethods : {}),
     filters: {
         displayCount: function (value) {
             if (!value) {
@@ -1831,7 +2637,13 @@ var lmsQueue = Vue.component("lms-queue", {
             this.$store.commit('menuVisible', {name:'queue', shown:newVal});
             if (newVal) {
                 this.cancelCloseTimer();
+                if (typeof this.ctxSheetPrepareOpen==='function' && !this.desktopLayout) {
+                    this.ctxSheetPrepareOpen();
+                }
             } else {
+                if (typeof this.ctxSheetResetStyles==='function') {
+                    this.ctxSheetResetStyles();
+                }
                 this.menu.closed = new Date().getTime();
                 if (!this.dialogOpen) {
                     this.resetCloseTimer();
@@ -1839,10 +2651,14 @@ var lmsQueue = Vue.component("lms-queue", {
             }
         },
         '$store.state.showQueue': function(shown) {
-            this.visibilityToggled(shown);
+            if (!this.nowPlayingExpanded && !this.maiShown) {
+                this.handleQueueVisibility(shown);
+            }
         },
         '$store.state.showQueueNp': function(shown) {
-            this.visibilityToggled(shown);
+            if (this.nowPlayingExpanded || this.maiShown) {
+                this.handleQueueVisibility(shown);
+            }
         },
         '$store.state.pinQueue': function(pinned) {
             if (pinned) {
@@ -1867,16 +2683,30 @@ var lmsQueue = Vue.component("lms-queue", {
         },
         'menuExpanded': function(newVal) {
             setLocalStorageVal('queue-menu-expanded', newVal);
+        },
+        'nowPlayingExpanded': function() {
+            this.$nextTick(function() { this.updateWidth(); }.bind(this));
         }
     },
     beforeDestroy() {
+        this.queueDragHoldCancel();
+        this.clearPqSlideTimer();
+        this.$store.commit('setQueueOverlayClosing', false);
         if (undefined!==this.updateTimer) {
             clearTimeout(this.updateTimer);
             this.updateTimer = undefined;
         }
         if (undefined!=this.scrollElement) {
             this.scrollElement.removeEventListener("scroll", this.handleScroll);
+            this.scrollElement.removeEventListener("touchstart", this.queueTouchStart);
+            this.scrollElement.removeEventListener("touchmove", this.queueTouchMove);
+            this.scrollElement.removeEventListener("touchend", this.queueTouchEnd);
+            this.scrollElement.removeEventListener("touchcancel", this.queueTouchEnd);
+            this.scrollElement.removeEventListener("mousedown", this.queuePointerDown);
         }
+        window.removeEventListener("mousemove", this.queuePointerMove, false);
+        window.removeEventListener("mouseup", this.queuePointerUp, false);
+        this.queueDragDetachWindow();
     }
 });
 
