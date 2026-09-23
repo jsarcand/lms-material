@@ -54,6 +54,151 @@ function isGrey(rgb) {
     return Math.abs(rgb[0]-rgb[1])<2 && Math.abs(rgb[0]-rgb[2])<2 && Math.abs(rgb[1]-rgb[2])<2;
 }
 
+function swatchRgb(swatches, name) {
+    if (undefined!=swatches && swatches[name] && swatches[name].getPopulation()>0) {
+        return swatches[name].getRgb();
+    }
+    return undefined;
+}
+
+function defaultPalette(darkUi) {
+    if (darkUi) {
+        return [[38, 48, 54], [24, 32, 36], [52, 64, 72]];
+    }
+    return [[144, 164, 174], [176, 190, 197], [207, 216, 220]];
+}
+
+function normalizePaletteColor(rgb, role, darkUi) {
+    if (undefined==rgb || isGrey(rgb)) {
+        return defaultPalette(darkUi)[role=='primary' ? 0 : (role=='secondary' ? 1 : 2)];
+    }
+    let hsv = rgb2Hsv(rgb);
+    if ('primary'==role) {
+        hsv[2] = darkUi ? 0.46 : 0.72;
+        hsv[1] = Math.min(hsv[1], darkUi ? 0.7 : 0.85);
+    } else if ('secondary'==role) {
+        hsv[2] = darkUi ? 0.3 : 0.58;
+        hsv[1] = Math.min(hsv[1], darkUi ? 0.5 : 0.65);
+    } else {
+        hsv[2] = darkUi ? 0.52 : 0.82;
+        hsv[1] = Math.min(hsv[1], darkUi ? 0.4 : 0.45);
+    }
+    return hsv2Rgb(hsv);
+}
+
+function extractPalette(swatches, darkUi, avRgb) {
+    if (undefined==avRgb || isGrey(avRgb)) {
+        return defaultPalette(darkUi);
+    }
+
+    let primary = undefined;
+    let secondary = undefined;
+    let tertiary = undefined;
+
+    if (darkUi) {
+        primary = swatchRgb(swatches, 'DarkVibrant') || swatchRgb(swatches, 'Vibrant') || avRgb;
+        secondary = swatchRgb(swatches, 'DarkMuted') || swatchRgb(swatches, 'Muted') || primary;
+        tertiary = swatchRgb(swatches, 'Muted') || swatchRgb(swatches, 'DarkVibrant') || secondary;
+    } else {
+        primary = swatchRgb(swatches, 'Vibrant') || swatchRgb(swatches, 'LightVibrant') || avRgb;
+        secondary = swatchRgb(swatches, 'Muted') || swatchRgb(swatches, 'LightMuted') || primary;
+        tertiary = swatchRgb(swatches, 'DarkVibrant') || swatchRgb(swatches, 'DarkMuted') || secondary;
+    }
+
+    return [
+        normalizePaletteColor(primary, 'primary', darkUi),
+        normalizePaletteColor(secondary, 'secondary', darkUi),
+        normalizePaletteColor(tertiary, 'tertiary', darkUi)
+    ];
+}
+
+/* WCAG relative luminance (sRGB) — used to keep chrome/primary legible on UI surfaces. */
+function relativeLuminance(rgb) {
+    function channel(c) {
+        c = Math.max(0, Math.min(255, c)) / 255;
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    }
+    return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+}
+
+function contrastRatio(rgbA, rgbB) {
+    let L1 = relativeLuminance(rgbA);
+    let L2 = relativeLuminance(rgbB);
+    let lighter = Math.max(L1, L2);
+    let darker = Math.min(L1, L2);
+    return (lighter + 0.05) / (darker + 0.05);
+}
+
+/**
+ * Nudge extracted theme color until it contrasts with the main UI surface.
+ * Keeps hue; adjusts value (and a little saturation if washed out).
+ * Target ~3:1 for large chrome (icons/buttons), not body text.
+ */
+function ensureThemeContrast(rgb, darkUi, minRatio) {
+    if (undefined==rgb) {
+        return darkUi ? [25, 118, 210] : [25, 118, 210];
+    }
+    minRatio = undefined==minRatio ? 3.2 : minRatio;
+    // Approximate list/chrome surfaces (not pure black/white — matches typical Material skins)
+    let bg = darkUi ? [28, 30, 32] : [250, 250, 250];
+    if (contrastRatio(rgb, bg) >= minRatio) {
+        return [Math.round(rgb[0]), Math.round(rgb[1]), Math.round(rgb[2])];
+    }
+    let hsv = rgb2Hsv(rgb);
+    // Washed pastels fail on light UI; boost chroma a bit before darkening
+    if (!darkUi && hsv[1] < 0.28) {
+        hsv[1] = Math.min(0.55, hsv[1] + 0.22);
+    }
+    if (darkUi && hsv[1] < 0.2) {
+        hsv[1] = Math.min(0.5, hsv[1] + 0.18);
+    }
+    let step = darkUi ? 0.035 : -0.035;
+    let best = hsv2Rgb(hsv);
+    let bestRatio = contrastRatio(best, bg);
+    for (let i = 0; i < 28; ++i) {
+        hsv[2] = Math.max(0.12, Math.min(0.96, hsv[2] + step));
+        let cand = hsv2Rgb(hsv);
+        let r = contrastRatio(cand, bg);
+        if (r > bestRatio) {
+            best = cand;
+            bestRatio = r;
+        }
+        if (r >= minRatio) {
+            return cand;
+        }
+    }
+    // Guaranteed-legible fallback: keep hue, force readable V
+    hsv[2] = darkUi ? 0.78 : 0.42;
+    hsv[1] = Math.max(hsv[1], darkUi ? 0.4 : 0.5);
+    return hsv2Rgb(hsv);
+}
+
+function themeRgbFromVibrant(vRgb, avRgb, darkUi) {
+    if (isGrey(avRgb) || undefined==vRgb || isGrey(vRgb)) {
+        return [25, 118, 210];
+    }
+    let rgb = vRgb ? vRgb : avRgb;
+    let hsv = rgb2Hsv(rgb);
+    // Seed brightness by theme: dark UI needs light ink; light UI needs deeper ink
+    hsv[2] = darkUi ? 0.78 : 0.55;
+    hsv[1] = Math.min(hsv[1], darkUi ? 0.8 : 0.75);
+    return ensureThemeContrast(hsv2Rgb(hsv), !!darkUi);
+}
+
+/* Tint mixes into page backgrounds — keep it bright enough on light themes so
+   switching to a player with a dark cover does not black-out browse/queue. */
+function tintRgbFromCover(avRgb, themeRgb, darkUi) {
+    let base = undefined!=avRgb ? avRgb : (undefined!=themeRgb ? themeRgb : [25, 118, 210]);
+    if (darkUi) {
+        return base;
+    }
+    let hsv = rgb2Hsv(base);
+    // Force a soft, light wash for light UI
+    hsv[2] = Math.max(0.82, Math.min(0.96, hsv[2] < 0.5 ? 0.88 : hsv[2]));
+    hsv[1] = Math.min(hsv[1], 0.35);
+    return hsv2Rgb(hsv);
+}
+
 var currentCover = undefined;
 var lmsCurrentCover = Vue.component('lms-currentcover', {
     template: `<div><img crossOrigin="anonymous" id="current-cover" :src="accessUrl" style="display:none"/></div>`,
@@ -120,6 +265,12 @@ var lmsCurrentCover = Vue.component('lms-currentcover', {
 
             if (coverUrl!=this.coverUrl) {
                 this.coverUrl = coverUrl;
+                // Reset palette immediately so previous player's dark tint does not linger
+                // on browse/queue while the new cover loads (or fails).
+                if (this.$store.state.colorUsage==COLOR_USE_FROM_COVER) {
+                    let darkUi = this.$store.state.darkUi;
+                    this.applyMorph(defaultPalette(darkUi), [25, 118, 210], [25, 118, 210], DEFAULT_COVER==coverUrl || undefined==coverUrl);
+                }
                 bus.$emit('currentCover', this.coverUrl, this.queueIndex, artist, album);
                 if (1==queryParams.nativeCover) {
                     try {
@@ -130,12 +281,11 @@ var lmsCurrentCover = Vue.component('lms-currentcover', {
                     emitNative("MATERIAL-COVER\nURL " + this.coverUrl, queryParams.nativeCover);
                 }
 
-                if (this.$store.state.colorUsage==COLOR_USE_FROM_COVER) {
-                    this.accessUrl = undefined==coverUrl || (!coverUrl.startsWith("http:") && !coverUrl.startsWith("https:"))
-                        ? coverUrl
-                        : "https://images1-focus-opensocial.googleusercontent.com/gadgets/proxy?container=focus&refresh=2592000&url="+encodeURIComponent(coverUrl);
-                } else {
-                    this.accessUrl = undefined;
+                let loadUrl = undefined==coverUrl || (!coverUrl.startsWith("http:") && !coverUrl.startsWith("https:"))
+                    ? coverUrl
+                    : "https://images1-focus-opensocial.googleusercontent.com/gadgets/proxy?container=focus&refresh=2592000&url="+encodeURIComponent(coverUrl);
+                if (this.accessUrl!=loadUrl) {
+                    this.accessUrl = loadUrl;
                 }
             }
         }.bind(this));
@@ -146,92 +296,114 @@ var lmsCurrentCover = Vue.component('lms-currentcover', {
 
         currentCover = this;
         document.getElementById('current-cover').addEventListener('load', function() {
-            currentCover.calculateColors();
+            currentCover.processCover();
         });
         bus.$on('themeChanged', function() {
             if (this.$store.state.colorUsage==COLOR_USE_FROM_COVER && this.accessUrl!=this.coverUrl) {
                 this.accessUrl = this.coverUrl;
+            } else if (undefined!=this.accessUrl && DEFAULT_COVER!=this.coverUrl) {
+                this.processCover();
+            }
+        }.bind(this));
+        bus.$on('playerChanged', function() {
+            // New player: drop previous cover-tint immediately; status/cover handlers will re-apply
+            if (this.$store.state.colorUsage==COLOR_USE_FROM_COVER) {
+                let darkUi = this.$store.state.darkUi;
+                this.applyMorph(defaultPalette(darkUi), [25, 118, 210], [25, 118, 210], true);
             }
         }.bind(this));
     },
     methods: {
-        calculateColors() {
-            if (this.$store.state.colorUsage!=COLOR_USE_FROM_COVER) {
+        processCover() {
+            let isDefCover = DEFAULT_COVER==this.coverUrl || undefined==this.coverUrl;
+            let darkUi = this.$store.state.darkUi;
+
+            if (isDefCover) {
+                this.applyMorph(defaultPalette(darkUi), undefined, undefined, true);
                 return;
             }
 
-            if (DEFAULT_COVER==this.coverUrl) {
-                this.handleColor(undefined, undefined);
+            let img = document.getElementById('current-cover');
+            if (undefined==img || !img.complete) {
                 return;
             }
 
+            var swatches = undefined;
             var vRgb = undefined;
             try {
-                var vibrant = new Vibrant(document.getElementById('current-cover'));
-                var swatches = vibrant.swatches()
-                var desired = this.$store.state.darkUi
+                var vibrant = new Vibrant(img);
+                swatches = vibrant.swatches();
+                var desired = darkUi
                     ? ["Vibrant", "LightVibrant", "Muted", "LightMuted", "DarkVibrant", "DarkMuted"]
-                    : ["Vibrant", "DarkVibrant", "Muted", "DarkMuted", "LightVibrant", "LightMuted"]
+                    : ["Vibrant", "DarkVibrant", "Muted", "DarkMuted", "LightVibrant", "LightMuted"];
                 for (let d=0, len=desired.length; d<len && undefined==vRgb; ++d) {
-                    if (swatches[desired[d]] && swatches[desired[d]].getPopulation()>0) {
-                        vRgb = swatches[desired[d]].getRgb();
-                    }
+                    vRgb = swatchRgb(swatches, desired[d]);
                 }
             } catch(e) {
             }
 
-            this.fac.getColorAsync(document.getElementById('current-cover'), {mode:'precision'}).then(color => {
+            this.fac.getColorAsync(img, {mode:'precision'}).then(color => {
                 let rgbs = color.rgb.replace('rgb(', '').replace(')', '').split(',');
                 let avRgb = [parseInt(rgbs[0]), parseInt(rgbs[1]), parseInt(rgbs[2])];
-                this.handleColor(vRgb, avRgb);
-            }).catch(e => { this.handleColor(undefined, undefined); });
+                let palette = extractPalette(swatches, darkUi, avRgb);
+                this.applyMorph(palette, vRgb, avRgb, false);
+            }).catch(e => {
+                this.applyMorph(defaultPalette(darkUi), undefined, undefined, true);
+            });
         },
-        handleColor(vRgb, avRgb) {
-            let isDefCover = undefined==avRgb || DEFAULT_COVER==this.coverUrl;
-            let rgb = undefined;
+        applyMorph(palette, vRgb, avRgb, isDefCover) {
+            let targets = {
+                palette1: palette[0],
+                palette2: palette[1],
+                palette3: palette[2]
+            };
+            let themeRgb = undefined;
             let hexColor = undefined;
 
-            if (isDefCover) {
-                document.documentElement.style.setProperty('--tint-color', 'var(--default-primary-color)');
-                rgb = [25,118,210];
-                hexColor=rgb2Hex(rgb);
-                document.documentElement.style.setProperty('--accent-color', 'var(--default-accent-color)');
-                document.documentElement.style.setProperty('--primary-color', 'var(--default-primary-color)');
-                document.documentElement.style.setProperty('--highlight-rgb', 'var(--default-highlight-rgb)');
-            } else {
-                document.documentElement.style.setProperty('--tint-color', rgb2Hex(avRgb));
+            let darkUi = this.$store.state.darkUi;
+            if (!isDefCover && this.$store.state.colorUsage==COLOR_USE_FROM_COVER) {
                 if (isGrey(avRgb) || undefined==vRgb || isGrey(vRgb)) {
-                    rgb = [25,118,210];
-                    hexColor=rgb2Hex(rgb);
-                    document.documentElement.style.setProperty('--accent-color', 'var(--default-accent-color)');
-                    document.documentElement.style.setProperty('--primary-color', 'var(--default-primary-color)');
-                    document.documentElement.style.setProperty('--highlight-rgb', 'var(--default-highlight-rgb)');
+                    themeRgb = [25, 118, 210];
                 } else {
-                    rgb = vRgb ? vRgb : avRgb;
-                    let hsv = rgb2Hsv(rgb);
-                    hsv[2]=0.8235; // Matches 'v' from [25,118,210]
-                    hsv[1]=Math.min(hsv[1], 0.8);
-                    rgb = hsv2Rgb(hsv);
-
-                    hexColor=rgb2Hex(rgb);
-                    document.documentElement.style.setProperty('--primary-color', hexColor);
-                    document.documentElement.style.setProperty('--highlight-rgb', rgb[0]+","+rgb[1]+","+rgb[2]);
-                    document.documentElement.style.setProperty('--accent-color', rgb2Hex(rgb));
+                    themeRgb = themeRgbFromVibrant(vRgb, avRgb, darkUi);
                 }
+                // Final pass: muted pale / near-bg covers still fail after vibrant pick
+                themeRgb = ensureThemeContrast(themeRgb, darkUi);
+                hexColor = morphRgb2Hex(themeRgb);
+                targets.primary = themeRgb;
+                targets.accent = themeRgb;
+                targets.highlight = themeRgb;
+                targets.tint = tintRgbFromCover(avRgb, themeRgb, darkUi);
+            } else if (isDefCover && this.$store.state.colorUsage==COLOR_USE_FROM_COVER) {
+                themeRgb = [25, 118, 210];
+                hexColor = morphRgb2Hex(themeRgb);
+                targets.primary = themeRgb;
+                targets.accent = themeRgb;
+                targets.highlight = themeRgb;
+                targets.tint = themeRgb;
             }
 
-            emitToolbarColorsFromState(this.$store.state);
-            if (1==queryParams.nativeAccent) {
-                bus.$nextTick(function () {
-                    try {
-                        NativeReceiver.updateAccentColor(hexColor);
-                    } catch (e) {
+            let hexForNative = hexColor;
+            colorMorph.setTargets(targets, function() {
+                if (currentCover.$store.state.colorUsage==COLOR_USE_FROM_COVER) {
+                    emitToolbarColorsFromState(currentCover.$store.state);
+                    if (undefined!=hexForNative) {
+                        if (1==queryParams.nativeAccent) {
+                            bus.$nextTick(function () {
+                                try {
+                                    NativeReceiver.updateAccentColor(hexForNative);
+                                } catch (e) {
+                                }
+                            });
+                        } else if (queryParams.nativeAccent>0) {
+                            emitNative("MATERIAL-ACCENT\nVAL " + hexForNative, queryParams.nativeAccent);
+                        }
                     }
-                });
-            } else if (queryParams.nativeAccent>0) {
-                emitNative("MATERIAL-ACCENT\nVAL " + hexColor, queryParams.nativeAccent);
-            }
-            bus.$emit("colorChanged", rgb[0]+rgb[1]+rgb[2]);
+                    if (undefined!=themeRgb) {
+                        bus.$emit("colorChanged", themeRgb[0]+themeRgb[1]+themeRgb[2]);
+                    }
+                }
+            }.bind(this));
         }
     }
 });
