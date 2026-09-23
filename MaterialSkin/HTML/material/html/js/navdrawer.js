@@ -20,7 +20,7 @@ const TB_CUSTOM_SETTINGS_ACTIONS = {id:20};
 
 Vue.component('lms-navdrawer', {
     template: `
-<v-navigation-drawer v-model="show" app temporary :width="maxWidth" style="display:flex;flex-direction:column">
+<v-navigation-drawer v-model="show" app temporary touchless :width="maxWidth" class="nd-glass" v-bind:class="{'nd-closing':drawerClosing}" style="display:flex;flex-direction:column">
  <div class="nd-top"></div>
  <div class="nd-header">
   <v-menu v-if="enableMenuButton" bottom left v-model="showMenu" style="position:absolute; right:40px; z-index:5">
@@ -62,8 +62,8 @@ Vue.component('lms-navdrawer', {
     </template>
    </v-list>
   </v-menu>
-  <v-list-tile @click.prevent="close">
-   <v-list-tile-avatar v-if="(undefined==queryParams.dragleft || queryParams.dragleft<=48) && ('l'!=queryParams.tbarBtnsPos)" :title="i18n('Close')"><v-btn icon flat @click="show=false"><v-icon>arrow_back<v-icon></v-btn></v-list-tile-avatar>
+  <v-list-tile class="nd-header-tile" @click.prevent="close">
+   <v-list-tile-avatar v-if="(undefined==queryParams.dragleft || queryParams.dragleft<=48) && ('l'!=queryParams.tbarBtnsPos)" class="nd-header-back" :title="i18n('Close')"><v-btn icon flat @click.stop="show=false"><v-icon>{{BACK_ICON}}</v-icon></v-btn></v-list-tile-avatar>
    <div v-if="LMS_P_USERS" class="nd-user">
     <div class="nd-avatar">
      <img v-if="undefined!=userAvatar.img" class="user-img" :src="userAvatar.img"></img>
@@ -73,8 +73,8 @@ Vue.component('lms-navdrawer', {
     <div class="ellipsis">{{userName}}</div>
    </div>
    <div v-else class="lyrion-logo" v-longpress:nomove="clickLogo"><img :src="'lyrion-logo' | svgIcon(darkUi)"></img></div>
-   <v-list-tile-action>
-    <v-btn icon @click="menuAction(TB_INFO.id)" style="position:absolute;right:16px" :title="updatesAvailable ? trans.updatesAvailable : restartRequired ? trans.restartRequired : TB_INFO.title">
+   <v-list-tile-action class="nd-header-info">
+    <v-btn icon @click.stop="menuAction(TB_INFO.id)" :title="updatesAvailable ? trans.updatesAvailable : restartRequired ? trans.restartRequired : TB_INFO.title">
      <img v-if="updatesAvailable" class="svg-img" :src="'update' | infoIcon(darkUi, true)"></img>
      <img v-else-if="restartRequired" class="svg-img" :src="'restart' | infoIcon(darkUi, true)">
      <v-icon v-else>{{TB_INFO.icon}}</v-icon>
@@ -91,17 +91,23 @@ Vue.component('lms-navdrawer', {
    <template v-for="(item, index) in visiblePlayers" v-if="connected">
     <v-subheader v-if="index==0 && !item.isgroup && visiblePlayers[visiblePlayers.length-1].isgroup">{{trans.standardPlayers}}</v-subheader>
     <v-subheader v-else-if="index>0 && item.isgroup && !visiblePlayers[index-1].isgroup">{{trans.groupPlayers}}</v-subheader>
-    <v-list-tile @click="setPlayer(item.id)" v-bind:class="{'nd-active-player':player && item.id === player.id}" :id="'nd-player-'+index">
+    <v-list-tile @click="setPlayer(item.id)" v-bind:class="{'nd-active-player':player && item.id === player.id, 'nd-player-glow':glowPlayerId==item.id && !glowPlayerOnce, 'nd-player-glow-once':glowPlayerId==item.id && glowPlayerOnce, 'nd-player-picked':pickedPlayerId==item.id}" :id="'nd-player-'+index">
      <v-list-tile-avatar v-longpress:nomove="syncPlayer" :id="index+'-icon'">
-      <v-icon v-if="item.isplaying" class="playing-badge">play_arrow</v-icon>
       <v-icon v-if="item.icon.icon">{{item.icon.icon}}</v-icon><img v-else class="svg-img" :src="item.icon.svg | svgIcon(darkUi)"></img>
      </v-list-tile-avatar>
-     <v-list-tile-content>
+     <v-list-tile-content v-longpress:nomove="playerEntryPress" :id="'nd-player-content-'+index">
       <v-list-tile-title>{{item.name}}</v-list-tile-title>
      </v-list-tile-content>
-      <v-list-tile-action v-if="index<10 && keyboardControl" class="menu-shortcut menu-shortcut-player" v-bind:class="{'menu-shortcut-player-apple':IS_APPLE}">{{index|playerShortcut}}</v-list-tile-action>
-      <v-list-tile-action>
-       <v-btn v-if="item.canpoweroff" icon style="float:right" v-longpress:nomove="togglePower" :id="index+'-power-btn'" :title="(item.id==player.id && playerStatus.ison) || item.ison ? i18n('Switch off %1', item.name) : i18n('Switch on %1', item.name)"><v-icon v-bind:class="{'dimmed': (item.id==player.id ? !playerStatus.ison : !item.ison)}">power_settings_new</v-icon></v-btn>
+      <v-list-tile-action class="nd-player-end">
+       <div class="nd-player-end-inner">
+        <span v-if="index<10 && keyboardControl && shortcutModHeld" class="menu-shortcut menu-shortcut-player nd-player-shortcut" v-bind:class="{'menu-shortcut-player-apple':IS_APPLE}">{{index|playerShortcut}}</span>
+        <span v-if="item.isplaying" class="nd-vu-meter" aria-hidden="true">
+         <span class="nd-vu-bar"></span>
+         <span class="nd-vu-bar"></span>
+         <span class="nd-vu-bar"></span>
+        </span>
+        <v-btn v-if="item.canpoweroff" icon v-longpress:nomove="togglePower" :id="index+'-power-btn'" :title="(item.id==player.id && playerStatus.ison) || item.ison ? i18n('Switch off %1', item.name) : i18n('Switch on %1', item.name)"><v-icon v-bind:class="{'dimmed': (item.id==player.id ? !playerStatus.ison : !item.ison)}">power_settings_new</v-icon></v-btn>
+       </div>
       </v-list-tile-action>
     </v-list-tile>
     <v-list-tile v-if="connected && player && item.id === player.id && (playerStatus.sleepTime || playerStatus.alarmStr)" class="hide-for-mini status">
@@ -131,27 +137,27 @@ Vue.component('lms-navdrawer', {
    </template>
 
   </v-list>
-  <v-spacer></v-spacer>
  </div>
 
- <div style="height:1px; width:100%; border-top:1px solid var(--list-item-border-color)!important;"></div>
- <div v-if="showShortcuts">
+ <div class="nd-footer">
+ <div class="nd-footer-divider"></div>
+ <div v-if="showShortcuts" class="nd-footer-shortcuts">
   <v-subheader>{{trans.shortcuts}}</v-subheader>
   <ul class="nd-shortcuts" v-bind:class="{'nd-shortcuts-wide':maxWidth>320}">
    <li v-for="(item, index) in shortcuts">
-    <v-btn icon class="toolbar-button" @click="show=false; bus.$emit('browse-shortcut', item.id)" v-if="!homeButton || item.id!=HOME_SHORTCUT" :title="item.title">
+    <v-btn icon class="toolbar-button" @click.stop="show=false; bus.$emit('browse-shortcut', item.id)" v-if="!homeButton || item.id!=HOME_SHORTCUT" :title="item.title">
      <v-icon v-if="undefined!=item.icon">{{item.icon}}</v-icon>
      <img v-else class="svg-img" :src="item.svg | svgIcon(darkUi)"></img>
     </v-btn>
    </li>
   </ul>
  </div>
- <div v-if="settingsIcons">
+ <div v-if="settingsIcons" class="nd-footer-settings">
   <v-subheader>{{TB_SETTINGS.title}}</v-subheader>
   <ul class="nd-shortcuts" v-bind:class="{'nd-shortcuts-wide':maxWidth>320}">
    <template v-for="(item, index) in menuItems">
     <li :title="item.title" v-if="item!=DIVIDER && !item.hdr && (TB_PLAYER_SETTINGS.id==item.id ? (player && connected) : (TB_SERVER_SETTINGS.id!=item.id || (unlockAll && connected)))">
-     <v-btn v-if="TB_APP_SETTINGS.id==item.id" :href="queryParams.appSettings" @click="show=false" icon class="toolbar-button">
+     <v-btn v-if="TB_APP_SETTINGS.id==item.id" icon class="toolbar-button" @click="menuAction(item.id)">
       <img class="svg-img" :src="TB_APP_SETTINGS.svg | svgIcon(darkUi)"></img>
      </v-btn>
      <v-btn v-else-if="TB_CUSTOM_SETTINGS_ACTIONS.id!=item.id" icon class="toolbar-button" @click="menuAction(item.id)">
@@ -172,7 +178,7 @@ Vue.component('lms-navdrawer', {
    <v-list-tile-title>{{TB_APP_QUIT.title}}</v-list-tile-title>
   </v-list-tile>
  </div>
- <v-list class="nd-list py-0" v-else>
+ <v-list class="nd-list nd-footer-settings py-0" v-else>
   <template v-for="(item, index) in menuItems">
    <v-divider v-if="item===DIVIDER"></v-divider>
    <v-subheader v-else-if="item.hdr">{{item.title}}</v-subheader>
@@ -183,7 +189,7 @@ Vue.component('lms-navdrawer', {
     </v-list-tile-content>
     <v-list-tile-action v-if="item.shortcut && keyboardControl" class="menu-shortcut">{{item.shortcut}}</v-list-tile-action>
    </v-list-tile>
-   <v-list-tile v-else-if="TB_APP_SETTINGS.id==item.id" :href="queryParams.appSettings" @click="show=false">
+   <v-list-tile v-else-if="TB_APP_SETTINGS.id==item.id" @click="menuAction(item.id)">
     <v-list-tile-avatar><img class="svg-img" :src="TB_APP_SETTINGS.svg | svgIcon(darkUi)"></img></v-list-tile-avatar>
     <v-list-tile-content><v-list-tile-title>{{TB_APP_SETTINGS.stitle}}</v-list-tile-title></v-list-tile-content>
    </v-list-tile>
@@ -201,6 +207,7 @@ Vue.component('lms-navdrawer', {
   </v-list-tile>
  </v-list>
  <div class="nd-bottom"></div>
+ </div>
 </v-navigation-drawer>
 `,
     props: [],
@@ -222,7 +229,14 @@ Vue.component('lms-navdrawer', {
             height: 50,
             connected: true,
             windowControlsOnLeft: false,
-            showAllPlayers: false
+            showAllPlayers: false,
+            glowPlayerId: undefined,
+            glowPlayerTimer: undefined,
+            glowPlayerOnce: false,
+            pickedPlayerId: undefined,
+            closeDrawerTimer: undefined,
+            drawerClosing: false,
+            shortcutModHeld: false
         }
     },
     created() {
@@ -239,29 +253,52 @@ Vue.component('lms-navdrawer', {
         this.initItems();
         this.showAllPlayers = getLocalStorageBool('nd-showAllPlayers', this.showAllPlayers);
         bus.$on('navDrawer', function() {
+            this.drawerClosing = false;
             this.show = true;
             addBrowserHistoryItem();
-            if (this.$store.state.player) {
-                for (let i=0, loop=this.visiblePlayers, len=loop.length; i<len; ++i) {
-                    if (loop[i].id==this.$store.state.player.id) {
-                        let list = document.getElementById('nd-list', 0);
-                        if (i<2) {
-                            setElemScrollTop(list, 0);
-                        } else {
-                            let listHeight = list.clientHeight;
-                            let entrySize = 48;
-                            let elementTop = list.offsetTop;
-                            let divTop = document.getElementById('nd-player-'+i).offsetTop;
-                            let elementRelativeTop = divTop - elementTop;
-
-                            if ((elementRelativeTop + (2*entrySize)) > listHeight) {
-                                setElemScrollTop(list, elementRelativeTop-entrySize);
-                            }
-                        }
-                        break;
+            // Force header/footer to paint on the first open frame (edge-swipe too).
+            // Solid backgrounds + flex are in CSS; this reflow kicks compositing early.
+            this.$nextTick(function() {
+                try {
+                    let aside = this.$el && (this.$el.$el || this.$el);
+                    if (aside && aside.offsetHeight) { /* force layout */ }
+                    let hdr = aside && aside.querySelector && aside.querySelector('.nd-header');
+                    let ftr = aside && aside.querySelector && aside.querySelector('.nd-footer');
+                    if (hdr) { hdr.style.visibility = 'visible'; hdr.style.opacity = '1'; }
+                    if (ftr) { ftr.style.visibility = 'visible'; ftr.style.opacity = '1'; }
+                } catch (e) {}
+                requestAnimationFrame(function() {
+                    if (!this.$store.state.player) {
+                        return;
                     }
-                }
-            }
+                    for (let i=0, loop=this.visiblePlayers, len=loop.length; i<len; ++i) {
+                        if (loop[i].id==this.$store.state.player.id) {
+                            let list = document.getElementById('nd-list');
+                            if (!list) {
+                                break;
+                            }
+                            if (i<2) {
+                                setElemScrollTop(list, 0);
+                            } else {
+                                let listHeight = list.clientHeight;
+                                let entrySize = 48;
+                                let elementTop = list.offsetTop;
+                                let playerEl = document.getElementById('nd-player-'+i);
+                                if (!playerEl) {
+                                    break;
+                                }
+                                let divTop = playerEl.offsetTop;
+                                let elementRelativeTop = divTop - elementTop;
+
+                                if ((elementRelativeTop + (2*entrySize)) > listHeight) {
+                                    setElemScrollTop(list, elementRelativeTop-entrySize);
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }.bind(this));
+            }.bind(this));
         }.bind(this));
         this.maxWidth = window.innerWidth>500 ? 400 : 300;
         bus.$on('windowWidthChanged', function() {
@@ -316,11 +353,25 @@ Vue.component('lms-navdrawer', {
             bindKey(LMS_SERVER_SETTINGS_KEYBOARD, 'mod');
             bindKey(LMS_INFORMATION_KEYBOARD, 'mod');
             bindKey(LMS_MANAGEPLAYERS_KEYBOARD, 'mod');
+            // Main menu / sidebar / shortcuts: ⌘B (macOS) / Ctrl+B (Windows, Linux)
+            bindKey(LMS_NAV_DRAWER_KEYBOARD, 'mod');
             for (var i=0; i<=9; ++i) {
-                bindKey(''+i, 'alt');
+                // macOS: ⌘+N to switch player; others: Alt+N
+                bindKey(''+i, IS_APPLE ? 'mod' : 'alt');
             }
             bus.$on('keyboard', function(key, modifier) {
                 if (this.$store.state.openDialogs.length>1 || (1==this.$store.state.openDialogs.length && this.$store.state.openDialogs[0]!='info-dialog')) {
+                    return;
+                }
+                // Toggle main menu / sidebar (players + shortcuts): ⌘B / Ctrl+B
+                if ('mod'==modifier && LMS_NAV_DRAWER_KEYBOARD==key) {
+                    if (this.$store.state.visibleMenus.size==0 || (this.$store.state.visibleMenus.size==1 && this.$store.state.visibleMenus.has('navdrawer'))) {
+                        if (this.show) {
+                            this.close();
+                        } else {
+                            bus.$emit('navDrawer');
+                        }
+                    }
                     return;
                 }
                 if ('mod'==modifier) {
@@ -330,9 +381,23 @@ Vue.component('lms-navdrawer', {
                             this.menuAction(LMS_UI_SETTINGS_KEYBOARD==key ? TB_UI_SETTINGS.id : LMS_PLAYER_SETTINGS_KEYBOARD==key ? TB_PLAYER_SETTINGS.id :
                                             LMS_SERVER_SETTINGS_KEYBOARD==key ? TB_SERVER_SETTINGS.id :
                                             LMS_INFORMATION_KEYBOARD==key ? TB_INFO.id : TB_MANAGE_PLAYERS.id);
+                        } else if (IS_APPLE && 1==key.length && !isNaN(key)) {
+                            // ⌘+N switch player (macOS)
+                            var player = parseInt(key);
+                            if (player==0) {
+                                player=10;
+                            } else {
+                                player=player-1;
+                            }
+                            if (player<this.$store.state.players.length) {
+                                var id = this.$store.state.players[player].id;
+                                if (id!=this.$store.state.player.id) {
+                                    this.setPlayer(id);
+                                }
+                            }
                         }
                     }
-                } else if ('alt'==modifier && 1==key.length && !isNaN(key)) {
+                } else if (!IS_APPLE && 'alt'==modifier && 1==key.length && !isNaN(key)) {
                     var player = parseInt(key);
                     if (player==0) {
                         player=10;
@@ -347,6 +412,34 @@ Vue.component('lms-navdrawer', {
                     }
                 }
             }.bind(this));
+            // Show player Alt+N hints only while a modifier is held (no clutter over VU meter)
+            this._ndShortcutKeyDown = function(e) {
+                if (e.key === 'Alt' || e.key === 'Meta' || e.key === 'Control' || e.altKey || e.metaKey || e.ctrlKey) {
+                    this.shortcutModHeld = true;
+                }
+            }.bind(this);
+            this._ndShortcutKeyUp = function(e) {
+                if (e.key === 'Alt' || e.key === 'Meta' || e.key === 'Control' || (!e.altKey && !e.metaKey && !e.ctrlKey)) {
+                    this.shortcutModHeld = false;
+                }
+            }.bind(this);
+            this._ndShortcutBlur = function() {
+                this.shortcutModHeld = false;
+            }.bind(this);
+            window.addEventListener('keydown', this._ndShortcutKeyDown, false);
+            window.addEventListener('keyup', this._ndShortcutKeyUp, false);
+            window.addEventListener('blur', this._ndShortcutBlur, false);
+        }
+    },
+    beforeDestroy() {
+        if (this._ndShortcutKeyDown) {
+            window.removeEventListener('keydown', this._ndShortcutKeyDown, false);
+        }
+        if (this._ndShortcutKeyUp) {
+            window.removeEventListener('keyup', this._ndShortcutKeyUp, false);
+        }
+        if (this._ndShortcutBlur) {
+            window.removeEventListener('blur', this._ndShortcutBlur, false);
         }
     },
     methods: {
@@ -410,14 +503,110 @@ Vue.component('lms-navdrawer', {
             }
         },
         setPlayer(id) {
-            if (id == this.$store.state.player.id) {
+            this.cancelDrawerClose();
+            let isSame = this.$store.state.player && id == this.$store.state.player.id;
+            // Instant touch highlight on the device; close drawer immediately (no wait for select glow)
+            this.pickedPlayerId = id;
+            if (isSame) {
                 bus.$emit('refreshStatus');
             } else {
                 this.$store.commit('setPlayer', id);
             }
-            this.show = false;
+            this.animateDrawerClose();
+        },
+        cancelDrawerClose() {
+            if (undefined!=this.closeDrawerTimer) {
+                clearTimeout(this.closeDrawerTimer);
+                this.closeDrawerTimer = undefined;
+            }
+            this.pickedPlayerId = undefined;
+        },
+        animateDrawerClose() {
+            if (!this.show) {
+                return;
+            }
+            this.drawerClosing = true;
+            setTimeout(function() {
+                this.show = false;
+                setTimeout(function() {
+                    this.drawerClosing = false;
+                }.bind(this), 50);
+            }.bind(this), 280);
+        },
+        playerEntryPress(longPress, el, event) {
+            // Short press: let the tile @click select the player.
+            // Long press on the name: move active queue here, glow twice, select.
+            if (!longPress) {
+                return;
+            }
+            if (event) {
+                try { event.preventDefault(); } catch (e) {}
+                try { event.stopPropagation(); } catch (e) {}
+            }
+            if (!el || !el.id || !el.id.startsWith('nd-player-content-')) {
+                return;
+            }
+            let idx = parseInt(el.id.replace('nd-player-content-', ''));
+            if (isNaN(idx) || idx<0 || idx>=this.visiblePlayers.length) {
+                return;
+            }
+            let target = this.visiblePlayers[idx];
+            if (!target) {
+                return;
+            }
+            let from = this.$store.state.player;
+            if (!from || from.id==target.id) {
+                this.flashPlayerGlow(target.id);
+                this.$store.commit('setPlayer', target.id);
+                setTimeout(function() { this.show = false; }.bind(this), 700);
+                return;
+            }
+            lmsCommand("", ["material-skin", "transferqueue", "from:"+from.id, "to:"+target.id, "mode:move"]).then(({data}) => {
+                if (undefined!=data && undefined!=data.result && undefined!=data.result.error) {
+                    bus.$emit('showError', undefined, data.result.error);
+                    return;
+                }
+                this.flashPlayerGlow(target.id);
+                this.$store.commit('setPlayer', target.id);
+                // Always start playback on the newly selected device after queue transfer
+                lmsCommand(target.id, ["play"]).then(() => {
+                    bus.$emit('refreshStatus', target.id);
+                }).catch(() => {
+                    bus.$emit('refreshStatus', target.id);
+                });
+                // Keep drawer open briefly so the double glow is visible
+                setTimeout(function() {
+                    this.show = false;
+                }.bind(this), 900);
+            }).catch(err => {
+                bus.$emit('showError', err, i18n("Failed to transfer queue"));
+            });
+        },
+        flashPlayerGlow(id, once) {
+            if (undefined!=this.glowPlayerTimer) {
+                clearTimeout(this.glowPlayerTimer);
+                this.glowPlayerTimer = undefined;
+            }
+            this.glowPlayerOnce = !!once;
+            this.glowPlayerId = undefined;
+            this.$nextTick(function() {
+                this.glowPlayerId = id;
+                this.glowPlayerTimer = setTimeout(function() {
+                    this.glowPlayerId = undefined;
+                    this.glowPlayerOnce = false;
+                    this.glowPlayerTimer = undefined;
+                }.bind(this), once ? 500 : 1000);
+            }.bind(this));
         },
         close() {
+            this.cancelDrawerClose();
+            this.drawerClosing = false;
+            if (undefined!=this.glowPlayerTimer) {
+                clearTimeout(this.glowPlayerTimer);
+                this.glowPlayerTimer = undefined;
+            }
+            this.glowPlayerId = undefined;
+            this.glowPlayerOnce = false;
             if (this.showMenu) {
                 this.showMenu = false;
             } else {
@@ -458,7 +647,9 @@ Vue.component('lms-navdrawer', {
             }
         },
         menuAction(id) {
-            if (TB_UI_SETTINGS.id==id) {
+            if (TB_APP_SETTINGS.id==id) {
+                bus.$emit('dlg.open', 'appsettings');
+            } else if (TB_UI_SETTINGS.id==id) {
                 bus.$emit('dlg.open', 'uisettings');
             } else if (TB_PLAYER_SETTINGS.id==id) {
                 if (this.connected) {
@@ -751,6 +942,9 @@ Vue.component('lms-navdrawer', {
             bus.$emit('navdrawer', newVal);
             this.$store.commit('menuVisible', {name:'navdrawer', shown:newVal});
             if (newVal) {
+                this.cancelDrawerClose();
+                this.drawerClosing = false;
+                this.pickedPlayerId = undefined;
                 bus.$emit('refreshServerStatus');
                 this.startStatusTimer();
             } else {
@@ -777,5 +971,10 @@ Vue.component('lms-navdrawer', {
     beforeDestroy() {
         this.cancelSleepTimer();
         this.cancelStatusTimer();
+        this.cancelDrawerClose();
+        if (undefined!=this.glowPlayerTimer) {
+            clearTimeout(this.glowPlayerTimer);
+            this.glowPlayerTimer = undefined;
+        }
     }
 })

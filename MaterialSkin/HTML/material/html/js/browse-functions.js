@@ -12,6 +12,43 @@ function browseCanSelect(item) {
     return undefined!=item && (undefined!=item.stdItem || (item.menu && item.menu.length>0));
 }
 
+/**
+ * Build iframe URL for a Home → Extras entry.
+ * LMS returns relative paths like "plugins/Foo/index.html?" — under /material/
+ * those resolve to /material/plugins/… and often look empty/broken.
+ * Force LMS-root absolute path (leading /) and append player= with raw MAC
+ * (do not encodeURIComponent — plugins expect "aa:bb:…", not %3A).
+ */
+function browseExtrasPlayerUrl(url, playerId) {
+    let u = (url == null) ? '' : ('' + url).trim();
+    if (!u) {
+        return u;
+    }
+    // Absolute under LMS web root
+    if (!/^https?:\/\//i.test(u) && u.charAt(0) !== '/') {
+        u = '/' + u;
+    }
+    // switchserver.html and other root HTML pages also live at LMS root
+    let pid = playerId == null ? '' : ('' + playerId);
+    if (!pid) {
+        return u;
+    }
+    // Strip any existing player= then re-append (keep query clean)
+    u = u.replace(/([?&])player=[^&]*/gi, function(m, sep) {
+        return sep === '?' ? '?' : '';
+    });
+    u = u.replace(/\?&+/, '?').replace(/&&+/g, '&').replace(/[?&]$/, function(m) {
+        return m.charAt(0) === '?' ? '?' : '';
+    });
+    if (u.indexOf('?') < 0) {
+        return u + '?player=' + pid;
+    }
+    if (u.endsWith('?') || u.endsWith('&')) {
+        return u + 'player=' + pid;
+    }
+    return u + '&player=' + pid;
+}
+
 function browseLibId(view) {
     return view.currentLibId ? view.currentLibId : view.$store.state.library ? view.$store.state.library : LMS_DEFAULT_LIBRARY;
 }
@@ -57,7 +94,19 @@ function browseCheckExpand(view) {
 }
 
 // lmsLastKeyPress is defined in server.js
+function browseHasSearchListAction(view) {
+    for (let i=0, loop=view.currentActions, len=loop.length; i<len; ++i) {
+        if (loop[i].action==SEARCH_LIST_ACTION) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function browseHandleKey(view, event) {
+    if (2==view.searchActive) {
+        return;
+    }
     if (event.target.tagName.toLowerCase() !== 'input' && !event.ctrlKey && !event.altKey && !event.metaKey && undefined!=view.jumplist && view.jumplist.length>1 &&
         view.$store.state.openDialogs.length<1 && view.$store.state.visibleMenus.size<1 && (view.$store.state.desktopLayout || view.$store.state.page=="browse")) {
         let key = event.key.toUpperCase();
@@ -105,7 +154,164 @@ function browseHandleKey(view, event) {
     }
 }
 
+/**
+ * Under Radio: inject a horizontal scrolling station strip (ihe, no header)
+ * above the radio sources grid/list.
+ * material-skin-query radios requires index + quantity.
+ */
+function browseInjectRadioScrollList(view) {
+    if (!view || !view.current || view.current.id!=TOP_RADIO_ID) {
+        return;
+    }
+    let reqId = typeof view.nextReqId==='function' ? view.nextReqId() : undefined;
+    // Prefer lmsList (sends index/quantity); fall back to explicit args for older paths
+    let req = typeof lmsList==='function'
+        ? lmsList(view.playerId(), ["material-skin-query", "radios"], [], 0, 80, false, reqId)
+        : lmsCommand(view.playerId(), ["material-skin-query", "radios", 0, 80], reqId);
+    req.then(function(res) {
+        if (!view.current || view.current.id!=TOP_RADIO_ID) {
+            return;
+        }
+        let data = res && res.data ? res.data : res;
+        let loop = data && data.result
+            ? (data.result.radios_loop || data.result.item_loop || data.result.titles_loop)
+            : undefined;
+        if (!loop || loop.length<1) {
+            return;
+        }
+        let radios = [];
+        for (let i=0, len=loop.length; i<len; ++i) {
+            let r = loop[i];
+            if (!r) {
+                continue;
+            }
+            let name = r.name || r.title || r.text;
+            if (!name) {
+                continue;
+            }
+            if (typeof mapIcon==='function') {
+                mapIcon(r);
+            }
+            radios.push({
+                title: name,
+                image: r.image || r.icon,
+                icon: r.icon && !r.image ? r.icon : undefined,
+                svg: r.svg=='radio' ? 'radio-station' : (r.svg || 'radio-station'),
+                url: r.url || (r.presetParams && r.presetParams.favorites_url),
+                id: 'radio.strip.'+radios.length,
+                ihe: true,
+                type: 'audio',
+                isRadio: true,
+                section: SECTION_RADIO,
+                menu: [PLAY_ACTION, INSERT_ACTION, ADD_ACTION]
+            });
+        }
+        if (radios.length<1) {
+            return;
+        }
+        // Drop previous inject (if any), keep radio apps/sources
+        let rest = (view.items || []).filter(function(it) {
+            return !(it && it.ihe && it.id && (''+it.id).startsWith('radio.strip.'));
+        });
+        view.items = radios.concat(rest);
+        view.listSize = view.items.length;
+        // Strip needs grid scroller only when already in grid mode; do not force-lock layout
+        if (view.grid) {
+            view.grid.allowed = true;
+        }
+        if (typeof view.layoutGrid==='function') {
+            view.layoutGrid(true);
+        }
+        if (typeof view.setLayoutAction==='function') {
+            view.setLayoutAction();
+        }
+        // Grid: re-select top-left main cell after strip inject (not first strip station)
+        if (typeof view.browseSelectFirstNavEntry==='function') {
+            view.$nextTick(function() {
+                view.browseSelectFirstNavEntry();
+            });
+        }
+    }).catch(function() { /* ignore — radio strip is optional */ });
+}
+
+/** Hide list items until fade-in. Used so RecycleScroller can rebuild off-screen. */
+function browseItemsHide(view) {
+    try {
+        if (view) {
+            view._browseItemsPending = true;
+        }
+        let root = document.getElementById('browse-view');
+        if (!root) {
+            return;
+        }
+        root.classList.remove('browse-items-reveal');
+        root.classList.add('browse-items-pending');
+    } catch (e) { }
+}
+
+/** Fade list content in (no slide). Safe to call during the page-panel slide. */
+function browseItemsFadeIn(view) {
+    try {
+        if (view) {
+            view._browseItemsPending = false;
+        }
+        let root = document.getElementById('browse-view');
+        if (!root) {
+            return;
+        }
+        root.classList.remove('browse-items-pending');
+        root.classList.remove('browse-items-reveal');
+        void root.offsetWidth;
+        root.classList.add('browse-items-reveal');
+        if (view && view._browseRevealTimer) {
+            clearTimeout(view._browseRevealTimer);
+        }
+        if (view) {
+            view._browseRevealTimer = setTimeout(function() {
+                root.classList.remove('browse-items-reveal');
+                view._browseRevealTimer = undefined;
+            }, 450);
+        }
+    } catch (e) { }
+}
+
+/** iPod-style lateral drill-in / back: the list *panel* slides; items fade separately. */
+function browseNavAnim(view, dir, opts) {
+    try {
+        // Shortcut bar / direct jumps set this to avoid iPod push animation
+        if (view && view._browseNavSkipAnim) {
+            view._browseNavSkipAnim = false;
+            return;
+        }
+        let root = document.getElementById('browse-view');
+        if (!root) {
+            return;
+        }
+        browseItemsHide(view);
+        root.classList.remove('browse-nav-forward', 'browse-nav-back', 'browse-nav-back-fast', 'browse-items-reveal');
+        // Force reflow so re-triggering the same class restarts the animation
+        void root.offsetWidth;
+        root.classList.add(dir==='back' ? 'browse-nav-back' : 'browse-nav-forward');
+        if (view._browseNavAnimTimer) {
+            clearTimeout(view._browseNavAnimTimer);
+        }
+        view._browseNavAnimTimer = setTimeout(function() {
+            root.classList.remove('browse-nav-forward', 'browse-nav-back', 'browse-nav-back-fast');
+            view._browseNavAnimTimer = undefined;
+            if (view._browseItemsPending) {
+                browseItemsFadeIn(view);
+            }
+        }, 520);
+    } catch (e) { }
+}
+
 function browseAddHistory(view) {
+    if (view._homePaneNav) {
+        view._homePaneNav = false;
+        // Consumed by direct jump (home pane / shortcut) — no history push & no anim
+        view._browseNavSkipAnim = false;
+        return;
+    }
     addBrowserHistoryItem();
     var prev = {};
     prev.items = view.items;
@@ -140,6 +346,8 @@ function browseAddHistory(view) {
     prev.itemCustomActions = view.itemCustomActions;
     view.prevPage = undefined;
     view.history.push(prev);
+    // New level: content pushes in from the right
+    browseNavAnim(view, 'forward');
 }
 
 function browseActions(view, item, args, count, showWorks, addRoleAndServices, isVariousArtists) {
@@ -363,6 +571,8 @@ function browseHandleListResponse(view, item, command, resp, prevPage, appendIte
             return;
         }
         // Only add history if view is not a search response replacing a search response...
+        let fromShell = !!view._browseShellNav;
+        view._browseShellNav = false;
         if ((SEARCH_ID!=item.id && ADV_SEARCH_ID!=item.id) || undefined==view.current || (SEARCH_ID!=view.current.id && ADV_SEARCH_ID!=view.current.id)) {
             let addToHistory = true;
             if (command.ismore) {
@@ -392,16 +602,23 @@ function browseHandleListResponse(view, item, command, resp, prevPage, appendIte
                     }
                 }
             }
-            if (addToHistory) {
+            if (addToHistory && !view._skipNextAddHistory) {
                 browseAddHistory(view);
             }
+            view._skipNextAddHistory = false;
         }
         view.canDrop = resp.canDrop;
+        view.fetchingItem = undefined;
+        view.browseSearching = false;
         view.searchActive = item.id.startsWith(SEARCH_ID) ? 1 : 0;
         view.command = command;
         view.numHeaders = resp.numHeaders;
         view.currentBaseActions = view.baseActions;
-        view.currentItemImage = resp.image;
+        if (undefined!=resp.image) {
+            view.currentItemImage = resp.image;
+        } else if (undefined==view.currentItemImage && item && item.image) {
+            view.currentItemImage = item.image;
+        }
         let wasSearch = (item.type=="search" || item.type=="entry") && undefined!=view.enteredTerm;
         // If this is an (e.g.) Spotty search then parent list (with search entry) will need refreshing
         if (wasSearch && command.command.length>1 && "items"==command.command[1]) {
@@ -413,6 +630,16 @@ function browseHandleListResponse(view, item, command, resp, prevPage, appendIte
                                 : stripLinkTags(item.title)+(undefined==resp.titleSuffix ? "" : resp.titleSuffix)
                             : "?";
         view.items=resp.items;
+        if (fromShell || view._browseItemsPending) {
+            browseItemsFadeIn(view);
+        }
+        if (!appendItems && (resp.listSize||0)>view.items.length && typeof view.fetchItems==='function') {
+            view.$nextTick(function() {
+                if (view.current && item && view.current.id==item.id) {
+                    view.fetchItems(command, item, undefined, view.items.length, true);
+                }
+            });
+        }
         if (undefined!=view.extra) {
             if (view.extra.id==view.current.id && undefined!=view.extra.html) {
                 browseAddExtra(view, view.extra.html);
@@ -426,7 +653,11 @@ function browseHandleListResponse(view, item, command, resp, prevPage, appendIte
         view.listSize=resp.listSize ? resp.listSize : 0;
         view.allTracksItem=resp.allTracksItem;
         view.jumplist=resp.jumplist;
-        view.filteredJumplist = [];
+        if (typeof view.filterJumplist==='function') {
+            view.filterJumplist();
+        } else {
+            view.filteredJumplist = [];
+        }
         view.baseActions=resp.baseActions;
         view.tbarActions=[];
         view.isTop = false;
@@ -629,7 +860,8 @@ function browseHandleListResponse(view, item, command, resp, prevPage, appendIte
         if (resp.canUseGrid && !resp.forceGrid) {
             view.currentActions.push({action:(view.grid.use ? USE_LIST_ACTION : USE_GRID_ACTION), weight:0});
         }
-        if (view.current.id==TOP_FAVORITES_ID || (view.current.id!=ADV_SEARCH_ID && view.current.stdItem!=STD_ITEM_MAI && !item.id.startsWith(TOP_ID_PREFIX) && view.items.length>0)) {
+        if (view.current.id==TOP_FAVORITES_ID || (view.current.id!=ADV_SEARCH_ID && view.current.stdItem!=STD_ITEM_MAI && view.items.length>0 &&
+            (!item.id.startsWith(TOP_ID_PREFIX) || SECTION_PLAYLISTS==view.current.section || SECTION_PLAYLISTS==item.section))) {
             view.currentActions.push({action:SEARCH_LIST_ACTION, weight:5});
         }
         if (resp.numHeaders>1 && view.items.length>25) { // } && curitem.stdItem!=STD_ITEM_ARTIST && curitem.stdItem!=STD_ITEM_ALBUM) {
@@ -747,6 +979,9 @@ function browseHandleListResponse(view, item, command, resp, prevPage, appendIte
             }
         }
 
+        // Header ⋮ menu: pin current page to sidebar (desktop) / shortcuts (mobile)
+        browseAddHeaderPinAction(view);
+
         view.detailedSubInfo=resp.plainsubtitle ? resp.plainsubtitle : resp.years ? resp.years : "&nbsp;";
         view.historyExtra = undefined;
         // Add non-artist role before years display
@@ -829,6 +1064,10 @@ function browseHandleListResponse(view, item, command, resp, prevPage, appendIte
             view.filterJumplist();
             view.layoutGrid(true);
             browseSetScroll(view);
+            // Radio menu: horizontal station strip above sources (no section header)
+            if (item && item.id==TOP_RADIO_ID) {
+                browseInjectRadioScrollList(view);
+            }
         });
 
         if (view.items.length==0) {
@@ -1027,13 +1266,101 @@ function browseSetScroll(view) {
     view.next = undefined;
 }
 
-function browseClick(view, item, index, event, ignoreOpenMenu) {
-    if (view.$store.state.desktopLayout && !view.$store.state.pinQueue && view.$store.state.showQueue) {
-        view.$store.commit('setShowQueue', false);
+/** True when a browse item supports a quick double-tap Play (mobile). */
+function browseItemCanPlayQuick(item) {
+    if (!item || item.header || item.type=='text' || item.type=='html' || item.type=='search' || item.type=='entry') {
+        return false;
+    }
+    // Home → Extras entries open an iframe; they carry a .url but are not streams.
+    // If we treat them as playable, mobile double-tap routes to browseDoClick and
+    // never hits the type=="extra" iframe open path → blank / no load on phones.
+    if (item.type=='extra') {
+        return false;
+    }
+    if (queryParams.party) {
+        return false;
+    }
+    if (undefined!=item.stdItem && (
+        item.stdItem==STD_ITEM_ALBUM || item.stdItem==STD_ITEM_PLAYLIST ||
+        item.stdItem==STD_ITEM_REMOTE_PLAYLIST || item.stdItem==STD_ITEM_ARTIST ||
+        item.stdItem==STD_ITEM_ONLINE_ALBUM || item.stdItem==STD_ITEM_ONLINE_ARTIST ||
+        item.stdItem==STD_ITEM_WORK || item.stdItem==STD_ITEM_RANDOM_MIX ||
+        item.stdItem==STD_ITEM_TRACK || item.stdItem==STD_ITEM_ALBUM_TRACK ||
+        item.stdItem==STD_ITEM_PLAYLIST_TRACK || item.stdItem==STD_ITEM_REMOTE_PLAYLIST_TRACK)) {
+        return true;
+    }
+    if (item.menu && item.menu.length>0 &&
+        (item.menu.indexOf(PLAY_ACTION)>=0 || item.menu.indexOf(PLAY_ALL_ACTION)>=0)) {
+        return true;
+    }
+    if (item.isRadio || item.url || (item.presetParams && item.presetParams.favorites_url)) {
+        return true;
+    }
+    return false;
+}
+
+/** Open a Home → Extras item in the iframe dialog (player-scoped LMS URL). */
+function browseOpenExtraIframe(view, item) {
+    if (!view || !item) {
         return;
     }
-    if (view.fetchingItem!=undefined || "html"==item.type) {
+    if (!view.$store.state.player) {
+        bus.$emit('showError', undefined, i18n("No Player"));
+        return;
+    }
+    let extraUrl = browseExtrasPlayerUrl(item.url, view.$store.state.player.id);
+    if (!extraUrl) {
+        bus.$emit('showError', undefined, i18n('Empty'));
+        return;
+    }
+    let openExtra = function() {
+        bus.$emit('dlg.open', 'iframe', extraUrl,
+            (item.title || '') + SEPARATOR + view.$store.state.player.name,
+            undefined, IFRAME_HOME_NAVIGATES_BROWSE_HOME);
+    };
+    let ready = false;
+    try {
+        ready = !!(typeof Vue !== 'undefined' && Vue.options && Vue.options.components &&
+            Vue.options.components['lms-iframe-dialog']);
+    } catch (e) { ready = false; }
+    // Ensure deferred iframe dialog is ready before open (async script load on mobile)
+    if (ready && typeof DEFERRED_LOADED !== 'undefined') {
+        openExtra();
+    } else {
+        let n = 0;
+        let t = setInterval(function() {
+            n++;
+            let ok = false;
+            try {
+                ok = !!(Vue.options && Vue.options.components && Vue.options.components['lms-iframe-dialog']) &&
+                    typeof DEFERRED_LOADED !== 'undefined';
+            } catch (e) {}
+            if (ok || n > 40) {
+                clearInterval(t);
+                if (ok) {
+                    openExtra();
+                } else {
+                    // Last resort: full navigation (still better than blank dialog)
+                    try { window.location.href = extraUrl; } catch (e2) {}
+                }
+            }
+        }, 50);
+    }
+}
+
+function browseClick(view, item, index, event, ignoreOpenMenu, forceNav) {
+    if (view.$store.state.desktopLayout && !view.$store.state.pinQueue && view.$store.state.showQueue) {
+        view.$store.commit('setShowQueue', false);
+    }
+    if ("html"==item.type) {
          return;
+    }
+    if (view.fetchingItem!=undefined) {
+        if (!forceNav) {
+            return;
+        }
+        view.nextReqId();
+        view.fetchingItem = undefined;
     }
     if (!item.isListItemInMenu && !ignoreOpenMenu) {
         if (view.menu.show) {
@@ -1083,13 +1410,39 @@ function browseClick(view, item, index, event, ignoreOpenMenu) {
         }
         return;
     }
+    let isMobileLayout = !view.$store.state.desktopLayout;
     if (item.isPinned) {
         if (item.custom) {
             performCustomAction(item, view.$store.state.player, null);
             return;
         }
-        if (undefined!=item.url && "extra"!=item.type) { // Radio
-            browseItemMenu(view, item, index, event);
+        if (undefined!=item.url && "extra"!=item.type) { // Radio / stream pin
+            // Mobile: single-tap → play (delayed), double-tap → also play (idempotent);
+            //         long-press → contextual drawer (list-swipe).
+            // Desktop: click → menu, double-click → play.
+            if (isMobileLayout) {
+                if (!view.clickTimer) {
+                    view.clickTimer = setTimeout(function () {
+                        view.clickTimer = undefined;
+                        browseItemAction(view, PLAY_ACTION, item, index, event);
+                    }.bind(view), LMS_DOUBLE_CLICK_TIMEOUT);
+                } else {
+                    clearTimeout(view.clickTimer);
+                    view.clickTimer = undefined;
+                    browseItemAction(view, PLAY_ACTION, item, index, event);
+                }
+            } else {
+                if (!view.clickTimer) {
+                    view.clickTimer = setTimeout(function () {
+                        view.clickTimer = undefined;
+                        browseItemMenu(view, item, index, event);
+                    }.bind(view), LMS_DOUBLE_CLICK_TIMEOUT);
+                } else {
+                    clearTimeout(view.clickTimer);
+                    view.clickTimer = undefined;
+                    browseItemAction(view, PLAY_ACTION, item, index, event);
+                }
+            }
             return;
         }
         if ("settingsPlayer"==item.type) {
@@ -1111,9 +1464,16 @@ function browseClick(view, item, index, event, ignoreOpenMenu) {
     }
     let isFavouritePlaylist = item.section==SECTION_FAVORITES && item.presetParams && item.presetParams.favorites_url && item.presetParams.favorites_url.startsWith("file:///") && item.presetParams.favorites_url.endsWith(".m3u");
     if (isAudioTrack(item) && !isFavouritePlaylist && !item.mskOnlyGoAction) {
+        // Desktop: single-click → menu, double-click → play (classic Material).
+        // Mobile: single-click → deploy when possible; double-tap → play;
+        //         long-press → menu (list-swipe long-press). Never open menu on single tap.
         if (!view.clickTimer) {
             view.clickTimer = setTimeout(function () {
                 view.clickTimer = undefined;
+                if (isMobileLayout && typeof storeClickOrTouchPos==='function') {
+                    storeClickOrTouchPos(event, view.menu);
+                }
+                // Songs: play menu. Do not open the parent album or a go-action sub-page.
                 browseItemMenu(view, item, index, event);
             }.bind(view), LMS_DOUBLE_CLICK_TIMEOUT);
         } else {
@@ -1123,17 +1483,41 @@ function browseClick(view, item, index, event, ignoreOpenMenu) {
         }
         return;
     }
+    // Extras before mobile double-tap: items have .url so canPlayQuick would steal
+    // the click into browseDoClick (which cannot open the iframe).
+    if (item.type=="extra") {
+        browseOpenExtraIframe(view, item);
+        return;
+    }
+    // Mobile: tap opens immediately. A second tap on the same item (if it
+    // still fires) plays instead. Play is also on the page chrome at once.
+    if (isMobileLayout && typeof browseItemCanPlayQuick==='function' && browseItemCanPlayQuick(item)) {
+        let now = Date.now();
+        let last = view._browseTap;
+        if (last && last.id===item.id && (now - last.t) < (LMS_DOUBLE_CLICK_TIMEOUT + 120)) {
+            view._browseTap = undefined;
+            if (view.clickTimer) {
+                clearTimeout(view.clickTimer);
+                view.clickTimer = undefined;
+            }
+            if (view._browseShellNav) {
+                view.nextReqId();
+                view.fetchingItem = undefined;
+                view._browseShellNav = false;
+                view._skipNextAddHistory = false;
+                browseGoBack(view);
+            }
+            let playAct = (item.menu && item.menu.indexOf(PLAY_ALL_ACTION)>=0) ? PLAY_ALL_ACTION : PLAY_ACTION;
+            browseItemAction(view, playAct, item, index, event);
+            return;
+        }
+        view._browseTap = { id: item.id, t: now };
+        browseDoClick(view, item, index, event, forceNav);
+        return;
+    }
     if (isTextItem(item) && !item.id.startsWith(TOP_ID_PREFIX) && !item.id.startsWith(MUSIC_ID_PREFIX)) {
         if (view.canClickText(item)) {
             view.doTextClick(item);
-        }
-        return;
-    }
-    if (item.type=="extra") {
-        if (view.$store.state.player) {
-            bus.$emit('dlg.open', 'iframe', item.url+'player='+view.$store.state.player.id, item.title+SEPARATOR+view.$store.state.player.name, undefined, IFRAME_HOME_NAVIGATES_BROWSE_HOME);
-        } else {
-            bus.$emit('showError', undefined, i18n("No Player"));
         }
         return;
     }
@@ -1151,6 +1535,9 @@ function browseClick(view, item, index, event, ignoreOpenMenu) {
         view.currentActions=[{action:VLIB_ACTION}, {action:(view.grid.use ? USE_LIST_ACTION : USE_GRID_ACTION)}];
         if (!view.$store.state.browseSearch) {
             view.currentActions.push({action:SEARCH_LIB_ACTION});
+        }
+        if (typeof view.setLayoutAction==='function') {
+            view.setLayoutAction();
         }
         view.layoutGrid(true);
     } else if (MUSIC_ID_PREFIX+'myMusicWorks'==item.id) {
@@ -1227,11 +1614,111 @@ function browseClick(view, item, index, event, ignoreOpenMenu) {
             return;
         }
     } else {
-        browseDoClick(view, item, index, event);
+        browseDoClick(view, item, index, event, forceNav);
     }
 }
 
-function browseDoClick(view, item, index, event) {
+/** Album/playlist/artist (and similar) pages usually get an A–Z or • rail. */
+function browseItemWantsJumplistGutter(item) {
+    if (!item) {
+        return false;
+    }
+    let stdItem = item.stdItem ? item.stdItem : item.altStdItem;
+    if (stdItem==STD_ITEM_ALBUM || stdItem==STD_ITEM_PLAYLIST || stdItem==STD_ITEM_REMOTE_PLAYLIST ||
+        stdItem==STD_ITEM_ARTIST || stdItem==STD_ITEM_WORK || stdItem==STD_ITEM_ONLINE_ALBUM ||
+        stdItem==STD_ITEM_ONLINE_ARTIST || stdItem==STD_ITEM_WORK_COMPOSER ||
+        stdItem==STD_ITEM_CLASSICAL_WORKS) {
+        return true;
+    }
+    let id = item.id ? (''+item.id) : '';
+    if (item.section==SECTION_PLAYLISTS || id.indexOf('playlist_id:')==0 ||
+        id.indexOf('album_id:')==0 || id.indexOf('artist_id:')==0 || id.indexOf('work_id:')==0) {
+        return true;
+    }
+    return item.type=='group' || item.type=='playlist' || item.type=='album' || item.type=='artist';
+}
+
+function browseShouldEnterPageShell(view, item, command) {
+    if (!view || !item || !item.id) {
+        return false;
+    }
+    if (item.type=='search' || item.type=='entry' || item.type=='text' || item.type=='html') {
+        return false;
+    }
+    if (command && command.command && command.command.length>1 && command.command[1]=='playlist') {
+        return false;
+    }
+    if (command && command.ismore) {
+        return false;
+    }
+    if (view.current && !view.isTop && view.current.id==item.id) {
+        return false;
+    }
+    return true;
+}
+
+/** Instant drill-in: title/cover/chrome now, items when LMS responds. */
+function browseEnterPageShell(view, item) {
+    if (!view || !item) {
+        return;
+    }
+    if (view._browseShellNav && view.current && view.current.id==item.id) {
+        return;
+    }
+    // Hide current rows, then slide an empty panel; items fade when LMS responds.
+    view._browseNavSkipAnim = true;
+    browseAddHistory(view);
+    view._skipNextAddHistory = true;
+    view._browseShellNav = true;
+    browseItemsHide(view);
+    view.headerTitle = stripLinkTags(item.title || '');
+    view.headerSubTitle = null;
+    view.detailedSubInfo = item.subtitle || undefined;
+    view.detailedSubExtra = undefined;
+    view.current = item;
+    view.currentItemImage = item.image || undefined;
+    view.isTop = false;
+    view.searchActive = 0;
+    view.listFilterTerm = '';
+    view._gridFilterTerm = undefined;
+    view.items = [];
+    view.jumplist = [];
+    view.filteredJumplist = [];
+    view.reserveJumplistGutter = browseItemWantsJumplistGutter(item);
+    view.listSize = 0;
+    view.numHeaders = 0;
+    view.allTracksItem = undefined;
+    view.hoverBtns = false;
+    view.browseOverflowOpen = false;
+    view.tbarActions = [];
+    view.currentActions = [];
+    view.fetchingItem = item.id;
+    let std = item.stdItem ? item.stdItem : item.altStdItem;
+    if (std==STD_ITEM_ALBUM || std==STD_ITEM_PLAYLIST || std==STD_ITEM_REMOTE_PLAYLIST ||
+        std==STD_ITEM_ARTIST || std==STD_ITEM_WORK || std==STD_ITEM_ONLINE_ALBUM ||
+        std==STD_ITEM_ONLINE_ARTIST || std==STD_ITEM_WORK_COMPOSER) {
+        view.tbarActions = [ADD_ALL_ACTION, PLAY_ALL_ACTION];
+        view.currentActions.push({action:(view.grid && view.grid.use ? USE_LIST_ACTION : USE_GRID_ACTION)});
+    }
+    let useGrid = view.grid ? !!view.grid.use : true;
+    view.grid = {allowed:true, use:useGrid, numColumns:0, ih:GRID_MIN_HEIGHT, rows:[], few:false, haveSubtitle:true, multiSize:false, type:GRID_STANDARD};
+    browseSetScroll(view);
+    browseNavAnim(view, 'forward');
+    if (typeof view.setBgndCover==='function') {
+        requestAnimationFrame(function() {
+            if (view.current && view.current.id==item.id) {
+                view.setBgndCover();
+            }
+        });
+    }
+}
+
+function browseDoClick(view, item, index, event, forceNav) {
+    // Defense in depth: mobile double-tap delay can land here if canPlayQuick misfires
+    if (item && item.type=="extra") {
+        browseOpenExtraIframe(view, item);
+        return;
+    }
     var command = browseBuildCommand(view, item);
     if (command.command.length>2 && command.command[1]=="playlist") {
         if (!item.menu || item.menu.length<1) { // No menu? Dynamic playlist? Just run command...
@@ -1242,6 +1729,10 @@ function browseDoClick(view, item, index, event) {
             browseItemMenu(view, item, index, event);
         }
         return;
+    }
+
+    if (browseShouldEnterPageShell(view, item, command)) {
+        browseEnterPageShell(view, item);
     }
 
     if (item.mapgenre) {
@@ -1268,7 +1759,41 @@ function browseDoClick(view, item, index, event) {
             return;
         }
     }
-    view.fetchItems(command, item);
+    view.fetchItems(command, item, undefined, undefined, forceNav);
+}
+
+function browseHomePaneNavigate(view, item, index, event) {
+    if (!item) {
+        return;
+    }
+    view.searchActive = 0;
+    view.listFilterTerm = '';
+    view.listFilterSelPos = -1;
+    view._gridFilterTerm = undefined;
+    if (typeof view.applyListFilterClasses==='function') {
+        view.applyListFilterClasses();
+    }
+    view.homePaneSwipeOpenId = undefined;
+    view.homePaneSelectedId = item.id;
+    if (!view.isTop) {
+        browsePrepareHomePaneNav(view);
+    } else if (view.fetchingItem!=undefined) {
+        view.nextReqId();
+        view.fetchingItem = undefined;
+    }
+    storeClickOrTouchPos(event, view.menu);
+    let target = item;
+    let clickIndex = index;
+    if (view.isTop) {
+        let idx = view.homePaneMainIndex(item);
+        if (idx>=0) {
+            target = view.items[idx];
+            clickIndex = idx;
+        }
+    }
+    view.$nextTick(function() {
+        browseClick(view, target, clickIndex, event, true, true);
+    });
 }
 
 function browseAddWorksCategories(view, item) {
@@ -1312,7 +1837,20 @@ function browseAddWorksCategories(view, item) {
 
 function browseAddCategories(view, item, isGenre) {
     browseAddHistory(view);
+    view._browseShellNav = true;
     view.items=[];
+    view.headerTitle = stripLinkTags(item.title || '');
+    view.headerSubTitle = i18n("Select category");
+    view.current = item;
+    view.currentItemImage = item.image || undefined;
+    view.isTop = false;
+    view.tbarActions = [];
+    view.currentActions = [];
+    view.jumplist = view.filteredJumplist = [];
+    if (typeof view.setBgndCover==='function') {
+        view.setBgndCover();
+    }
+    browseSetScroll(view);
 
     // check if there is a grandparent ID we should use.
     let alt_id = view.history.length<1 || !view.history[view.history.length-1].current ? undefined : originalId(view.history[view.history.length-1].current.id);
@@ -1323,6 +1861,7 @@ function browseAddCategories(view, item, isGenre) {
     view.fetchingItem = {id:item.id};
     lmsCommand("", ["material-skin", "browsemodes"]).then(({data}) => {
         view.fetchingItem = undefined;
+        view._browseShellNav = false;
         logJsonMessage("RESP", data);
         var resp = parseBrowseModes(view, data, isGenre ? item.id : undefined, isGenre ? undefined : item.id, alt_id, isGenre && undefined!=lmsOptions.classicalGenres && !lmsOptions.classicalGenres.has(item.title));
         var allTracks = { title: i18n("All Tracks"),
@@ -1359,17 +1898,26 @@ function browseAddCategories(view, item, isGenre) {
     }).catch(err => {
         console.log(err);
         view.fetchingItem = undefined;
+        if (view._browseShellNav) {
+            view._browseShellNav = false;
+            browseGoBack(view);
+        }
     });
 }
 
 function browseItemAction(view, act, origItem, index, event, slimBrowseBaseActions) {
     if (view.$store.state.desktopLayout && !view.$store.state.pinQueue && view.$store.state.showQueue) {
         view.$store.commit('setShowQueue', false);
-        if (SEARCH_LIB_ACTION!=act || !origItem || origItem.id!=SEARCH_SHORTCUT) {
-            return;
-        }
     }
     let item = undefined!=origItem && origItem.id.startsWith("currentaction:") ? browseGetCurrent(view) : origItem;
+
+    // Play / shuffle / add / insert on the main player supersedes soft preview
+    // (hold-preview or menu Preview) on the app-local player.
+    if (act!==PREVIEW_ACTION && typeof browseActionCancelsSoftPreview==='function' && browseActionCancelsSoftPreview(act)) {
+        if (typeof browsePreviewHoldStop==='function') {
+            browsePreviewHoldStop(view, true);
+        }
+    }
 
     if (act==SEARCH_LIST_ACTION) {
         view.searchActive=2;
@@ -1381,7 +1929,15 @@ function browseItemAction(view, act, origItem, index, event, slimBrowseBaseActio
         if (view.$store.state.visibleMenus.size<1 || (origItem && origItem.id==SEARCH_SHORTCUT)) {
             setLocalStorageVal('search', '');
             view.searchActive = 1;
-            setTimeout(function() {bus.$emit('search-initial')}, 50);
+            if (typeof focusBrowseSearchInput==='function') {
+                focusBrowseSearchInput();
+            }
+            setTimeout(function() {
+                bus.$emit('search-initial');
+                if (typeof focusBrowseSearchInput==='function') {
+                    focusBrowseSearchInput();
+                }
+            }, 0);
         }
     } else if (act===MORE_ACTION) {
         if (item.allItems && item.allItems.length>0) { // Clicking on 'X Artists' / 'X Albums' / 'X Tracks' search header
@@ -1560,8 +2116,15 @@ function browseItemAction(view, act, origItem, index, event, slimBrowseBaseActio
             logError(err, command);
         });
     } else if (act===REMOVE_FROM_FAV_ACTION || act==DELETE_FAV_FOLDER_ACTION) {
-        var id = SECTION_FAVORITES==(item.ihe ? item.section : view.current.section) ? originalId(item.id) : "url:"+(item.presetParams && item.presetParams.favorites_url ? item.presetParams.favorites_url : item.favUrl);
-        if (undefined==id) {
+        var inFavSection = SECTION_FAVORITES==(item.ihe ? item.section : view.current.section);
+        var id = inFavSection ? originalId(item.id) : "url:"+(item.presetParams && item.presetParams.favorites_url ? item.presetParams.favorites_url : item.favUrl);
+        if (inFavSection && id && !id.startsWith("item_id:") && !id.startsWith("url:")) {
+            let fid = getFavItemId(item, "item_id:");
+            if (fid) {
+                id = originalId(fid);
+            }
+        }
+        if (undefined==id || "url:undefined"==id || "url:"==id) {
             return;
         }
         confirm(act===REMOVE_FROM_FAV_ACTION ? i18n("Remove '%1' from favorites?", item.title)
@@ -1771,6 +2334,89 @@ function browseItemAction(view, act, origItem, index, event, slimBrowseBaseActio
         }
     } else if (act==GOTO_ALBUM_ACTION) {
         view.fetchItems({command:["tracks"], params:["album_id:"+item.album_id, trackTags(true), SORT_KEY+"tracknum"]}, {cancache:false, id:"album_id:"+item.album_id, title:item.album, stdItem:STD_ITEM_ALBUM});
+    } else if (act==ARTIST_INFO_ACTION || act==ALBUM_INFO_ACTION) {
+        /* Mobile sheet: prefer in-menu slide panel when available */
+        if (view && !view.$store.state.desktopLayout && view.menu && view.menu.show &&
+            typeof view.ctxSheetLoadInfo==='function') {
+            view.ctxSheetLoadInfo(item, act==ARTIST_INFO_ACTION);
+            return;
+        }
+        /* Music Artist Info plugin — biography / album review (desktop / full browse) */
+        if (!LMS_P_MAI) {
+            bus.$emit('showMessage', i18n('Music Artist Info plugin not available'));
+            return;
+        }
+        let isArtist = act==ARTIST_INFO_ACTION;
+        let stripIdx = function(id) {
+            return typeof originalId==='function' ? originalId(''+id) : (''+id).split('@idx')[0];
+        };
+        let artistId = item.artist_id || item.albumartist_id;
+        let albumId = item.album_id;
+        if (undefined==artistId && item.id && (''+item.id).startsWith('artist_id:')) {
+            artistId = stripIdx(item.id).substring('artist_id:'.length);
+        }
+        if (undefined==albumId && item.id && (''+item.id).startsWith('album_id:')) {
+            albumId = stripIdx(item.id).substring('album_id:'.length);
+        }
+        // Parent list context (album track lists often omit album_id on rows)
+        if (undefined==albumId && view.current && view.current.id && (''+view.current.id).startsWith('album_id:')) {
+            albumId = stripIdx(view.current.id).substring('album_id:'.length);
+        }
+        if (undefined==artistId && view.current && view.current.artist_id) {
+            artistId = view.current.artist_id;
+        }
+        if (undefined==artistId && view.command && view.command.params) {
+            artistId = getParamVal(view.command, 'artist_id', artistId);
+        }
+        if (undefined==albumId && view.command && view.command.params) {
+            albumId = getParamVal(view.command, 'album_id', albumId);
+        }
+        if (undefined!=artistId) { artistId = stripIdx(artistId); if ((''+artistId).startsWith('artist_id:')) { artistId = (''+artistId).substring('artist_id:'.length); } }
+        if (undefined!=albumId) { albumId = stripIdx(albumId); if ((''+albumId).startsWith('album_id:')) { albumId = (''+albumId).substring('album_id:'.length); } }
+        let artistName = item.artist || item.albumartist || item.trackartist ||
+            (item.id && (''+item.id).startsWith('artist_id:') ? item.title : undefined) ||
+            (item.id && (''+item.id).startsWith('album_id:') ? item.subtitle : undefined) ||
+            (view.current && (view.current.artist || view.current.albumartist || view.current.subtitle));
+        let albumName = item.album || item.origTitle ||
+            (item.id && (''+item.id).startsWith('album_id:') ? (item.origTitle || item.title) : undefined) ||
+            (view.current && (view.current.album || view.current.origTitle ||
+                ((view.current.id && (''+view.current.id).startsWith('album_id:')) ? view.current.title : undefined)));
+        let cmd;
+        let title;
+        if (isArtist) {
+            if (undefined==artistId && !artistName) {
+                bus.$emit('showMessage', i18n('No artist information available'));
+                return;
+            }
+            cmd = undefined!=artistId
+                ? {command:['musicartistinfo', 'biography', 'html:1', 'artist_id:'+artistId], params:[]}
+                : {command:['musicartistinfo', 'biography', 'html:1', 'artist:'+artistName], params:[]};
+            title = ACTIONS[ARTIST_INFO_ACTION].title + (artistName ? SEPARATOR+stripTags(artistName) : '');
+        } else {
+            if (undefined==albumId && !albumName) {
+                bus.$emit('showMessage', i18n('No album information available'));
+                return;
+            }
+            // Match Now Playing: album_id alone when available (extra fields confuse MAI)
+            if (undefined!=albumId) {
+                cmd = {command:['musicartistinfo', 'albumreview', 'html:1', 'album_id:'+albumId], params:[]};
+            } else if (undefined!=artistId) {
+                cmd = {command:['musicartistinfo', 'albumreview', 'html:1', 'album:'+albumName, 'artist_id:'+artistId], params:[]};
+            } else {
+                cmd = {command:['musicartistinfo', 'albumreview', 'html:1', 'album:'+albumName, 'artist:'+artistName], params:[]};
+            }
+            title = ACTIONS[ALBUM_INFO_ACTION].title + (albumName ? SEPARATOR+stripTags(albumName) : '');
+        }
+        view.fetchItems(cmd, {
+            cancache: false,
+            id: isArtist ? ('mai-artist:'+(artistId||artistName)) : ('mai-album:'+(albumId||albumName)),
+            title: title,
+            image: item.image,
+            stdItem: STD_ITEM_MAI
+        });
+        if (typeof browseFetchExtra==='function') {
+            browseFetchExtra(view, isArtist);
+        }
     } else if (ADD_TO_PLAYLIST_ACTION==act) {
         if (view.current && STD_ITEM_MIX==view.current.stdItem && !item.id.startsWith("track_id:")) {
             bus.$emit('dlg.open', 'addtoplaylist', view.items);
@@ -1928,6 +2574,12 @@ function browseItemAction(view, act, origItem, index, event, slimBrowseBaseActio
         // Not sure this is really a 'menu item action'??? But Blix mix reload is activated this way...
         view.refreshList(false);
         bus.$emit('showMessage', i18n('Reloading'));
+    } else if (act===PREVIEW_ACTION) {
+        // Menu / desktop overlay: sticky sample; tap again fades out and stops
+        if (typeof browsePreviewToggle==='function') {
+            browsePreviewToggle(view, item);
+            view.clearSelection();
+        }
     } else {
         // If we are acting on a multi-disc album, prompt which disc we should act on
         if (item.multi && (view.isTop || !view.current.id.startsWith("album_id:")) && (PLAY_ACTION==act || ADD_ACTION==act || INSERT_ACTION==act || PLAY_SHUFFLE_ACTION==act)) {
@@ -1993,6 +2645,9 @@ function browsePerformAction(view, item, act, slimBrowseBaseActions) {
         bus.$emit('showError', undefined, i18n("Don't know how to handle this!"));
         return;
     }
+    if (act===PLAY_ACTION || act===PLAY_ALL_ACTION || act===PLAY_SHUFFLE_ACTION || act===PLAY_SHUFFLE_ALL_ACTION) {
+        try { if (typeof materialSessionHintFromCommand === 'function') { materialSessionHintFromCommand(view.playerId(), command.command, item); } } catch (e) {}
+    }
     lmsCommand(view.playerId(), command.command).then(({data}) => {
         logJsonMessage("RESP", data);
         bus.$emit('refreshStatus');
@@ -2017,10 +2672,997 @@ function browseSwitchToNowPlaying(view) {
     }
 }
 
+function browseMenuCoords(event) {
+    if (!event) {
+        return { x: 0, y: (window.innerHeight || 0) };
+    }
+    if (undefined!=event.clientX && undefined!=event.clientY &&
+        !(event.clientX===0 && event.clientY===0 && event.touches)) {
+        return { x: event.clientX, y: event.clientY };
+    }
+    if (typeof getTouchOrClickPos==='function') {
+        let p = getTouchOrClickPos(event);
+        if (p && undefined!=p.x) {
+            return p;
+        }
+    }
+    if (event.touches && event.touches[0]) {
+        return { x: event.touches[0].clientX, y: event.touches[0].clientY };
+    }
+    if (event.changedTouches && event.changedTouches[0]) {
+        return { x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY };
+    }
+    return { x: event.clientX || 0, y: event.clientY || (window.innerHeight || 0) };
+}
+
+/** Dedicated soft-preview player id (Minim/Lyrion 2nd Squeezelite MAC), if configured. */
+function browseDedicatedPreviewPlayerId(view) {
+    try {
+        if (!queryParams || !queryParams.previewPlayer) {
+            return undefined;
+        }
+        let raw = String(queryParams.previewPlayer).trim();
+        try { raw = decodeURIComponent(raw); } catch (eDec) {}
+        raw = raw.trim();
+        if (!raw) {
+            return undefined;
+        }
+        let low = raw.toLowerCase();
+        let nameHint = '';
+        if (queryParams.previewPlayerName) {
+            try { nameHint = decodeURIComponent(String(queryParams.previewPlayerName)).trim().toLowerCase(); } catch (eN) {
+                nameHint = String(queryParams.previewPlayerName).trim().toLowerCase();
+            }
+        }
+        let players = undefined;
+        try {
+            if (view && view.$store && view.$store.state && view.$store.state.players) {
+                players = view.$store.state.players;
+            }
+        } catch (eS) {}
+        if (players && players.length) {
+            for (let i=0, len=players.length; i<len; ++i) {
+                let p = players[i];
+                if (!p) { continue; }
+                let pid = p.id ? (''+p.id).toLowerCase() : '';
+                let pname = p.name ? (''+p.name).toLowerCase() : '';
+                if (pid===low || pname===low || (nameHint && pname===nameHint)) {
+                    return p.id || p.name;
+                }
+            }
+        }
+        // Hidden from the UI (hidePlayers) but still a valid LMS player id
+        return raw;
+    } catch (e) {
+        return undefined;
+    }
+}
+
+function browsePreviewPlayersList(view) {
+    try {
+        if (view && view.$store && view.$store.state && view.$store.state.players) {
+            return view.$store.state.players;
+        }
+    } catch (e) {}
+    return [];
+}
+
+function browsePlayerHost(p) {
+    if (!p || !p.ip) {
+        return '';
+    }
+    if (typeof storePlayerHost==='function') {
+        return storePlayerHost(p.ip);
+    }
+    let s = String(p.ip);
+    let m = s.match(/^(\d{1,3}(?:\.\d{1,3}){3})/);
+    return m ? m[1] : s.split(':')[0];
+}
+
+function browsePlayerLooksBridge(p) {
+    if (!p) {
+        return false;
+    }
+    let model = (p.model || '').toString().toLowerCase();
+    let type = (p.modelType || '').toString().toLowerCase();
+    return model.indexOf('upnp')>=0 || model.indexOf('raop')>=0 || model.indexOf('airplay')>=0 ||
+        type.indexOf('upnp')>=0 || type.indexOf('raop')>=0;
+}
+
+/** True when this LMS player is LyrPlay's in-app SlimProto client. */
+function browsePlayerLooksLyrPlay(p) {
+    if (!p) {
+        return false;
+    }
+    let type = (p.modelType || '').toString().toLowerCase();
+    let model = (p.model || '').toString().toLowerCase();
+    let name = (p.name || '').toString().toLowerCase();
+    let fw = (p.firmware || '').toString().toLowerCase();
+    if (type==='lyrplay' || model==='lyrplay' || model.indexOf('lyrplay')>=0) {
+        return true;
+    }
+    if (name.indexOf('lyrplay')>=0) {
+        return true;
+    }
+    if (fw.indexOf('lyrplay')>=0 || fw.indexOf('-ios')>=0 || fw.indexOf('-tvos')>=0) {
+        return true;
+    }
+    return false;
+}
+
+/** Software player on this computer/phone (squeezelite / LyrPlay), not a room endpoint. */
+function browsePlayerLooksSoftClient(p) {
+    if (!p || p.isgroup || browsePlayerLooksBridge(p)) {
+        return false;
+    }
+    if (browsePlayerLooksLyrPlay(p)) {
+        return true;
+    }
+    let type = (p.modelType || '').toString().toLowerCase();
+    let model = (p.model || '').toString().toLowerCase();
+    if (type==='squeezelite' || type==='squeezeslave' || type==='squeezeplay' || type==='softsqueeze') {
+        return true;
+    }
+    if (model.indexOf('squeezelite')>=0 || model.indexOf('squeezeplay')>=0) {
+        return true;
+    }
+    return false;
+}
+
+function browsePinnedPlayerHint() {
+    try {
+        if (queryParams && queryParams.player) {
+            return String(queryParams.player).trim().toLowerCase();
+        }
+    } catch (eP) {}
+    return '';
+}
+
+function browsePickFromPlayers(cands, view) {
+    if (!cands || !cands.length) {
+        return undefined;
+    }
+    if (cands.length===1) {
+        return cands[0].id;
+    }
+    let pinned = browsePinnedPlayerHint();
+    if (pinned) {
+        for (let i=0; i<cands.length; ++i) {
+            let id = (''+cands[i].id).toLowerCase();
+            let nm = cands[i].name ? (''+cands[i].name).toLowerCase() : '';
+            if (id===pinned || nm===pinned) {
+                return cands[i].id;
+            }
+        }
+    }
+    try {
+        let cur = undefined;
+        if (view && typeof view.playerId==='function') {
+            cur = view.playerId();
+        } else if (view && view.$store && view.$store.state && view.$store.state.player) {
+            cur = view.$store.state.player.id;
+        }
+        if (cur) {
+            let cl = (''+cur).toLowerCase();
+            for (let i=0; i<cands.length; ++i) {
+                if ((''+cands[i].id).toLowerCase()===cl) {
+                    return cands[i].id;
+                }
+            }
+        }
+    } catch (eC) {}
+    return cands[0].id;
+}
+
+/**
+ * Player that belongs to this device — the one operating the menu.
+ * Never the selected room player unless that room player *is* this device.
+ * - HTTP client IP / ?ipAddresses= matches a connected software player
+ * - On iOS: LyrPlay's in-app SlimProto client (ModelName=LyrPlay)
+ * - Minim: ?player= name of the local squeezelite
+ */
+function browseAppLocalPlayerId(view) {
+    let players = browsePreviewPlayersList(view);
+    if (!players.length) {
+        return undefined;
+    }
+    let ios = (typeof IS_IOS!=='undefined' && IS_IOS);
+    let localSoft = [];
+    let localAny = [];
+    for (let i=0, len=players.length; i<len; ++i) {
+        let p = players[i];
+        if (!p || !p.id || p.isgroup) {
+            continue;
+        }
+        if (!p.local) {
+            continue;
+        }
+        if (browsePlayerLooksBridge(p)) {
+            continue;
+        }
+        localAny.push(p);
+        if (browsePlayerLooksSoftClient(p)) {
+            localSoft.push(p);
+        }
+    }
+    let pool = localSoft.length ? localSoft : localAny;
+    if (ios) {
+        let lyrLocal = [];
+        for (let i=0; i<pool.length; ++i) {
+            if (browsePlayerLooksLyrPlay(pool[i])) {
+                lyrLocal.push(pool[i]);
+            }
+        }
+        if (lyrLocal.length) {
+            return browsePickFromPlayers(lyrLocal, view);
+        }
+    }
+    if (pool.length) {
+        return browsePickFromPlayers(pool, view);
+    }
+    if (ios) {
+        let lyr = [];
+        for (let i=0, len=players.length; i<len; ++i) {
+            if (browsePlayerLooksLyrPlay(players[i]) && players[i].id && !players[i].isgroup) {
+                lyr.push(players[i]);
+            }
+        }
+        if (lyr.length) {
+            return browsePickFromPlayers(lyr, view);
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Player used for preview samples — always the device that opened the menu.
+ * 1. Dedicated hidden soft player (Minim 2nd Squeezelite on this Mac)
+ * 2. This device's player (Mac squeezelite / LyrPlay internal)
+ * Never the selected room platine.
+ */
+function browsePreviewPlayerId(view) {
+    let ded = browseDedicatedPreviewPlayerId(view);
+    if (ded) {
+        return ded;
+    }
+    return browseAppLocalPlayerId(view);
+}
+
+function browseHasPreviewPlayer(view) {
+    return !!browsePreviewPlayerId(view);
+}
+
+/** True when preview must snapshot+restore this player's queue. */
+function browsePreviewUsesMainPlayer(view, pid) {
+    if (!pid) { return false; }
+    let ded = browseDedicatedPreviewPlayerId(view);
+    // Hidden soft player → leave its (empty) queue alone
+    if (ded && (''+pid).toLowerCase()===(''+ded).toLowerCase()) {
+        return false;
+    }
+    // Mac squeezelite / LyrPlay internal: save → preview → resume
+    return true;
+}
+
+/** Soft-preview starts this many seconds into the track/item. */
+var BROWSE_PREVIEW_START_SEC = 30;
+/**
+ * Hold delay on the *second* press of a double-tap before preview starts (ms).
+ * Quick second tap (released sooner) still counts as double-tap → Play.
+ */
+var BROWSE_PREVIEW_HOLD_MS = 180;
+/** Max preview duration before auto fade-out + stop (ms). */
+var BROWSE_PREVIEW_MAX_MS = 20000;
+/** Fade-out duration when the 20s cap is hit (ms). */
+var BROWSE_PREVIEW_FADE_MS = 900;
+/** Temporary LMS playlist name used to snapshot the main player's queue. */
+var BROWSE_PREVIEW_BAK_NAME = '__lyrion_preview_bak';
+/** SVG ring radius used by the drawer preview control. */
+var BROWSE_PREVIEW_RING_R = 15;
+var BROWSE_PREVIEW_RING_C = 2 * Math.PI * BROWSE_PREVIEW_RING_R;
+
+function browsePreviewDefaultUi() {
+    return { active: false, loading: false, progress: 0, itemId: undefined, fading: false };
+}
+
+function browsePreviewSetUi(view, patch) {
+    if (!view) { return; }
+    let cur = view.previewUi || browsePreviewDefaultUi();
+    let next = Object.assign({}, cur, patch || {});
+    view.previewUi = next;
+}
+
+function browsePreviewSetNoSelect(on) {
+    try {
+        if (!document || !document.documentElement) { return; }
+        if (on) {
+            document.documentElement.classList.add('msk-preview-nosel');
+        } else {
+            document.documentElement.classList.remove('msk-preview-nosel');
+        }
+    } catch (e) {}
+}
+
+function browsePreviewClearNativeSelection() {
+    try {
+        let ae = document.activeElement;
+        if (ae && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA' || ae.tagName==='SELECT' || ae.isContentEditable)) {
+            return;
+        }
+        let sel = window.getSelection && window.getSelection();
+        if (sel && sel.removeAllRanges) { sel.removeAllRanges(); }
+    } catch (e) {}
+}
+
+function browsePreviewBindSelectBlock(view) {
+    if (!view || view._previewSelectBound) { return; }
+    view._previewSelectBound = true;
+    view._previewOnSelect = function() {
+        browsePreviewClearNativeSelection();
+    };
+    try {
+        document.addEventListener('selectionchange', view._previewOnSelect, true);
+    } catch (e) {}
+}
+
+function browsePreviewUnbindSelectBlock(view) {
+    if (!view || !view._previewSelectBound) { return; }
+    view._previewSelectBound = false;
+    if (view._previewOnSelect) {
+        try { document.removeEventListener('selectionchange', view._previewOnSelect, true); } catch (e) {}
+        view._previewOnSelect = undefined;
+    }
+    browsePreviewSetNoSelect(false);
+}
+
+function browseItemCanPreviewHold(item, view) {
+    if (!item || item.header) {
+        return false;
+    }
+    if (typeof queryParams!=='undefined' && queryParams.party) {
+        return false;
+    }
+    // Preview allowed when we have either a dedicated soft player or a main player
+    if (typeof browseHasPreviewPlayer==='function' && !browseHasPreviewPlayer(view)) {
+        return false;
+    }
+    // Do not use browseItemCanPlayQuick here — it used to treat extras/etc. as
+    // playable and double-tap-hold must stay limited to real audio items.
+    if (undefined!=item.stdItem && (
+        item.stdItem==STD_ITEM_ALBUM || item.stdItem==STD_ITEM_PLAYLIST ||
+        item.stdItem==STD_ITEM_REMOTE_PLAYLIST || item.stdItem==STD_ITEM_ARTIST ||
+        item.stdItem==STD_ITEM_ONLINE_ALBUM || item.stdItem==STD_ITEM_ONLINE_ARTIST ||
+        item.stdItem==STD_ITEM_WORK || item.stdItem==STD_ITEM_RANDOM_MIX ||
+        item.stdItem==STD_ITEM_TRACK || item.stdItem==STD_ITEM_ALBUM_TRACK ||
+        item.stdItem==STD_ITEM_PLAYLIST_TRACK || item.stdItem==STD_ITEM_REMOTE_PLAYLIST_TRACK)) {
+        return true;
+    }
+    if (item.cstatsCard && item.cstatsCard.playCmd) {
+        return true;
+    }
+    if (item.metadata && (item.metadata.type=='track' || item.metadata.type=='album' || item.metadata.type=='playlist')) {
+        return true;
+    }
+    if (item.type=='audio' || item.type=='playlist' || item.type=='album' || item.style=='itemplay') {
+        return true;
+    }
+    if (item.actions && (item.actions.play || item.actions.add ||
+            (item.actions.go && (item.goAction=='play' || item.goAction=='playControl')))) {
+        return true;
+    }
+    if (item.isRadio || (item.url && item.type!='extra') ||
+        (item.presetParams && item.presetParams.favorites_url)) {
+        return true;
+    }
+    if (item.menu && item.menu.length>0 &&
+        (item.menu.indexOf(PLAY_ACTION)>=0 || item.menu.indexOf(PLAY_ALL_ACTION)>=0)) {
+        return true;
+    }
+    return false;
+}
+
+function browsePreviewItemUrl(item) {
+    if (!item) {
+        return '';
+    }
+    let url = (item.presetParams && (item.presetParams.favorites_url || item.presetParams.url)) ||
+        item.url || item.favUrl || '';
+    if (!url && item.cstatsCard) {
+        let pp = item.cstatsCard.playParams || [];
+        for (let i=0; i<pp.length; ++i) {
+            let s = String(pp[i]);
+            if (s.indexOf('url:')===0 || s.indexOf('uri:')===0) {
+                url = s.substring(s.indexOf(':')+1);
+                break;
+            }
+        }
+    }
+    return url ? String(url).replace(/^spotify:\/\//i, 'spotify:') : '';
+}
+
+function browsePreviewShouldSeek(item) {
+    if (!item) {
+        return true;
+    }
+    if (item.isRadio) {
+        return false;
+    }
+    if (item.cstatsCard && (item.cstatsCard.type==='radio' || item.cstatsCard.type==='podcast')) {
+        return false;
+    }
+    let url = browsePreviewItemUrl(item);
+    if (url && (/^https?:/i.test(url) || url.indexOf('mms:')===0 || url.indexOf('rtsp:')===0 ||
+            url.indexOf('podcast:')===0 || url.indexOf('podcast://')===0)) {
+        return false;
+    }
+    return true;
+}
+
+/** Play command for preview — slimbrowse / Spotty / home extras / context-stats cards. */
+function browsePreviewBuildCommand(view, item) {
+    if (!item) {
+        return { command: [] };
+    }
+    if (item.cstatsCard && item.cstatsCard.playCmd) {
+        return { command: [item.cstatsCard.playCmd].concat(item.cstatsCard.playParams || []) };
+    }
+    let playAct = (item.menu && item.menu.indexOf(PLAY_ALL_ACTION)>=0) ? PLAY_ALL_ACTION : PLAY_ACTION;
+    let slimBase = undefined;
+    try {
+        if (undefined!=item.iheHdr && view && view.topExtra && view.topExtra[item.iheHdr]) {
+            slimBase = view.topExtra[item.iheHdr].baseActions;
+        }
+    } catch (eB) {}
+    let command = typeof browseBuildFullCommand==='function'
+        ? browseBuildFullCommand(view, item, playAct, slimBase)
+        : { command: [] };
+    if (command && command.command && command.command.length>0) {
+        return command;
+    }
+    let url = browsePreviewItemUrl(item);
+    if (url) {
+        return { command: ['playlist', 'play', url, item.title || ''] };
+    }
+    return { command: [] };
+}
+
+function browsePreviewSeekWhenReady(view, pid, gen) {
+    if (!view || !pid) {
+        return;
+    }
+    let tries = 0;
+    let tick = function() {
+        if (!view._previewHoldActive || view._previewHoldGen!==gen) {
+            return;
+        }
+        lmsCommand(pid, ['status', '-', 1, 'tags:']).then(function(resp) {
+            if (!view._previewHoldActive || view._previewHoldGen!==gen) {
+                return;
+            }
+            let r = resp && resp.data && resp.data.result ? resp.data.result : {};
+            let mode = r.mode || '';
+            if (mode==='play') {
+                lmsCommand(pid, ['time', BROWSE_PREVIEW_START_SEC]).catch(function(){});
+                browsePreviewArmMaxTimer(view);
+                return;
+            }
+            if (++tries < 24) {
+                view._previewSeekTimer = setTimeout(tick, 220);
+            } else {
+                browsePreviewArmMaxTimer(view);
+            }
+        }).catch(function() {
+            if (view._previewHoldActive && view._previewHoldGen===gen) {
+                if (++tries < 24) {
+                    view._previewSeekTimer = setTimeout(tick, 220);
+                } else {
+                    browsePreviewArmMaxTimer(view);
+                }
+            }
+        });
+    };
+    view._previewSeekTimer = setTimeout(tick, 280);
+}
+
+function browsePreviewClearTimers(view) {
+    if (!view) { return; }
+    if (view._previewMaxTimer) {
+        clearTimeout(view._previewMaxTimer);
+        view._previewMaxTimer = undefined;
+    }
+    if (view._previewFadeTimer) {
+        clearTimeout(view._previewFadeTimer);
+        view._previewFadeTimer = undefined;
+    }
+    if (view._previewLoadTimer) {
+        clearInterval(view._previewLoadTimer);
+        view._previewLoadTimer = undefined;
+    }
+    if (view._previewSeekTimer) {
+        clearTimeout(view._previewSeekTimer);
+        view._previewSeekTimer = undefined;
+    }
+    if (view._previewProgTimer) {
+        clearInterval(view._previewProgTimer);
+        view._previewProgTimer = undefined;
+    }
+}
+
+function browsePreviewStartLoadWatch(view) {
+    if (!view) { return; }
+    if (view._previewLoadTimer) {
+        clearInterval(view._previewLoadTimer);
+        view._previewLoadTimer = undefined;
+    }
+    let gen = view._previewHoldGen || 0;
+    browsePreviewSetUi(view, { active: true, loading: true, progress: 0 });
+    view._previewLoadTimer = setInterval(function() {
+        if (!view._previewHoldActive || view._previewHoldGen!==gen) {
+            if (view._previewLoadTimer) {
+                clearInterval(view._previewLoadTimer);
+                view._previewLoadTimer = undefined;
+            }
+            return;
+        }
+        let pid = view._previewHoldPlayerId;
+        if (!pid) {
+            browsePreviewSetUi(view, { loading: true, progress: 0 });
+            return;
+        }
+        lmsCommand(pid, ['status', '-', 1, 'tags:']).then(function(resp) {
+            if (!view._previewHoldActive || view._previewHoldGen!==gen) {
+                return;
+            }
+            let r = resp && resp.data && resp.data.result ? resp.data.result : {};
+            let mode = r.mode || '';
+            let t = parseFloat(r.time);
+            let playing = mode==='play' && !isNaN(t) && t >= Math.max(0, BROWSE_PREVIEW_START_SEC - 8);
+            if (playing) {
+                if (view._previewLoadTimer) {
+                    clearInterval(view._previewLoadTimer);
+                    view._previewLoadTimer = undefined;
+                }
+                browsePreviewStartProgressWatch(view);
+            } else {
+                browsePreviewSetUi(view, { loading: true, progress: 0 });
+            }
+        }).catch(function() {
+            if (view._previewHoldActive && view._previewHoldGen===gen) {
+                browsePreviewSetUi(view, { loading: true, progress: 0 });
+            }
+        });
+    }, 220);
+}
+
+/** Determinate ring: elapsed preview time around the circle (20s cap). */
+function browsePreviewStartProgressWatch(view) {
+    if (!view) { return; }
+    if (view._previewProgTimer) {
+        clearInterval(view._previewProgTimer);
+        view._previewProgTimer = undefined;
+    }
+    let gen = view._previewHoldGen || 0;
+    view._previewPlayStartedAt = Date.now();
+    browsePreviewSetUi(view, { loading: false, progress: 0, active: true });
+    view._previewProgTimer = setInterval(function() {
+        if (!view._previewHoldActive || view._previewHoldGen!==gen) {
+            if (view._previewProgTimer) {
+                clearInterval(view._previewProgTimer);
+                view._previewProgTimer = undefined;
+            }
+            return;
+        }
+        let maxMs = (typeof BROWSE_PREVIEW_MAX_MS==='number' && BROWSE_PREVIEW_MAX_MS>0) ? BROWSE_PREVIEW_MAX_MS : 20000;
+        let p = (Date.now() - (view._previewPlayStartedAt || Date.now())) / maxMs;
+        if (p<0) { p = 0; }
+        if (p>1) { p = 1; }
+        browsePreviewSetUi(view, { loading: false, progress: p });
+        if (p>=1 && view._previewProgTimer) {
+            clearInterval(view._previewProgTimer);
+            view._previewProgTimer = undefined;
+            browsePreviewFadeAndStop(view);
+        }
+    }, 80);
+}
+
+/**
+ * Soft fade volume down on the preview player, then stop (20s auto-end or pause tap).
+ * On finger lift we stop immediately via browsePreviewHoldStop instead.
+ */
+function browsePreviewFadeAndStop(view) {
+    if (!view) {
+        return;
+    }
+    if (view.previewUi && view.previewUi.fading) {
+        return;
+    }
+    if (!view._previewHoldActive) {
+        if (typeof browsePreviewHoldStop==='function') {
+            browsePreviewHoldStop(view);
+        }
+        return;
+    }
+    let pid = view._previewHoldPlayerId;
+    let gen = view._previewHoldGen || 0;
+    browsePreviewSetUi(view, { fading: true, loading: false, active: true });
+    if (!pid) {
+        browsePreviewHoldStop(view);
+        return;
+    }
+    if (view._previewMaxTimer) {
+        clearTimeout(view._previewMaxTimer);
+        view._previewMaxTimer = undefined;
+    }
+    if (view._previewProgTimer) {
+        clearInterval(view._previewProgTimer);
+        view._previewProgTimer = undefined;
+    }
+    let steps = 8;
+    let stepMs = Math.max(40, Math.floor(BROWSE_PREVIEW_FADE_MS / steps));
+    let startVol = (typeof view._previewSavedVol==='number') ? view._previewSavedVol : 80;
+    let i = 0;
+    let step = function() {
+        if (!view._previewHoldActive || view._previewHoldGen!==gen) {
+            return;
+        }
+        i++;
+        let v = Math.max(0, Math.round(startVol * (1 - (i / steps))));
+        lmsCommand(pid, ['mixer', 'volume', String(v)]).catch(function(){});
+        if (i >= steps) {
+            view._previewFadeTimer = undefined;
+            browsePreviewHoldStop(view);
+            return;
+        }
+        view._previewFadeTimer = setTimeout(step, stepMs);
+    };
+    step();
+}
+
+/**
+ * Snapshot main-player playlist + mode so we can restore after preview.
+ * Uses LMS `playlist save` / later `playlist resume`.
+ */
+function browsePreviewSaveMainQueue(view, pid) {
+    view._previewRestoreMain = true;
+    view._previewMainPid = pid;
+    view._previewSavedMode = 'stop';
+    return lmsCommand(pid, ['status', '-', 1, 'tags:']).then(function(resp) {
+        try {
+            let r = resp && resp.data && resp.data.result ? resp.data.result : {};
+            view._previewSavedMode = r.mode || 'stop'; // play | pause | stop
+            view._previewSavedTime = r.time;
+            view._previewSavedIndex = r.playlist_cur_index;
+        } catch (eSt) {}
+        return lmsCommand(pid, ['playlist', 'save', BROWSE_PREVIEW_BAK_NAME]);
+    }).catch(function(err) {
+        // Still try save even if status failed
+        logError(err);
+        return lmsCommand(pid, ['playlist', 'save', BROWSE_PREVIEW_BAK_NAME]);
+    });
+}
+
+/** Restore main-player queue after soft preview ends. */
+function browsePreviewRestoreMainQueue(view, pid) {
+    if (!pid || !view || !view._previewRestoreMain) {
+        return Promise.resolve();
+    }
+    let mode = view._previewSavedMode || 'stop';
+    view._previewRestoreMain = false;
+    view._previewMainPid = undefined;
+    return lmsCommand(pid, ['playlist', 'resume', BROWSE_PREVIEW_BAK_NAME]).then(function() {
+        // Resume leaves the player playing; match prior mode
+        if (mode==='stop') {
+            return lmsCommand(pid, ['stop']);
+        }
+        if (mode==='pause' || mode==='paused') {
+            return lmsCommand(pid, ['pause', '1']);
+        }
+        // mode play: leave playing, or pause so preview "release" is quiet
+        return lmsCommand(pid, ['pause', '1']);
+    }).catch(function(err) {
+        logError(err);
+        // Best-effort stop so we do not leave the sample running on main
+        return lmsCommand(pid, ['stop']).catch(function(){});
+    });
+}
+
+/**
+ * Soft preview: load/play item from ~30s until browsePreviewHoldStop.
+ * - Dedicated preview player: play there (main queue untouched).
+ * - This device's player (Mac squeezelite / LyrPlay): save queue → restore on stop.
+ * @param {object} [opts]
+ * @param {boolean} [opts.sticky] drawer/menu preview — do not stop on finger lift
+ */
+function browsePreviewHoldStart(view, item, opts) {
+    let pid = browsePreviewPlayerId(view);
+    if (!pid || !item || !view) {
+        return;
+    }
+    view._previewSticky = !!(opts && opts.sticky);
+    // Already previewing this item — keep playing (reset 20s cap)
+    if (view._previewHoldActive && view._previewHoldItemId===item.id) {
+        browsePreviewArmMaxTimer(view);
+        browsePreviewSetUi(view, { active: true, itemId: item.id });
+        return;
+    }
+    let command = browsePreviewBuildCommand(view, item);
+    if (!command || !command.command || command.command.length===0) {
+        return;
+    }
+    browsePreviewClearTimers(view);
+    view._previewHoldGen = (view._previewHoldGen || 0) + 1;
+    let gen = view._previewHoldGen;
+    view._previewHoldActive = true;
+    view._previewHoldPlayerId = pid;
+    view._previewHoldItemId = item.id;
+    view._previewSavedVol = undefined;
+    browsePreviewSetUi(view, { active: true, loading: true, progress: 0, itemId: item.id, fading: false });
+    browsePreviewStartLoadWatch(view);
+    if (view._previewSticky) {
+        browsePreviewArmMaxTimer(view);
+    }
+
+    let useMain = browsePreviewUsesMainPlayer(view, pid);
+    // Save main queue only once per preview session (scrub must not overwrite the backup)
+    let prep = (useMain && !view._previewRestoreMain)
+        ? browsePreviewSaveMainQueue(view, pid)
+        : Promise.resolve();
+
+    // Snapshot volume so fade-out / stop can restore the soft player level
+    prep = prep.then(function() {
+        return lmsCommand(pid, ['mixer', 'volume', '?']).then(function(resp) {
+            try {
+                let r = resp && resp.data && resp.data.result ? resp.data.result : {};
+                let v = r._volume;
+                if (v===undefined) { v = r.volume; }
+                if (v!==undefined && !isNaN(parseInt(v, 10))) {
+                    view._previewSavedVol = parseInt(v, 10);
+                }
+            } catch (eV) {}
+        }).catch(function(){});
+    });
+
+    prep.then(function() {
+        if (!view._previewHoldActive || view._previewHoldPlayerId!==pid || view._previewHoldGen!==gen) {
+            return;
+        }
+        return lmsCommand(pid, command.command);
+    }).then(function() {
+        if (!view._previewHoldActive || view._previewHoldPlayerId!==pid || view._previewHoldGen!==gen) {
+            return;
+        }
+        if (browsePreviewShouldSeek(item)) {
+            browsePreviewSeekWhenReady(view, pid, gen);
+        } else {
+            browsePreviewArmMaxTimer(view);
+        }
+    }).catch(function(err) {
+        if (view._previewHoldGen===gen) {
+            logError(err, command.command);
+        }
+    });
+}
+
+/** Cap preview at BROWSE_PREVIEW_MAX_MS, then fade out and stop. */
+function browsePreviewArmMaxTimer(view) {
+    if (!view) { return; }
+    if (view._previewMaxTimer) {
+        clearTimeout(view._previewMaxTimer);
+        view._previewMaxTimer = undefined;
+    }
+    let gen = view._previewHoldGen || 0;
+    view._previewMaxTimer = setTimeout(function() {
+        view._previewMaxTimer = undefined;
+        if (!view._previewHoldActive || view._previewHoldGen!==gen) {
+            return;
+        }
+        browsePreviewFadeAndStop(view);
+    }, BROWSE_PREVIEW_MAX_MS);
+}
+
+/** True when a main-player action should cancel the soft-preview player. */
+function browseActionCancelsSoftPreview(act) {
+    return act===PLAY_ACTION || act===PLAY_ALL_ACTION ||
+        act===PLAY_SHUFFLE_ACTION || act===PLAY_SHUFFLE_ALL_ACTION ||
+        act===ADD_ACTION || act===ADD_ALL_ACTION ||
+        act===INSERT_ACTION || act===INSERT_ALL_ACTION ||
+        act===PLAY_ALBUM_ACTION || act===PLAY_PLAYLIST_ACTION ||
+        act===PLAY_DISC_ACTION || act===ADD_RANDOM_ALBUM_ACTION;
+}
+
+/**
+ * Stop soft preview (hold release, cancelled gesture, or superseded by Play/Shuffle/etc.).
+ * @param {object} view browse view
+ * @param {boolean} [force] if true, always stop the soft player when a pid is known
+ *   (e.g. after menu Preview or when a real play action starts)
+ */
+function browsePreviewHoldStop(view, force) {
+    if (!view) {
+        return;
+    }
+    let was = view._previewHoldActive;
+    let pid = view._previewHoldPlayerId || (typeof browsePreviewPlayerId==='function' ? browsePreviewPlayerId(view) : undefined);
+    let restoreMain = !!view._previewRestoreMain;
+    let mainPid = view._previewMainPid || pid;
+    let savedVol = view._previewSavedVol;
+    browsePreviewClearTimers(view);
+    browsePreviewUnbindSelectBlock(view);
+    browsePreviewSetUi(view, browsePreviewDefaultUi());
+    if (typeof view._previewHoldUnbindDoc==='function') {
+        try { view._previewHoldUnbindDoc(); } catch (eUnbind) {}
+    }
+    view._previewHoldMode = false;
+    view._previewHoldActive = false;
+    view._previewSticky = false;
+    view._previewHoldPlayerId = undefined;
+    view._previewHoldItemId = undefined;
+    view._previewSavedVol = undefined;
+    view._previewTapArm = undefined;
+    view._previewHoldGen = (view._previewHoldGen || 0) + 1;
+    if (view.listSwipe && view.listSwipe.previewHold) {
+        view.listSwipe = null;
+    }
+    if (!(pid && (was || force))) {
+        return;
+    }
+    if (restoreMain) {
+        // Main LyrPlay player: restore saved playlist (and leave paused/stopped)
+        browsePreviewRestoreMainQueue(view, mainPid);
+        return;
+    }
+    // Dedicated soft player: stop, restore volume snapshot if we had one
+    lmsCommand(pid, ['stop']).then(function() {
+        if (typeof savedVol==='number' && !isNaN(savedVol)) {
+            return lmsCommand(pid, ['mixer', 'volume', String(savedVol)]).catch(function(){});
+        }
+    }).catch(function(){});
+}
+
+/**
+ * Resolve a browse list/grid item under screen coordinates (for hold-scrub preview).
+ * Returns { item, index } or null.
+ */
+function browsePreviewItemAtPoint(view, x, y) {
+    if (!view || !view.items || undefined==x || undefined==y) {
+        return null;
+    }
+    // Prefer elementsFromPoint so overlays / semi-transparent layers don't hide the row
+    let stack = [];
+    if (document.elementsFromPoint) {
+        try { stack = document.elementsFromPoint(x, y) || []; } catch (eEf) { stack = []; }
+    }
+    if (!stack.length) {
+        let top = document.elementFromPoint(x, y);
+        if (top) { stack = [top]; }
+    }
+    let idx = undefined;
+    for (let si=0; si<stack.length && undefined===idx; ++si) {
+        let node = stack[si];
+        while (node && node!==document.body && node!==document.documentElement) {
+            if (node.id && /^item\d+$/i.test(node.id)) {
+                idx = parseInt(node.id.replace(/^item/i, ''), 10);
+                break;
+            }
+            if (node.getAttribute) {
+                let d = node.getAttribute('data-msk-index');
+                if (d!==null && d!=='' && !isNaN(parseInt(d, 10))) {
+                    idx = parseInt(d, 10);
+                    break;
+                }
+            }
+            // list-swipe-row wrapper may not have id; child tile usually does
+            if (node.classList && node.classList.contains('list-swipe-row')) {
+                let tile = node.querySelector ? node.querySelector('[id^="item"]') : null;
+                if (tile && tile.id && /^item\d+$/i.test(tile.id)) {
+                    idx = parseInt(tile.id.replace(/^item/i, ''), 10);
+                    break;
+                }
+            }
+            node = node.parentElement;
+        }
+    }
+    if (undefined===idx || isNaN(idx) || idx<0) {
+        return null;
+    }
+    // Prefer visible body list (filter / recycler), then full items
+    let pools = [];
+    if (view.browseListBodyItems && view.browseListBodyItems.length) {
+        pools.push(view.browseListBodyItems);
+    }
+    if (view.items && view.items.length) {
+        pools.push(view.items);
+    }
+    for (let p=0; p<pools.length; ++p) {
+        let items = pools[p];
+        // Match gidx when present (home / virtual lists / filtered body)
+        for (let i=0, len=items.length; i<len; ++i) {
+            let it = items[i];
+            if (!it) { continue; }
+            if (undefined!=it.gidx && it.gidx===idx) {
+                return { item: it, index: idx };
+            }
+        }
+        if (idx<items.length && items[idx] && !items[idx].header) {
+            return { item: items[idx], index: idx };
+        }
+    }
+    return null;
+}
+
+/** While finger is held in preview mode, switch sample to item under the finger. */
+function browsePreviewHoldScrub(view, x, y) {
+    if (!view || !view._previewHoldActive) {
+        return;
+    }
+    let found = browsePreviewItemAtPoint(view, x, y);
+    if (!found || !found.item) {
+        return;
+    }
+    if (!browseItemCanPreviewHold(found.item, view)) {
+        return;
+    }
+    if (found.item.id===view._previewHoldItemId) {
+        return;
+    }
+    try {
+        if (navigator.vibrate) { navigator.vibrate(8); }
+    } catch (eV) {}
+    browsePreviewHoldStart(view, found.item);
+}
+
+/** Insert Preview after Play when app provides a local preview player. */
+function browseMenuWithPreview(menu, view) {
+    if (!menu || !browseHasPreviewPlayer(view)) {
+        return menu;
+    }
+    if (menu.indexOf(PREVIEW_ACTION)>=0) {
+        return menu;
+    }
+    let out = menu.slice();
+    let i = out.indexOf(PLAY_ACTION);
+    if (i<0) {
+        i = out.indexOf(PLAY_ALL_ACTION);
+    }
+    if (i>=0) {
+        out.splice(i+1, 0, PREVIEW_ACTION);
+    } else {
+        out.unshift(PREVIEW_ACTION);
+    }
+    return out;
+}
+
+/** Toggle sticky preview from the contextual-drawer header control. */
+function browsePreviewToggle(view, item) {
+    if (!view || !item) {
+        return;
+    }
+    if (view._previewHoldActive &&
+        (view._previewHoldItemId===item.id || (view.previewUi && view.previewUi.itemId===item.id))) {
+        browsePreviewFadeAndStop(view);
+        return;
+    }
+    if (!browsePreviewPlayerId(view)) {
+        bus.$emit('showError', undefined, i18n('Preview player not ready'));
+        return;
+    }
+    browsePreviewHoldStart(view, item, { sticky: true });
+}
+
 function browseItemMenu(view, item, index, event) {
     if (view.menu.show && view.menu.item && item.id==view.menu.item.id) {
         view.menu.show=false;
         return;
+    }
+    let pos = browseMenuCoords(event);
+    // Restore play menus for pins that lost them after storage reload
+    if (item && item.isPinned && (!item.menu || item.menu.length<1)) {
+        if (item.url || item.isRadio || (item.presetParams && item.presetParams.favorites_url)) {
+            item.menu = [PLAY_ACTION, INSERT_ACTION, ADD_ACTION, DIVIDER, RENAME_ACTION, UNPIN_ACTION];
+        } else if (undefined!=item.stdItem) {
+            item.menu = [PLAY_ACTION, INSERT_ACTION, ADD_ACTION, DIVIDER, UNPIN_ACTION];
+        } else {
+            item.menu = [RENAME_ACTION, UNPIN_ACTION];
+        }
     }
     if (!item.menu) {
         if (undefined!=item.stdItem) {
@@ -2041,30 +3683,50 @@ function browseItemMenu(view, item, index, event) {
                     break;
                 }
             }
-            showMenu(view, {show:true, item:item, x:event.clientX, y:event.clientY, index:index,
-                            itemMenu:menu});
+            showMenu(view, {show:true, item:item, x:pos.x, y:pos.y, index:index,
+                            itemMenu:browseMenuWithPreview(menu, view)});
         } else if (TOP_MYMUSIC_ID==item.id) {
             browseSelectVLib(view);
+        } else if (item.url || item.isRadio || (item.presetParams && item.presetParams.favorites_url)) {
+            let menu = browseMenuWithPreview([PLAY_ACTION, INSERT_ACTION, ADD_ACTION], view);
+            showMenu(view, {show:true, item:item, x:pos.x, y:pos.y, index:index, itemMenu:menu});
+        } else if (item.command || item.actions || item.type=='group' || item.type=='favorites' ||
+                   (item.id && (''+item.id).startsWith(TOP_ID_PREFIX))) {
+            // Navigable home/folder item without play actions — sheet with Open
+            showMenu(view, {
+                show: true,
+                item: item,
+                x: pos.x,
+                y: pos.y,
+                index: index,
+                cstatsActions: [{
+                    title: i18n('Open'),
+                    icon: 'folder_open',
+                    selected: function() {
+                        browseDoClick(view, item, index, event, true);
+                    }
+                }]
+            });
         }
         return;
     }
     if (1==item.menu.length && MORE_ACTION==item.menu[0] && SECTION_PODCASTS!=item.section) {
         if (item.moremenu) {
-            showMenu(view, {show:true, item:item, x:event.clientX, y:event.clientY, index:index});
+            showMenu(view, {show:true, item:item, x:pos.x, y:pos.y, index:index});
         } else {
             var command = browseBuildFullCommand(view, item, item.menu[0]);
             lmsList(view.playerId(), command.command, command.params, 0, 100, false).then(({data}) => {
                 var resp = parseBrowseResp(data, item, view.options);
                 if (resp.items.length>0) {
                     item.moremenu = resp.items;
-                    showMenu(view, {show:true, item:item, x:event.clientX, y:event.clientY, index:index});
+                    showMenu(view, {show:true, item:item, x:pos.x, y:pos.y, index:index});
                 } else {
                     logAndShowError(undefined, i18n("No entries found"), command.command);
                 }
             });
         }
     } else {
-        showMenu(view, {show:true, item:item, itemMenu:item.menu, x:event.clientX, y:event.clientY, index:index});
+        showMenu(view, {show:true, item:item, itemMenu:browseMenuWithPreview(item.menu, view), x:pos.x, y:pos.y, index:index});
     }
 }
 
@@ -2073,10 +3735,15 @@ function browseHeaderAction(view, act, event, ignoreOpenMenus) {
         return;
     }
     let item = undefined!=view.current && view.current.stdItem==STD_ITEM_MAI ? view.history[view.history.length-1].current : view.current;
-    if (USE_LIST_ACTION==act) {
-        view.changeLayout(false);
-    } else if (USE_GRID_ACTION==act || USE_ALT_GRID_ACTION==act) {
-        view.changeLayout(true);
+    if (USE_LIST_ACTION==act || USE_GRID_ACTION==act || USE_ALT_GRID_ACTION==act) {
+        // My Music: list → grid → fusion panel → list
+        if (view.current && view.current.id==TOP_MYMUSIC_ID && typeof view.cycleMyMusicView==='function') {
+            view.cycleMyMusicView();
+        } else if (USE_LIST_ACTION==act) {
+            view.changeLayout(false);
+        } else {
+            view.changeLayout(true);
+        }
     } else if (ALBUM_SORTS_ACTION==act || TRACK_SORTS_ACTION==act) {
         var currentSort=ALBUM_SORTS_ACTION==act ? getAlbumSort(view.command, view.inGenre, undefined!=item ? item : undefined) : getTrackSort(item.stdItem);
         var menuItems=[];
@@ -2174,17 +3841,137 @@ function browseHeaderAction(view, act, event, ignoreOpenMenus) {
 }
 
 function browseFetchHome(view, prev) {
-    view.getHomeExtra();
     view.$nextTick(function () {
         view.setBgndCover();
         view.filterJumplist();
         view.layoutGrid(true);
         setScrollTop(view, prev.pos>0 ? prev.pos : 0);
+        browseItemsFadeIn(view);
+        // Banners / recents refresh after first paint so back-to-home is not blocked
+        view.getHomeExtra();
+        if (typeof contextStatsHomeLoad === 'function') {
+            contextStatsHomeLoad(view);
+        }
     });
 }
 
-function browseGoHome(view, refresh) {
+function browsePushHomeHistory(view) {
+    addBrowserHistoryItem();
+    var prev = {};
+    prev.items = view.$store.state.detailedHomeItems.length>0 && view.grid.use ? view.topExtra.concat(view.top) : view.top;
+    prev.listSize = 0;
+    prev.allTracksItem = undefined;
+    prev.jumplist = [];
+    prev.numHeaders = 0;
+    prev.baseActions = [];
+    prev.current = null;
+    prev.currentLibId = null;
+    prev.pinnedItemLibName = undefined;
+    prev.currentBaseActions = [];
+    prev.currentItemImage = undefined;
+    prev.currentActions = [{action:VLIB_ACTION}, {action:(view.grid.use ? USE_LIST_ACTION : view.$store.state.detailedHomeItems.length>0 ? USE_ALT_GRID_ACTION : USE_GRID_ACTION)}];
+    prev.headerTitle = null;
+    prev.headerSubTitle = null;
+    prev.historyExtra = undefined;
+    prev.detailedSubInfo = undefined;
+    prev.detailedSubExtra = undefined;
+    prev.extraInfo = undefined;
+    prev.tbarActions = [];
+    prev.pos = 0;
+    prev.grid = {allowed:true, use:view.$store.state.gridPerView ? isSetToUseGrid(GRID_TOP) : view.grid.use, numColumns:0, ih:GRID_MIN_HEIGHT, rows:[], few:false, haveSubtitle:true, multiSize:false, type:GRID_STANDARD};
+    prev.hoverBtns = !IS_MOBILE;
+    prev.command = undefined;
+    prev.subtitleClickable = false;
+    prev.prevPage = undefined;
+    prev.allItems = undefined;
+    prev.inGenre = undefined;
+    prev.searchActive = 0;
+    prev.canDrop = true;
+    prev.itemCustomActions = undefined;
+    view.history.push(prev);
+}
+
+function browseCaptureHistoryState(view) {
+    var prev = {};
+    prev.items = view.items;
+    prev.listSize = view.listSize;
+    prev.allTracksItem = view.allTracksItem;
+    prev.jumplist = view.jumplist;
+    prev.numHeaders = view.numHeaders;
+    prev.baseActions = view.baseActions;
+    prev.current = view.current;
+    prev.currentLibId = view.currentLibId;
+    prev.pinnedItemLibName = view.pinnedItemLibName;
+    prev.currentBaseActions = view.currentBaseActions;
+    prev.currentItemImage = view.currentItemImage;
+    prev.currentActions = view.currentActions;
+    prev.headerTitle = view.headerTitle;
+    prev.headerSubTitle = view.headerSubTitle;
+    prev.historyExtra = view.historyExtra;
+    prev.detailedSubInfo = view.detailedSubInfo;
+    prev.detailedSubExtra = view.detailedSubExtra;
+    prev.extraInfo = view.extraInfo;
+    prev.tbarActions = view.tbarActions;
+    prev.pos = view.scrollElement ? view.scrollElement.scrollTop : 0;
+    prev.grid = view.grid;
+    prev.hoverBtns = view.hoverBtns;
+    prev.command = view.command;
+    prev.subtitleClickable = view.subtitleClickable;
+    prev.prevPage = view.prevPage;
+    prev.allItems = view.allItems;
+    prev.inGenre = view.inGenre;
+    prev.searchActive = view.searchActive;
+    prev.canDrop = view.canDrop;
+    prev.itemCustomActions = view.itemCustomActions;
+    return prev;
+}
+
+function browsePrepareHomePaneNav(view) {
+    let searchSnap = undefined;
+    if (view.current && view.current.id && (''+view.current.id).indexOf(SEARCH_ID_PREFIX)===0 && view.items && view.items.length>0) {
+        searchSnap = browseCaptureHistoryState(view);
+        searchSnap.searchActive = 1;
+    }
     view.searchActive = 0;
+    view.browseSearching = false;
+    if (view.fetchingItem!=undefined) {
+        view.nextReqId();
+        view.fetchingItem = undefined;
+    }
+    view.next = undefined;
+    view.selection = new Set();
+    view.jumplist = [];
+    view.filteredJumplist = [];
+    view.history = [];
+    browsePushHomeHistory(view);
+    if (searchSnap) {
+        view.history.push(searchSnap);
+    }
+    view.listFilterTerm = '';
+    view.listFilterSelPos = -1;
+    view._homePaneNav = true;
+    if (undefined!=view.homeTimeout) {
+        clearTimeout(view.homeTimeout);
+        view.homeTimeout = null;
+    }
+}
+
+function browseGoHome(view, refresh) {
+    let hadListFilter = 2==view.searchActive && (view.listFilterTerm || view._gridFilterTerm);
+    view._skipNextAddHistory = false;
+    view.searchActive = 0;
+    view.listFilterTerm = '';
+    view.listFilterSelPos = -1;
+    view._gridFilterTerm = undefined;
+    if (typeof view.clearBrowseKbSelect==='function') {
+        view.clearBrowseKbSelect();
+    }
+    if (typeof view.applyListFilterClasses==='function') {
+        view.applyListFilterClasses();
+    }
+    if (hadListFilter && view.isTop && view.grid && view.grid.use && typeof view.layoutGrid==='function') {
+        view.layoutGrid(true);
+    }
     if (view.history.length==0) {
         return;
     }
@@ -2192,11 +3979,13 @@ function browseGoHome(view, refresh) {
         view.nextReqId();
         view.fetchingItem = undefined;
     }
+    browseNavAnim(view, 'back');
     view.next = undefined;
     view.selection = new Set();
     var prev = view.history.length>0 ? view.history[0].pos : 0;
     view.jumplist = [];
     view.filteredJumplist = [];
+    view.reserveJumplistGutter = false;
     view.history=[];
     view.current = null;
     view.currentLibId = null;
@@ -2226,6 +4015,9 @@ function browseGoHome(view, refresh) {
     if (undefined==refresh || refresh) {
         browseFetchHome(view, prev);
     } else {
+        view.$nextTick(function() {
+            browseItemsFadeIn(view);
+        });
         // If called does not want us to refresh home, then we do this after 0.75s incase
         // call that was to fill view fails.
         view.homeTimeout = setTimeout(function() {
@@ -2240,7 +4032,11 @@ function browseGoBack(view, refresh) {
     if (view.fetchingItem!=undefined) {
         view.nextReqId();
         view.fetchingItem = undefined;
-        return;
+        if (!view._browseShellNav) {
+            return;
+        }
+        view._browseShellNav = false;
+        view._skipNextAddHistory = false;
     }
     let searchWasActive = view.searchActive;
     // 0 = not active
@@ -2248,9 +4044,21 @@ function browseGoBack(view, refresh) {
     // 2 = search within list
     if (2==view.searchActive) {
         view.searchActive = 0;
-        return;
+        view.listFilterTerm = '';
+        if (typeof view.applyListFilterClasses==='function') {
+            view.applyListFilterClasses();
+        }
+        // Desktop: Back first leaves in-list filter. Mobile filter lives in
+        // pull-to-refresh and must not steal the title-bar back button.
+        if (view.$store && view.$store.state.desktopLayout) {
+            return;
+        }
     } else if (view.searchActive) {
         view.searchActive = 0;
+        view.listFilterTerm = '';
+        if (typeof view.applyListFilterClasses==='function') {
+            view.applyListFilterClasses();
+        }
     }
     if (view.prevPage) {
         var nextPage = ""+view.prevPage;
@@ -2272,6 +4080,8 @@ function browseGoBack(view, refresh) {
         view.next = next;
         return;
     }
+    // Pop one level: content slides back from the left
+    browseNavAnim(view, 'back');
     view.next = next;
     view.selection = new Set();
     var prev = view.history.pop();
@@ -2280,7 +4090,12 @@ function browseGoBack(view, refresh) {
     view.allTracksItem = prev.allTracksItem;
     view.jumplist = prev.jumplist;
     view.numHeaders = prev.numHeaders;
-    view.filteredJumplist = [];
+    view.reserveJumplistGutter = false;
+    if (typeof view.filterJumplist==='function') {
+        view.filterJumplist();
+    } else {
+        view.filteredJumplist = [];
+    }
     let gridWillBeActive = view.grid.allowed && view.grid.use ? true : false;
     let gridWasActive = prev.grid.allowed && prev.grid.use ? true : false;
     let use = view.grid.use;
@@ -2323,6 +4138,7 @@ function browseGoBack(view, refresh) {
             view.filterJumplist();
             view.layoutGrid(true);
             setScrollTop(view, prev.pos>0 ? prev.pos : 0);
+            browseItemsFadeIn(view);
         });
     }
 }
@@ -2348,8 +4164,14 @@ function browseBuildCommand(view, item, commandName, doReplacements, allowLibId,
         if (undefined==commandName || item.mskOnlyGoAction) {
             commandName = "go";
         }
-        var baseActions = undefined!=item.iheHdr && undefined!=view.topExtra[item.iheHdr].baseActions
-            ? view.topExtra[item.iheHdr].baseActions
+        var iheBase = undefined;
+        try {
+            if (item && undefined!=item.iheHdr && view && view.topExtra && view.topExtra[item.iheHdr]) {
+                iheBase = view.topExtra[item.iheHdr].baseActions;
+            }
+        } catch (eIhe) {}
+        var baseActions = iheBase
+            ? iheBase
             : slimBrowseBaseActions ? slimBrowseBaseActions : view.current == item ? view.currentBaseActions : view.baseActions;
         var command = item.actions && item.actions[commandName]
                     ? item.actions[commandName]
@@ -2689,6 +4511,11 @@ function browseAddPinned(view, pinned) {
             pinned[i].icon = pinned[i].item.icon;
             pinned[i].item = undefined;
         }
+        /* Remap brand images (e.g. Spotty green logo) → mono svg so home/sidebar match chrome */
+        if (typeof mapIcon==='function') {
+            pinned[i].imapped = undefined;
+            mapIcon(pinned[i]);
+        }
         pinned[i].menu = undefined == pinned[i].url ? [RENAME_ACTION, UNPIN_ACTION] : [PLAY_ACTION, INSERT_ACTION, ADD_ACTION, DIVIDER, RENAME_ACTION, UNPIN_ACTION];
         view.options.pinned.add(pinned[i].id);
         view.top.unshift(pinned[i]);
@@ -2701,6 +4528,82 @@ function browseAddPinned(view, pinned) {
     }
     view.saveTopList();
     removeLocalStorage("pinned");
+}
+
+function browsePinTargetId(item) {
+    if (!item) {
+        return undefined;
+    }
+    if (item.isRadio && item.presetParams && item.presetParams.favorites_url) {
+        return item.presetParams.favorites_url;
+    }
+    return item.id;
+}
+
+function browsePinActionLabels(desktopLayout) {
+    if (desktopLayout) {
+        return {
+            pin: i18n("Pin to sidebar"),
+            unpin: i18n("Un-pin from sidebar"),
+            pinnedMsg: function(t) { return i18n("Pinned '%1' to sidebar.", t); }
+        };
+    }
+    return {
+        pin: i18n("Pin to shortcuts"),
+        unpin: i18n("Un-pin from shortcuts"),
+        pinnedMsg: function(t) { return i18n("Pinned '%1' to shortcuts.", t); }
+    };
+}
+
+function browseCanPinCurrent(view) {
+    if (!view || queryParams.party || (LMS_KIOSK_MODE && HIDE_FOR_KIOSK.has(PIN_ACTION))) {
+        return false;
+    }
+    if (view.isTop || !view.current || !view.current.id) {
+        return false;
+    }
+    let id = view.current.id;
+    if (id.startsWith(TOP_ID_PREFIX) || id.startsWith(SEARCH_ID) || id.startsWith("currentaction:") ||
+        id==RANDOM_MIX_ID || id==START_RANDOM_MIX_ID || id==ALL_TRACKS_ID) {
+        return false;
+    }
+    if (view.current.stdItem==STD_ITEM_MAI || view.current.header || view.current.type=='html' || view.current.type=='text') {
+        return false;
+    }
+    // Need enough structure to re-open the page when tapped from sidebar/shortcuts
+    if (view.current.stdItem || view.current.actions || view.current.command || view.current.url ||
+        view.current.isRadio || view.current.type=='extra' || view.current.type=='settingsPlayer' ||
+        view.current.isPinned ||
+        (view.command && view.command.command && view.command.command.length>0)) {
+        return true;
+    }
+    return false;
+}
+
+function browseAddHeaderPinAction(view) {
+    // Header pin button removed — took too much subheader space on mobile.
+    // Pin/unpin remains available from item menus (⋮ / long-press).
+    if (!view || !view.currentActions) {
+        return;
+    }
+    browseRemoveHeaderPinAction(view);
+}
+
+function browseRemoveHeaderPinAction(view) {
+    if (!view || !view.currentActions) {
+        return;
+    }
+    for (let i=view.currentActions.length-1; i>=0; --i) {
+        let a = view.currentActions[i];
+        if (a && (a.action==PIN_ACTION || a.action==UNPIN_ACTION)) {
+            view.currentActions.splice(i, 1);
+        }
+    }
+}
+
+function browseSyncHeaderPinAction(view) {
+    // Keep toolbar free of pin/unpin; strip any leftover header pin entries.
+    browseRemoveHeaderPinAction(view);
 }
 
 function browsePin(view, item, add, mapped) {
@@ -2761,6 +4664,17 @@ function browsePin(view, item, add, mapped) {
                              actions: item.actions, players: item.players, menu: [RENAME_ACTION, UNPIN_ACTION], weight:10000});
         } else {
             var command = browseBuildCommand(view, item, undefined, false);
+            // Header pin of current page: fall back to the live browse command if go-action is missing
+            if (command.command.length<1 && view.current===item && view.command && view.command.command && view.command.command.length>0) {
+                command = {
+                    command: view.command.command.slice(),
+                    params: undefined!=view.command.params ? view.command.params.slice() : []
+                };
+            }
+            if (command.command.length<1) {
+                bus.$emit('showError', undefined, i18n("Cannot pin this page."));
+                return;
+            }
             var pinItem = {id: item.id, title: item.title, libname: item.libname, image: item.image, icon: item.icon, svg: item.svg, mapgenre: item.mapgenre,
                            command: command.command, params: command.params, isPinned: true, menu: [RENAME_ACTION, UNPIN_ACTION],
                            weight: undefined==item.weight ? 10000 : item.weight, section: item.section, cancache: item.cancache};
@@ -2772,10 +4686,12 @@ function browsePin(view, item, add, mapped) {
         if (view.isTop) {
             view.items = view.grid.use && view.$store.state.detailedHomeItems.length>0 ? view.topExtra.concat(view.top) : view.top;
         }
-        view.options.pinned.add(item.id);
+        view.options.pinned.add(item.isRadio && item.presetParams ? item.presetParams.favorites_url : item.id);
         browseUpdateItemPinnedState(view, item);
+        browseSyncHeaderPinAction(view);
         view.saveTopList();
-        bus.$emit('showMessage', i18n("Pinned '%1' to home screen.", item.title));
+        let labels = browsePinActionLabels(view.$store.state.desktopLayout);
+        bus.$emit('showMessage', labels.pinnedMsg(item.title));
         bus.$emit('pinnedChanged', item, true);
     } else if (!add && index!=-1) {
         confirm(i18n("Un-pin '%1'?", item.title), i18n('Un-pin')).then(res => {
@@ -2788,8 +4704,13 @@ function browsePin(view, item, add, mapped) {
 
 function browseUnpin(view, item, index) {
     view.top.splice(index, 1);
-    view.options.pinned.delete(item.id);
+    view.options.pinned.delete(item.isRadio && item.presetParams ? item.presetParams.favorites_url : item.id);
+    // Also drop legacy id form if different
+    if (item.id) {
+        view.options.pinned.delete(item.id);
+    }
     browseUpdateItemPinnedState(view, item);
+    browseSyncHeaderPinAction(view);
     if (item.id.startsWith(MUSIC_ID_PREFIX)) {
         for (var i=0, len=view.myMusic.length; i<len; ++i) {
             view.myMusic[i].menu=[view.options.pinned.has(view.myMusic[i].id) ? UNPIN_ACTION : PIN_ACTION];
@@ -3010,6 +4931,7 @@ function browseDoListAction(view, list, act, index) {
             }
 
             lmsCommand(view.playerId(), ["playlist", "clear"]).then(({data}) => {
+                try { if (typeof materialSessionHintFromCommand === 'function') { materialSessionHintFromCommand(view.playerId(), command.command, list[0]); } } catch (e) {}
                 lmsCommand(view.playerId(), command.command).then(({data}) => {
                     bus.$emit('refreshStatus');
                     logJsonMessage("RESP", data);
@@ -3019,6 +4941,7 @@ function browseDoListAction(view, list, act, index) {
                 });
             });
         } else {
+            try { if (typeof materialSessionHintFromCommand === 'function') { materialSessionHintFromCommand(view.playerId(), command.command, list[0]); } } catch (e) {}
             lmsCommand(view.playerId(), command.command).then(({data}) => {
                 logJsonMessage("RESP", data);
             }).catch(err => {
@@ -3166,6 +5089,17 @@ function browsePlayerChanged(view) {
         view.refreshList(true);
     } else if (view.history.length>1 && view.history[1].current.id==TOP_APPS_ID) {
         view.history[1].needsRefresh = true;
+    }
+    // Context Stats is player-scoped — morph cards when the active device changes
+    if (view.isTop && typeof contextStatsHomeLoad === 'function' && typeof contextStatsHomeEnabled === 'function' && contextStatsHomeEnabled()) {
+        try {
+            let pid = view.playerId && view.playerId();
+            let prev = view.contextStatsHome && view.contextStatsHome.lastPlayerId;
+            if (pid && prev && pid === prev && view.contextStatsHome.items && view.contextStatsHome.items.length) {
+                return;
+            }
+        } catch (e) {}
+        contextStatsHomeLoad(view, { morph: true });
     }
 }
 
@@ -3513,4 +5447,4 @@ function browseSortCategories(all, artist, release, other) {
     }
 }
 
-const DEFERRED_LOADED = true;
+

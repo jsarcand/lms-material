@@ -26,6 +26,204 @@ function removeDiactrics(key) {
     return isEmpty(key) || key==" " ? "?" : key;
 }
 
+/**
+ * True if browseable items are in alphabetical title order (lexicon/jumplist only makes sense then).
+ * Skips headers, search fields, and plain text rows. Spotty often sends textkey even when
+ * the list is popularity/recency ordered — jumplist would jump to the wrong places.
+ */
+function browseItemsAreAlphabeticallySorted(items) {
+    if (!items || items.length<2) {
+        return false;
+    }
+    let prev = null;
+    let n = 0;
+    for (let i = 0, len = items.length; i < len; ++i) {
+        let it = items[i];
+        if (!it || it.header || it.type=='html' || it.type=='text' || it.type=='search' ||
+            it.type=='entry' || it.type=='redirect' || it.style=='itemNoAction') {
+            continue;
+        }
+        let title = itemText(it) || it.title || '';
+        if (typeof stripSpotifyTitlePrefix==='function') {
+            try {
+                let s = stripSpotifyTitlePrefix(title);
+                if (s && s.title) {
+                    title = s.title;
+                }
+            } catch (e) {}
+        }
+        title = (''+title).replace(/<[^>]+>/g, '').trim().toLowerCase();
+        if (!title) {
+            continue;
+        }
+        n++;
+        if (null!=prev && title.localeCompare(prev, undefined, {sensitivity:'base', numeric:true}) < 0) {
+            return false;
+        }
+        prev = title;
+    }
+    return n >= 2;
+}
+
+/** Parent is an opened playlist (My Music / remote / favourited). */
+function browseParentIsPlaylist(parent) {
+    if (!parent) {
+        return false;
+    }
+    if (parent.stdItem==STD_ITEM_PLAYLIST || parent.stdItem==STD_ITEM_REMOTE_PLAYLIST) {
+        return true;
+    }
+    if (parent.id && (''+parent.id).indexOf('playlist_id:')===0) {
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Build A–Z jumplist from item titles (first letter). Sets item.textkey.
+ * Used for alphabetically sorted playlist track lists.
+ */
+function browseRebuildTitleJumplist(items) {
+    let jumplist = [];
+    if (!items || items.length<2) {
+        return jumplist;
+    }
+    let keys = new Set();
+    for (let i = 0, len = items.length; i < len; ++i) {
+        let it = items[i];
+        if (!it || it.header || it.type=='html' || it.type=='text' || it.type=='search' ||
+            it.type=='entry' || it.type=='redirect') {
+            continue;
+        }
+        let title = itemText(it) || it.title || '';
+        if (typeof stripSpotifyTitlePrefix==='function') {
+            try {
+                let s = stripSpotifyTitlePrefix(title);
+                if (s && s.title) {
+                    title = s.title;
+                }
+            } catch (e) {}
+        }
+        title = (''+title).replace(/<[^>]+>/g, '').trim();
+        if (!title) {
+            continue;
+        }
+        let key = removeDiactrics(title.charAt(0).toUpperCase());
+        it.textkey = key;
+        if (undefined!=key && !keys.has(key)) {
+            jumplist.push({key: key, index: i});
+            keys.add(key);
+        }
+    }
+    return jumplist;
+}
+
+/**
+ * Non-alpha lists: proportional • scrubbers so the user can jump across the list
+ * without a misleading A–Z index (popularity/order/playlist order, etc.).
+ */
+function browseRebuildBulletJumplist(items) {
+    let jumplist = [];
+    if (!items || items.length<2) {
+        return jumplist;
+    }
+    let n = items.length;
+    // Dense enough to scrub long lists, sparse enough to fit the rail (~8–20)
+    let count = Math.min(20, Math.max(8, Math.round(Math.sqrt(n) * 1.8)));
+    if (count > n) {
+        count = n;
+    }
+    if (count < 2) {
+        count = 2;
+    }
+    let lastIdx = -1;
+    for (let k = 0; k < count; ++k) {
+        let index = Math.round(k * (n - 1) / (count - 1));
+        if (index === lastIdx) {
+            continue;
+        }
+        jumplist.push({key: '•', index: index, bullet: true});
+        lastIdx = index;
+    }
+    return jumplist;
+}
+
+/** True if jumplist is a single-letter A–Z (or digit) rail — not decades/sections. */
+function browseJumplistLooksLikeAlphabet(jumplist) {
+    if (!jumplist || jumplist.length<2) {
+        return false;
+    }
+    let letterish = 0;
+    for (let i=0, len=jumplist.length; i<len; ++i) {
+        let e = jumplist[i];
+        if (!e || e.header || e.icon || e.bullet || e.key===SECTION_JUMP) {
+            continue;
+        }
+        let k = e.key;
+        if (k!=null && (''+k).length===1) {
+            letterish++;
+        }
+    }
+    return letterish >= 2;
+}
+
+/**
+ * Prefer existing letter jumplist when still valid; else A–Z or bullet scrubbers.
+ * Preserves headerOnly / SECTION_JUMP structure and non-letter rails (decades, etc.).
+ */
+function browseEnsureJumplist(resp) {
+    if (!resp || !resp.items || resp.items.length<2) {
+        return;
+    }
+    if (resp.jumplist && resp.jumplist.headerOnly) {
+        return;
+    }
+    // Keep multi-section jumplists that mix SECTION_JUMP headers with letters
+    if (resp.jumplist && resp.jumplist.length>1) {
+        let hasSection = false;
+        for (let i=0, loop=resp.jumplist, len=loop.length; i<len; ++i) {
+            if (loop[i] && (loop[i].header || loop[i].key===SECTION_JUMP || loop[i].icon)) {
+                hasSection = true;
+                break;
+            }
+        }
+        if (hasSection) {
+            return;
+        }
+    }
+    // Already a bullet scrubber
+    if (resp.jumplist && resp.jumplist.length>1 && resp.jumplist[0] && resp.jumplist[0].bullet) {
+        return;
+    }
+    if (browseItemsAreAlphabeticallySorted(resp.items)) {
+        if (!resp.jumplist || resp.jumplist.length<2) {
+            resp.jumplist = browseRebuildTitleJumplist(resp.items);
+        }
+    } else if (browseJumplistLooksLikeAlphabet(resp.jumplist) ||
+               !resp.jumplist || resp.jumplist.length<2) {
+        // Misleading A–Z, or no rail at all → proportional • scrubbers
+        resp.jumplist = browseRebuildBulletJumplist(resp.items);
+    }
+    // else: keep non-letter rails (e.g. decade keys)
+}
+
+/**
+ * Playlists: A–Z when titles are alphabetically sorted; otherwise • jump marks.
+ */
+function browseApplyPlaylistJumplistRule(resp, parent) {
+    if (!resp || !resp.items || !browseParentIsPlaylist(parent)) {
+        return;
+    }
+    if (browseItemsAreAlphabeticallySorted(resp.items)) {
+        // Ensure a title-based jumplist (server textkeys may be missing on playlisttracks)
+        if (!resp.jumplist || resp.jumplist.length<2) {
+            resp.jumplist = browseRebuildTitleJumplist(resp.items);
+        }
+    } else {
+        resp.jumplist = browseRebuildBulletJumplist(resp.items);
+    }
+}
+
 function releaseTypeHeader(rel) {
     if (undefined!=lmsOptions.releaseTypes[rel]) {
         return lmsOptions.releaseTypes[rel][1];
@@ -273,6 +471,10 @@ function parseBrowseResp(data, parent, options, cacheKey) {
                     }
                     i.title=i.title.replace(/&#(\d+);/g, function(m, dec) { return String.fromCharCode(dec); });
                     i.title=i.title.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+                    // Spotty "Spotify : …" prefix breaks A–Z; strip + soft badge / emblem
+                    if (typeof applySpotifyTitleDisplay==='function') {
+                        applySpotifyTitleDisplay(i);
+                    }
                     if (i.type=="header") {
                         i.header = true;
                         resp.numHeaders++;
@@ -301,6 +503,10 @@ function parseBrowseResp(data, parent, options, cacheKey) {
 
                 i.text = undefined;
                 i.image = resolveImage(i.icon ? i.icon : i["icon-id"], undefined, LMS_LIST_IMAGE_SIZE);
+                // Material icon tokens (MTL_icon_ / MTL_svg_) must be mapped before they become a fake /path image
+                if ((i.icon && (''+i.icon).indexOf('MTL_')>=0) || (i['icon-id'] && (''+i['icon-id']).indexOf('MTL_')>=0)) {
+                    try { mapIcon(i); } catch (eMtl) {}
+                }
 
                 if (!i.image && i.commonParams && i.commonParams.album_id) {
                     i.image = resolveImage("music/0/cover" + LMS_LIST_IMAGE_SIZE);
@@ -529,6 +735,20 @@ function parseBrowseResp(data, parent, options, cacheKey) {
                             } else if (data.params[1][0]=='radios' && i.type!='entry' && i.actions && i.actions.go && i.actions.go.params && i.actions.go.params.menu) {
                                 i.id = 'radio:'+i.actions.go.params.menu;
                                 i.menu.push(options.pinned.has(i.id) ? UNPIN_ACTION : PIN_ACTION);
+                            } else if (isApps && i.actions && i.actions.go && i.type!='entry' && i.type!='text' && i.type!='html' &&
+                                       i.menu.indexOf(PIN_ACTION)<0 && i.menu.indexOf(UNPIN_ACTION)<0) {
+                                // Allow pinning Spotify (and other app) subsections as sidebar/home items
+                                if (!i.id) {
+                                    if (i.actions.go.params && (i.actions.go.params.item_id || i.actions.go.params.uri)) {
+                                        i.id = (parent && parent.id ? parent.id+"." : "app.") + (i.actions.go.params.item_id || i.actions.go.params.uri);
+                                    } else if (parent && parent.id) {
+                                        i.id = parent.id+"."+i.title;
+                                    }
+                                }
+                                if (i.id) {
+                                    addedDivider = addDivider(i, addedDivider);
+                                    i.menu.push(options.pinned.has(i.id) ? UNPIN_ACTION : PIN_ACTION);
+                                }
                             }
                         }
                     }
@@ -820,6 +1040,19 @@ function parseBrowseResp(data, parent, options, cacheKey) {
                 types.add(i.type);
                 images.add(i.image ? i.image : i.icon ? i.icon : i.svg);
             }
+            /*
+             * Spotty (and similar apps) often include textkey on every row even when the
+             * list is sorted by popularity/recency/relevance. A–Z only when ordered;
+             * otherwise replace with • scrubbers so the rail still jumps usefully.
+             */
+            if (resp.jumplist.length>1 && (isApps || isPlaylists || browseParentIsPlaylist(parent) ||
+                    command=='spotty' || command=='spoton' ||
+                    command=='qobuz' || command=='tidal' || command=='wimp' || command=='deezer' ||
+                    command=='bandcamp' || command=='youtube' || command=='playlistinfo')) {
+                if (!browseItemsAreAlphabeticallySorted(resp.items)) {
+                    resp.jumplist = browseRebuildBulletJumplist(resp.items);
+                }
+            }
             /* ...continuation of favourited album add/play track issue... */
             if (!isFavorites && parent && parent.section == SECTION_FAVORITES && resp.items.length>0 && resp.items[0].stdItem == STD_ITEM_TRACK) {
                 resp.baseActions = [];
@@ -956,9 +1189,38 @@ function parseBrowseResp(data, parent, options, cacheKey) {
             } else if (isFavorites) {
                 if (options.sortFavorites) {
                     resp.items.sort(favSort);
+                    // Rebuild A–Z jumplist from cleaned titles (Spotify prefix already stripped)
+                    resp.jumplist = [];
+                    let favKeys = new Set();
+                    for (let fi=0, flen=resp.items.length; fi<flen; ++fi) {
+                        let fit = resp.items[fi];
+                        if (!fit || fit.header || fit.type=='html' || fit.type=='text') {
+                            continue;
+                        }
+                        let t = fit.title || '';
+                        let key = t.length>0 ? (typeof removeDiactrics==='function' ? removeDiactrics(t.charAt(0).toUpperCase()) : t.charAt(0).toUpperCase()) : '#';
+                        fit.textkey = key;
+                        if (!favKeys.has(key)) {
+                            resp.jumplist.push({key: key, index: fi});
+                            favKeys.add(key);
+                        }
+                    }
                 }
             } else if (isRadiosTop) {
                 resp.items.sort(weightSort);
+                // Search field first in the radio section
+                let radioSearch = [];
+                let radioRest = [];
+                for (let ri=0, rloop=resp.items, rlen=rloop.length; ri<rlen; ++ri) {
+                    if (rloop[ri].type=='search' || rloop[ri].type=='entry' || rloop[ri].type=='xmlsearch') {
+                        radioSearch.push(rloop[ri]);
+                    } else {
+                        radioRest.push(rloop[ri]);
+                    }
+                }
+                if (radioSearch.length>0) {
+                    resp.items = radioSearch.concat(radioRest);
+                }
             }
             if (numImages>0 && numImages==resp.items.length) {
                 resp.subtitle=i18np("1 Image", "%1 Images", resp.items.length-resp.numHeaders);
@@ -2069,62 +2331,108 @@ function parseBrowseResp(data, parent, options, cacheKey) {
             var haveEmblem = false;
             var numFolders = 0;
             var folderTextKeys = new Set();
-            var prevWasFolder = false;
             var folderIdIndex = getIndex(data.params[1], "folder_id:");
             var isBrowsingFolders = folderIdIndex>0;
             var currentTs = new Date().getTime();
+            var plFolders = [];
+            var plLists = [];
             for (var idx=0, loop=data.result.playlists_loop, loopLen=loop.length; idx<loopLen; ++idx) {
                 var i = loop[idx];
-                var key = removeDiactrics(i.textkey);
                 var isRemote = 1 == parseInt(i.remote) || undefined!=i.extid;
                 var emblem = getEmblem(i.extid);
+                // Never paint Spotify corner logos — soft subtitle is enough
+                if (emblem && emblem.name=='spotify') {
+                    emblem = undefined;
+                }
                 var isFolder = undefined!=i.id && (""+i.id).startsWith("file:");
+                var plTitle = replaceHtmlBrackets(i.playlist);
+                // Spotty prefixes "Spotify : …" — strip for A–Z + soft source note
+                var plSpot = typeof stripSpotifyTitlePrefix==='function' ? stripSpotifyTitlePrefix(plTitle) : { title: plTitle, isSpotify: false };
+                if (plSpot.isSpotify) {
+                    plTitle = plSpot.title;
+                }
+                // Jumplist key from cleaned title so "Spotify: Foo" keys as "F"
+                var key = removeDiactrics(i.textkey);
+                if (plTitle && plTitle.length>0) {
+                    // Prefer cleaned title for all lists so alpha sort + jumplist match display
+                    key = removeDiactrics(plTitle.charAt(0).toUpperCase());
+                }
                 if (undefined!=emblem) {
                     haveEmblem = true;
                 }
                 if (isFolder) {
-                    if (undefined!=key && (resp.jumplist.length==0 || resp.jumplist[resp.jumplist.length-1].key!=key) && !folderTextKeys.has(key)) {
-                        resp.jumplist.push({key: key, index: startIndex+resp.items.length});
-                        folderTextKeys.add(key);
-                    }
-                    resp.items.push({
+                    plFolders.push({
                             id: "folder_id:"+i.id,
-                            title: replaceHtmlBrackets(i.playlist),
+                            title: plTitle,
                             svg: 'folder-playlist',
                             stdItem: STD_ITEM_PLAYLIST_FOLDER,
                             type: "group",
-                            section: SECTION_PLAYLISTS
+                            section: SECTION_PLAYLISTS,
+                            cancache: true,
+                            textkey: key
                         });
                     numFolders += 1;
                 } else {
-                    if (undefined!=key && (prevWasFolder || resp.jumplist.length==0 || resp.jumplist[resp.jumplist.length-1].key!=key) && !textKeys.has(key)) {
-                        resp.jumplist.push({key: key, index: startIndex+resp.items.length});
-                        textKeys.add(key);
-                    }
                     let playlist = {
                                 id: "playlist_id:"+i.id,
-                                title: replaceHtmlBrackets(i.playlist),
+                                title: plTitle,
                                 icon: undefined == emblem ? "list" : undefined,
                                 svg: undefined == emblem ? undefined : emblem.name,
                                 overlay: lmsOptions.playlistImages ? "overlay-playlist" : undefined,
                                 stdItem: isRemote ? STD_ITEM_REMOTE_PLAYLIST : STD_ITEM_PLAYLIST,
                                 type: "group",
+                                isSpotify: plSpot.isSpotify || undefined,
+                                subtitle: plSpot.isSpotify ? '<span class="browse-source-soft">on Spotify</span>' : undefined,
+                                textkey: key,
+                                // No Spotify emblem; other remote services may still show theirs
+                                emblem: isRemote && emblem ? emblem : undefined,
                                 section: SECTION_PLAYLISTS,
                                 url:  i.url,
                                 remotePlaylist: isRemote,
                                 ihe: i.ihe, // home screen extra item
-                                realindex: startIndex+resp.items.length // So playlists are deleted in correct order
+                                realindex: startIndex+idx
                             };
 
                     /*if (i.image) {
                         playlist.image = i.image;
                     } else*/ if (lmsOptions.playlistImages) {
-                        playlist.image = "material/playlists/" + encodeURIComponent(i.playlist)+"?ts="+(i.mtime ? i.mtime : currentTs);
+                        // Use cleaned title for cover path when Spotty prefix was stripped
+                        let coverName = plSpot.isSpotify ? plTitle : i.playlist;
+                        playlist.image = "material/playlists/" + encodeURIComponent(coverName)+"?ts="+(i.mtime ? i.mtime : currentTs);
                         playlist.icon = playlist.svg = undefined;
                     }
-                    resp.items.push(playlist);
+                    plLists.push(playlist);
                 }
-                prevWasFolder = isFolder;
+            }
+
+            // Alphabetical order by cleaned title (Spotify no longer clumps under "S")
+            plFolders.sort(titleSort);
+            plLists.sort(titleSort);
+            resp.items = plFolders.concat(plLists);
+            // Rebuild jumplist from sorted order
+            resp.jumplist = [];
+            textKeys = new Set();
+            folderTextKeys = new Set();
+            for (var si=0, slen=resp.items.length; si<slen; ++si) {
+                let it = resp.items[si];
+                let k = it.textkey || (it.title && it.title.length ? removeDiactrics(it.title.charAt(0).toUpperCase()) : undefined);
+                it.textkey = k;
+                it.realindex = startIndex+si;
+                if (undefined==k) {
+                    continue;
+                }
+                if (it.stdItem==STD_ITEM_PLAYLIST_FOLDER) {
+                    if (!folderTextKeys.has(k)) {
+                        resp.jumplist.push({key: k, index: startIndex+si});
+                        folderTextKeys.add(k);
+                    }
+                } else if (!textKeys.has(k) || (si>0 && resp.items[si-1].stdItem==STD_ITEM_PLAYLIST_FOLDER)) {
+                    // After folders, restart letter keys for playlists (or first of each letter)
+                    if (!textKeys.has(k)) {
+                        resp.jumplist.push({key: k, index: startIndex+si});
+                        textKeys.add(k);
+                    }
+                }
             }
 
             if (!haveEmblem && !isBrowsingFolders) {
@@ -2237,6 +2545,12 @@ function parseBrowseResp(data, parent, options, cacheKey) {
             resp.numAudioItems = resp.items.length;
             if (totalDuration>0 && resp.items.length==resp.listSize) {
                 resp.subtitle+=SEPARATOR+formatSeconds(totalDuration);
+            }
+            // A–Z when sorted by title; otherwise • scrubbers across playlist order
+            if (browseItemsAreAlphabeticallySorted(resp.items)) {
+                resp.jumplist = browseRebuildTitleJumplist(resp.items);
+            } else {
+                resp.jumplist = browseRebuildBulletJumplist(resp.items);
             }
         } else if (data.result.years_loop) {
             let decSet = new Set();
@@ -2363,18 +2677,54 @@ function parseBrowseResp(data, parent, options, cacheKey) {
             }
         } else if (data.result.extras_loop) {
             for (var idx=0, loop=data.result.extras_loop, loopLen=loop.length; idx<loopLen; ++idx) {
-                var i = loop[idx];
-                i.type="extra";
-                mapIcon(i, 'lms-extras', {icon:"extension", svg:undefined});
-                i.id="extras:"+i.id;
+                var raw = loop[idx] || {};
+                // Build a fresh object — never mutate the JSON-RPC row in place
+                var url = raw.url;
+                if (url && typeof url === 'string' && url.charAt(0) !== '/' && !/^https?:\/\//i.test(url)) {
+                    url = '/' + url;
+                }
+                var i;
+                // WiiM extras: native browse list (Vue tiles), not the HTML iframe
+                if (raw.id=='WIIM_EXTRAS' || (url && /WiimIntegration\/extras\.html/i.test(url))) {
+                    i = {
+                        type: 'group',
+                        id: 'extras:' + (raw.id || 'WIIM_EXTRAS'),
+                        title: raw.title || raw.id || i18n('Extra'),
+                        command: ['wiimintegration', 'menu'],
+                        params: [],
+                        svg: 'wiim',
+                        icon: undefined
+                    };
+                } else {
+                    i = {
+                        type: 'extra',
+                        id: 'extras:' + (raw.id || idx),
+                        title: raw.title || raw.id || i18n('Extra'),
+                        url: url,
+                        icon: raw.icon,
+                        image: raw.image
+                    };
+                    try {
+                        mapIcon(i, 'lms-extras', {icon:'extension', svg:undefined});
+                    } catch (eMap) {
+                        i.icon = 'extension';
+                        i.svg = undefined;
+                    }
+                }
                 if (allowPinning) {
-                    i.menu=[options.pinned.has(i.id) ? UNPIN_ACTION : PIN_ACTION];
+                    i.menu = [options.pinned.has(i.id) ? UNPIN_ACTION : PIN_ACTION];
                 }
                 resp.items.push(i);
             }
-            resp.items.sort(titleSort);
-            resp.subtitle=0==resp.items.length ? i18n("Empty") : i18np("1 Item", "%1 Items", resp.items.length);
-            resp.canUseGrid=true;
+            try {
+                resp.items.sort(titleSort);
+            } catch (eSort) {}
+            // Always set listSize from items (server count may be missing on older builds)
+            resp.listSize = resp.items.length;
+            resp.subtitle = 0==resp.items.length ? i18n('Empty') : i18np('1 Item', '%1 Items', resp.items.length);
+            // Prefer list on mobile — grid was sometimes painting blank for icon-only extras
+            resp.canUseGrid = !IS_MOBILE;
+            resp.forceGrid = false;
         } else if (data.result.works_loop) {
             let lastComposer = undefined;
             let lastIdx = -1;
@@ -2649,8 +2999,13 @@ function parseBrowseResp(data, parent, options, cacheKey) {
         if (0==resp.items.length) {
             resp.canUseGrid = false;
         }
+        // Final guard: playlists A–Z or bullets; other non-alpha letter rails → bullets
+        browseApplyPlaylistJumplistRule(resp, parent);
+        browseEnsureJumplist(resp);
     } else if (data && data.iscache) { // From cache
         resp = data;
+        browseApplyPlaylistJumplistRule(resp, parent);
+        browseEnsureJumplist(resp);
     }
 
     } catch(e) {
@@ -2737,6 +3092,7 @@ function parseBrowseModes(view, data, genreFilter, yearFilter, altId, excludeWor
                 }
                 item.icon = "list";
                 item.section = SECTION_PLAYLISTS;
+                item.cancache = true;
             } else if (c.id == "myMusicPlaylistFolder") {
                 if (undefined!=genreFilter || undefined!=yearFilter) {
                     continue;
@@ -2745,6 +3101,7 @@ function parseBrowseModes(view, data, genreFilter, yearFilter, altId, excludeWor
                 item.icon = undefined;
                 item.section = SECTION_PLAYLISTS;
                 item.params = ["folder_id:/", PLAYLIST_TAGS];
+                item.cancache = true;
             } else if (c.id.startsWith("myMusicYears")) {
                 if (undefined!=genreFilter || undefined!=yearFilter) {
                     continue;
