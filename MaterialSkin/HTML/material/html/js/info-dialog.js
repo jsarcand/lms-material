@@ -8,7 +8,7 @@
 
 Vue.component('lms-info-dialog', {
     template: `
-<v-dialog v-model="show" v-if="show" scrollable width="600" style="z-index:10">
+<v-dialog v-model="show" v-if="show" scrollable width="600" :z-index="280">
  <v-card>
   <v-card-text>
   <template v-for="(item, index) in details">

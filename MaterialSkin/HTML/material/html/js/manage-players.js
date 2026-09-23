@@ -10,11 +10,51 @@ const PMGR_GROUP_MEMBER_ID_MOD = 1000;
 
 var playerMap = {};
 
+function playerMapPut(id, info) {
+    if (undefined==id || null==id || ''===id) {
+        return;
+    }
+    let key = String(id);
+    playerMap[key] = info;
+    let low = key.toLowerCase();
+    if (low !== key) {
+        playerMap[low] = info;
+    }
+}
+
+function playerMapGet(id) {
+    if (undefined==id || null==id || ''===id) {
+        return undefined;
+    }
+    let key = String(id);
+    return playerMap[key] || playerMap[key.toLowerCase()];
+}
+
+function isNullPlayerId(id) {
+    if (undefined==id || null==id) {
+        return true;
+    }
+    let s = String(id).toLowerCase().replace(/[^0-9a-f]/g, '');
+    return !s.length || /^0+$/.test(s);
+}
+
+/** Resolve group-member id → display name (connected, other-server, or cached). */
+function memberDisplayName(id) {
+    if (isNullPlayerId(id)) {
+        return null;
+    }
+    let mapped = playerMapGet(id);
+    if (mapped && mapped.name) {
+        return mapped.name;
+    }
+    return null;
+}
+
 function getSyncMaster(player) {
     if (undefined==player.syncmaster || player.syncmaster.length<1) {
         return {name:player.name.toLowerCase(), isgroup:player.isgroup, weight:player.weight, id:player.id, isplayer:true};
     }
-    let master = playerMap[player.syncmaster];
+    let master = playerMapGet(player.syncmaster);
     return undefined==master ? {name:"", isgroup:false} : {name:master.name.toLowerCase(), isgroup:master.isgroup, weight:master.weight, id:player.syncmaster};
 }
 
@@ -77,10 +117,10 @@ function playerIdSort(a, b) {
         }
     }
 
-    var mapA = playerMap[a];
-    var mapB = playerMap[b];
-    var nameA = mapA ? mapA.name.toLowerCase() : a;
-    var nameB = mapB ? mapB.name.toLowerCase() : b;
+    var mapA = playerMapGet(a);
+    var mapB = playerMapGet(b);
+    var nameA = mapA ? mapA.name.toLowerCase() : String(a).toLowerCase();
+    var nameB = mapB ? mapB.name.toLowerCase() : String(b).toLowerCase();
     if (nameA < nameB) {
         return -1;
     }
@@ -98,7 +138,7 @@ Vue.component('lms-manage-players', {
    <v-toolbar app-data class="dialog-toolbar" @drop.native="drop(-1, $event)" @dragover.native="dragOver(-1, $event)" @mousedown="mouseDown" id="manageplayers-toolbar">
     <lms-windowcontrols v-if="queryParams.nativeTitlebar && queryParams.tbarBtnsPos=='l'"></lms-windowcontrols>
     <div v-if="!draggingSyncedPlayer" class="drag-area-left"></div>
-    <v-btn flat v-if="!draggingSyncedPlayer" icon @click="close" :title="ttShortcutStr(i18n('Go back'), 'esc')"><v-icon>arrow_back</v-icon></v-btn>
+    <v-btn flat v-if="!draggingSyncedPlayer" icon @click="close" :title="ttShortcutStr(i18n('Go back'), 'esc')"><v-icon>{{BACK_ICON}}</v-icon></v-btn>
     <v-toolbar-title class="ellipsis" style="width:100%; text-align:center" v-if="draggingSyncedPlayer">{{i18n('Drop here to remove from group')}}</v-toolbar-title>
     <v-toolbar-title class="ellipsis" v-else>{{TB_MANAGE_PLAYERS.title}}</v-toolbar-title>
     <v-spacer v-if="!draggingSyncedPlayer" class="drag-area"></v-spacer>
@@ -148,7 +188,7 @@ Vue.component('lms-manage-players', {
    </v-container>
    <v-container v-else grid-list-md class="pmgr-container" id="player-manager-list">
     <v-layout row wrap>
-     <div v-for="(player, index) in visiblePlayers" :key="player.id" style="width:100%">
+     <div v-for="(player, index) in visiblePlayers" :key="player.id" class="pmgr-player-card">
       <v-flex xs12 v-if="0==index && !player.isgroup && manageGroups && visiblePlayers.length>1 && visiblePlayers[visiblePlayers.length-1].isgroup" class="pmgr-title ellipsis">{{i18n('Standard Players')}}</v-flex>
       <v-flex xs12 v-else-if="player.isgroup && index>0 && !visiblePlayers[index-1].isgroup" class="pmgr-title ellipsis">{{i18n('Group Players')}}</v-flex>
       <v-flex xs12 v-bind:class="{'pmgr-sync':!isMainPlayer(player), 'active-player':currentPlayer && currentPlayer.id === player.id}">
@@ -162,13 +202,13 @@ Vue.component('lms-manage-players', {
            <img :key="player.image" v-lazy="player.image" :draggable="false" v-bind:class="{'dimmed':player.image==DEFAULT_COVER || player.image==DEFAULT_RADIO_COVER}"></img>
           </v-list-tile-avatar>
           <v-list-tile-content v-if="isMainPlayer(player)" v-bind:class="{'dimmed': !player.ison}">
-           <v-list-tile-title class="ellipsis cursor link-item" @click="setActive(player.id)"><obj :id="'pmgr-player-'+index"><v-icon v-if="player.icon.icon" class="pmgr-icon">{{player.icon.icon}}</v-icon><img v-else class="pmgr-icon svg-img" :src="player.icon.svg | svgIcon(darkUi)"></img>
+           <v-list-tile-title class="ellipsis cursor link-item" @click="setActive(player.id)"><obj :id="'pmgr-player-'+index"><v-icon v-if="player.icon && player.icon.icon" class="pmgr-icon">{{player.icon.icon}}</v-icon><img v-else-if="player.icon && player.icon.svg" class="pmgr-icon svg-img" :src="player.icon.svg | svgIcon(darkUi)"></img>
            <font v-bind:class="{'active-player-title':currentPlayer && currentPlayer.id === player.id}">{{player.name}}</font></obj><v-icon v-if="player.id==defaultPlayer" class="player-status-icon dimmed">check</v-icon><v-icon v-if="player.will_sleep_in" class="player-status-icon dimmed" v-bind:class="{'link-item':!IS_MOBILE}" @click.stop="openSleep(player)">hotel</v-icon><v-icon v-if="undefined!=player.alarm" class="player-status-icon dimmed" v-bind:class="{'link-item':!IS_MOBILE}" @click.stop="openAlarms(player)">alarm</v-icon>
            </v-list-tile-title>
            <v-list-tile-sub-title class="ellipsis">{{player.track}}</v-list-tile-sub-title>
           </v-list-tile-content>
           <v-list-tile-content v-else v-bind:class="{'dimmed': !player.ison}">
-           <v-list-tile-title class="ellipsis cursor link-item" @click="setActive(player.id)"><obj :id="'pmgr-player-'+index"><v-icon v-if="player.icon.icon" class="pmgr-icon">{{player.icon.icon}}</v-icon><img v-else class="pmgr-icon svg-img" :src="player.icon.svg | svgIcon(darkUi)"></img>
+           <v-list-tile-title class="ellipsis cursor link-item" @click="setActive(player.id)"><obj :id="'pmgr-player-'+index"><v-icon v-if="player.icon && player.icon.icon" class="pmgr-icon">{{player.icon.icon}}</v-icon><img v-else-if="player.icon && player.icon.svg" class="pmgr-icon svg-img" :src="player.icon.svg | svgIcon(darkUi)"></img>
            <font v-bind:class="{'active-player-title':currentPlayer && currentPlayer.id === player.id}">{{player.name}}</font></obj><v-icon v-if="player.id==defaultPlayer" class="player-status-icon dimmed">check</v-icon><v-icon v-if="player.will_sleep_in" class="player-status-icon dimmed">hotel</v-icon><v-icon v-if="undefined!=player.alarm" class="player-status-icon dimmed">alarm</v-icon></v-list-tile-title>
           </v-list-tile-content>
           <v-list-tile-action v-if="player.playIcon && showAllButtons && isMainPlayer(player)" class="pmgr-btn pmgr-btn-control" v-bind:class="{'disabled':!player.hasTrack, 'dimmed':!player.ison}" @click="prevTrack(player)" :title="trans.prev + ' ('+player.name+')'">
@@ -182,7 +222,7 @@ Vue.component('lms-manage-players', {
           </v-list-tile-action>
          </v-list-tile>
         </v-list>
-       </v-flex xs12>
+       </v-flex>
        <v-flex xs12>
         <v-layout v-if="VOL_HIDDEN!=player.dvc">
          <volume-control :value="player.volume" :muted="player.muted" :playing="player.isplaying" :dvc="player.dvc" :id="player.id" :name="player.name" :layout="2" @inc="volumeUp" @dec="volumeDown" @changed="setVolume" @toggleMute="toggleMute" v-bind:class="{'dimmed':!player.ison}"></volume-control>
@@ -194,10 +234,11 @@ Vue.component('lms-manage-players', {
          <v-btn icon @click.stop="playerMenu(player, $event)" class="pmgr-btn" :title="trans.menu + ' ('+player.name+')'"><v-icon>more_vert</v-icon></v-btn>
         </v-layout>
        </v-flex>
-       <v-flex xs12 v-if="player.isgroup && player.members && player.members.length>0 && (!player.syncmaster || player.syncmaster.length<1)">
-        <div class="pmgr-member-list ellipsis">
-         <template v-for="(member, idx) in player.members">
-         <obj @dragstart="dragStart(((index+1)*PMGR_GROUP_MEMBER_ID_MOD)+idx, $event)" @dragenter.prevent="" @dragend="dragEnd()" :draggable="true" :id="'pmgr-player-'+(((index+1)*PMGR_GROUP_MEMBER_ID_MOD)+idx)" class="cursor link-item">{{playerMap[member] ? playerMap[member].name : member}}</obj><obj>{{idx==player.members.length-1 ? "" : ", "}}</obj>
+       <v-flex xs12 v-if="player.isgroup && groupMemberLabels(player).length>0 && (!player.syncmaster || player.syncmaster.length<1)">
+        <div class="pmgr-member-list">
+         <template v-for="(m, idx) in groupMemberLabels(player)">
+          <span :key="'gm-'+player.id+'-'+idx" class="pmgr-member-chip" v-bind:class="{'pmgr-member-offline':m.offline}"
+           @dragstart="m.memberIdx>=0 && dragStart(((index+1)*PMGR_GROUP_MEMBER_ID_MOD)+m.memberIdx, $event)" @dragenter.prevent="" @dragend="dragEnd()" :draggable="m.memberIdx>=0" :id="m.memberIdx>=0 ? ('pmgr-player-'+(((index+1)*PMGR_GROUP_MEMBER_ID_MOD)+m.memberIdx)) : undefined">{{m.name}}</span>
          </template>
         </div>
        </v-flex>
@@ -264,17 +305,16 @@ Vue.component('lms-manage-players', {
     mounted() {
         bus.$on('manage.open', function(act) {
             this.showAllPlayers = getLocalStorageBool('pmgr-showAllPlayers', this.showAllPlayers);
-            this.players = [];
-            this.show = true;
             this.openDialogs = 0;
+            // Seed instantly from store so the dialog is never empty for ~seconds
+            // while full status (track art, volume, group members) streams in.
+            this.seedPlayersFromStore();
+            this.show = true;
+            this.$nextTick(function() {
+                this.updateAll();
+            }.bind(this));
 
-            if (this.$store.state.players) {
-                for (let i=0, loop=this.$store.state.players, len=loop.length; i<len; ++i) {
-                    playerMap[loop[i].id]={name:loop[i].name, isgroup:loop[i].isgroup, weight:loop[i].weight};
-                }
-            }
-
-            // Check to see if we can manage groups...
+            // Groups capability: use cached answer immediately; refresh in background.
             this.manageGroups = getLocalStorageBool('manageGroups', false);
             lmsCommand("", ["can", "playergroups", "items", "?"]).then(({data}) => {
                 if (data && data.result && undefined!=data.result._can && 1==data.result._can) {
@@ -289,7 +329,7 @@ Vue.component('lms-manage-players', {
                     this.manageGroups = false;
                     setLocalStorageVal('manageGroups', this.manageGroups);
                 }
-            });
+            }).catch(function() { /* keep cached manageGroups */ });
         }.bind(this));
 
         bus.$on('playerlistChanged', function() {
@@ -617,19 +657,113 @@ Vue.component('lms-manage-players', {
                 }
             });
         },
+        seedPlayersFromStore() {
+            playerMap = {};
+            let seeded = [];
+            let loop = this.$store.state.players || [];
+            for (let i=0, len=loop.length; i<len; ++i) {
+                let p = loop[i];
+                if (!p || !p.id) {
+                    continue;
+                }
+                playerMapPut(p.id, {name:p.name, isgroup:!!p.isgroup, dvc:p.dvc, weight:p.weight});
+                // Remember names even after a player goes offline (group member lists).
+                try { setLocalStorageVal('pmgr-name-'+String(p.id).toLowerCase(), p.name); } catch (e) {}
+                seeded.push({
+                    id: p.id,
+                    name: p.name,
+                    isgroup: !!p.isgroup,
+                    icon: p.icon || {icon: 'speaker'},
+                    ison: undefined==p.ison ? true : !!p.ison,
+                    dvc: undefined!=p.dvc ? p.dvc : VOL_STD,
+                    volume: 0,
+                    muted: false,
+                    isplaying: !!p.isplaying,
+                    track: '…',
+                    hasTrack: false,
+                    playIcon: p.isplaying ? 'pause_circle_filled' : 'play_circle_filled',
+                    image: DEFAULT_COVER,
+                    weight: p.weight,
+                    canpoweroff: !!p.canpoweroff,
+                    members: undefined,
+                    syncmaster: undefined,
+                    syncslaves: undefined,
+                    issyncmaster: false
+                });
+            }
+            // Also index other-server players for group member name resolution
+            let others = this.$store.state.otherPlayers || [];
+            for (let i=0, len=others.length; i<len; ++i) {
+                let p = others[i];
+                if (p && p.id && p.name) {
+                    playerMapPut(p.id, {name:p.name, isgroup:false, weight:-1});
+                    try { setLocalStorageVal('pmgr-name-'+String(p.id).toLowerCase(), p.name); } catch (e) {}
+                }
+            }
+            seeded.sort(playerSyncSort);
+            this.players = seeded;
+        },
+        groupMemberLabels(player) {
+            if (!player || !player.members || !player.members.length) {
+                return [];
+            }
+            let labels = [];
+            let offline = 0;
+            for (let i=0, len=player.members.length; i<len; ++i) {
+                let mid = player.members[i];
+                if (isNullPlayerId(mid)) {
+                    continue;
+                }
+                let name = memberDisplayName(mid);
+                if (!name) {
+                    try {
+                        name = getLocalStorageVal('pmgr-name-'+String(mid).toLowerCase(), '');
+                    } catch (e) {
+                        name = '';
+                    }
+                }
+                if (name) {
+                    labels.push({name: name, offline: !playerMapGet(mid), memberIdx: i});
+                } else {
+                    offline++;
+                }
+            }
+            if (offline > 0) {
+                labels.push({
+                    name: offline===1 ? i18n('1 offline') : i18n('%1 offline', offline),
+                    offline: true,
+                    memberIdx: -1
+                });
+            }
+            return labels;
+        },
         updateAll() {
             if (!this.show) {
                 return;
             }
-            for (let i=0, len=this.players.length; i<len; ++i) {
-                bus.$emit('refreshStatus', this.players[i].id);
+            // Prefer store player list (covers seed + any new arrivals)
+            let ids = [];
+            let storePlayers = this.$store.state.players || [];
+            for (let i=0, len=storePlayers.length; i<len; ++i) {
+                if (storePlayers[i] && storePlayers[i].id) {
+                    ids.push(storePlayers[i].id);
+                }
+            }
+            if (!ids.length) {
+                for (let i=0, len=this.players.length; i<len; ++i) {
+                    ids.push(this.players[i].id);
+                }
+            }
+            for (let i=0, len=ids.length; i<len; ++i) {
+                bus.$emit('refreshStatus', ids[i]);
             }
         },
         updatePlayer(player) {
             if (!this.show) {
                 return;
             }
-            playerMap[player.id]={name:player.name, isgroup:player.isgroup, dvc:player.dvc, weight:player.weight};
+            playerMapPut(player.id, {name:player.name, isgroup:player.isgroup, dvc:player.dvc, weight:player.weight});
+            try { setLocalStorageVal('pmgr-name-'+String(player.id).toLowerCase(), player.name); } catch (e) {}
 
             player.playIcon = player.isplaying ? "pause_circle_filled" : "play_circle_filled";
             player.hasTrack = true;

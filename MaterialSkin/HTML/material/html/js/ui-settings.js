@@ -15,8 +15,9 @@ Vue.component('lms-ui-settings', {
    <v-toolbar app-data class="dialog-toolbar" @mousedown="mouseDown" id="uisettings-toolbar">
     <lms-windowcontrols v-if="queryParams.nativeTitlebar && queryParams.tbarBtnsPos=='l'"></lms-windowcontrols>
     <div class="drag-area-left"></div>
-    <v-btn flat icon @click="close" :title="ttShortcutStr(i18n('Go back'), 'esc')"><v-icon>arrow_back</v-icon></v-btn>
+    <v-btn flat icon @click.stop="close" :title="ttShortcutStr(i18n('Go back'), 'esc')"><v-icon>{{BACK_ICON}}</v-icon></v-btn>
     <v-toolbar-title>{{width>=600 ? TB_UI_SETTINGS.title+serverName : TB_UI_SETTINGS.title}}</v-toolbar-title>
+    <v-icon v-if="saveOk" class="settings-save-ok" :title="i18n('Saved')">check</v-icon>
     <v-spacer class="drag-area"></v-spacer>
     <v-list-tile style="margin-right:-5px!important">
      <v-list-tile-content @click="advanced = !advanced" class="switch-label">
@@ -34,7 +35,14 @@ Vue.component('lms-ui-settings', {
     <v-header class="dialog-section-header">{{i18n('General')}}</v-header>
 
     <v-list-tile>
-     <v-select menu-props="auto" :items="themes" :label="i18n('Theme')" v-model="theme" item-text="label" item-value="key"></v-select>
+     <v-select menu-props="auto" :items="themes" :label="i18n('Theme')" v-model="theme" item-text="label" item-value="key" @change="onThemeChanged"></v-select>
+    </v-list-tile>
+    <v-divider></v-divider>
+    <v-list-tile>
+     <v-list-tile-content>
+      <v-select menu-props="auto" :items="themeModes" :label="i18n('Light / Dark mode')" v-model="themeMode" item-text="label" item-value="key" :disabled="!themeModeEnabled" @change="onThemeModeChanged"></v-select>
+      <v-list-tile-sub-title v-if="!themeModeEnabled" class="subtext">{{i18n('Not available for the selected theme (no light and dark variants).')}}</v-list-tile-sub-title>
+     </v-list-tile-content>
     </v-list-tile>
     <v-divider></v-divider>
     <v-list-tile>
@@ -69,15 +77,25 @@ Vue.component('lms-ui-settings', {
    </v-list-tile>
    <v-divider v-if="cMixSupported && allowTint"></v-divider>
 
-    <v-list-tile v-if="allowLayoutSettings">
-     <v-select :items="layoutItems" :label="i18n('Application layout')" v-model="layout" item-text="label" item-value="key"></v-select>
+    <v-list-tile>
+     <v-select :items="layoutItems" :label="i18n('Application layout')" v-model="layout" :disabled="layoutUrlLocked" item-text="label" item-value="key"></v-select>
+     <v-list-tile-sub-title v-if="layoutUrlLocked" class="subtext">{{i18n("Locked by URL parameter")}}</v-list-tile-sub-title>
     </v-list-tile>
-    <v-divider v-if="allowLayoutSettings"></v-divider>
+    <v-divider></v-divider>
 
     <v-list-tile v-if="advanced">
      <v-select :items="mobileBars" :label="i18n('Mobile layout now-playing bar')" v-model="mobileBar" item-text="label" item-value="key"></v-select>
     </v-list-tile>
     <v-divider v-if="advanced"></v-divider>
+    <!-- Always visible: primary mobile shortcut-bar UX (not buried under All options) -->
+    <v-list-tile>
+     <v-list-tile-content @click="autoCollapseShortcuts = !autoCollapseShortcuts" class="switch-label">
+      <v-list-tile-title>{{i18n('Auto-collapse shortcuts')}}</v-list-tile-title>
+      <v-list-tile-sub-title>{{i18n('On mobile, automatically collapse the shortcut bar while scrolling. Scroll up, or wait a moment, to show it again.')}}</v-list-tile-sub-title>
+     </v-list-tile-content>
+     <v-list-tile-action><m3-switch v-model="autoCollapseShortcuts"></m3-switch></v-list-tile-action>
+    </v-list-tile>
+    <v-divider></v-divider>
 
     <v-list-tile v-if="advanced">
      <v-select :items="fontSizes" :label="i18n('Font size')" v-model="fontSize" item-text="label" item-value="key"></v-select>
@@ -209,6 +227,38 @@ Vue.component('lms-ui-settings', {
      <v-list-tile-action><m3-switch v-model="browseSearch"></m3-switch></v-list-tile-action>
     </v-list-tile>
     <v-divider></v-divider>
+    <v-list-tile>
+     <v-list-tile-content @click="browseCatalogHeader = !browseCatalogHeader" class="switch-label">
+      <v-list-tile-title>{{i18n('Catalog page headers')}}</v-list-tile-title>
+      <v-list-tile-sub-title>{{i18n('For albums, artists and playlists with artwork: show cover, extracted color blend, title, description, Play and Shuffle.')}}</v-list-tile-sub-title>
+     </v-list-tile-content>
+     <v-list-tile-action><m3-switch v-model="browseCatalogHeader"></m3-switch></v-list-tile-action>
+    </v-list-tile>
+    <v-divider></v-divider>
+    <v-list-tile v-if="browseCatalogHeader">
+     <v-list-tile-content @click="browseCatalogTintToolbar = !browseCatalogTintToolbar" class="switch-label">
+      <v-list-tile-title>{{i18n('Color main header from artwork')}}</v-list-tile-title>
+      <v-list-tile-sub-title>{{i18n('Tint the top toolbar with the dominant color extracted from the page artwork.')}}</v-list-tile-sub-title>
+     </v-list-tile-content>
+     <v-list-tile-action><m3-switch v-model="browseCatalogTintToolbar"></m3-switch></v-list-tile-action>
+    </v-list-tile>
+    <v-divider v-if="browseCatalogHeader"></v-divider>
+    <v-list-tile>
+     <v-list-tile-content @click="browseHomeSplit = !browseHomeSplit" class="switch-label">
+      <v-list-tile-title>{{i18n('Keep home list fixed')}}</v-list-tile-title>
+      <v-list-tile-sub-title>{{i18n('On wide screens (tablet landscape and similar), keep the home listing fixed on the left while browsing content on the right.')}}</v-list-tile-sub-title>
+     </v-list-tile-content>
+     <v-list-tile-action><m3-switch v-model="browseHomeSplit"></m3-switch></v-list-tile-action>
+    </v-list-tile>
+    <v-divider></v-divider>
+
+    <v-list-tile>
+     <v-select :items="jumplistSideOptions" :label="i18n('A–Z index position')" v-model="jumplistSide" item-text="label" item-value="value"></v-select>
+    </v-list-tile>
+    <v-list-tile class="settings-note">
+     <p>{{i18n('Show the letter index on the left or right edge of lists (browse, play queue, My Music panel).')}}</p>
+    </v-list-tile>
+    <v-divider></v-divider>
 
     <v-list-tile>
      <v-list-tile-content class="switch-label">
@@ -218,16 +268,19 @@ Vue.component('lms-ui-settings', {
     </v-list-tile>
 
     <div style="padding-left:12px">{{i18n('Scrollable lists')}} <v-btn @click.stop="showDetailedHomeDialog($event)" flat icon class="settings-list-checkbox-action"><v-icon>settings</v-icon></v-btn></div>
-    <div v-if="haveScrollableLists">
-     <v-template v-for="(item, index) in detailedHomeItems">
-      <v-list-tile v-if="'std_favorites'!=item || !sortFavorites" class="settings-list-thin-item" @dragstart.native="dragStart(index, $event)" @dragenter.prevent="" @dragend.native="dragEnd()" @dragover.native="dragOver(index, $event)" @drop.native="drop(index, $event)" draggable v-bind:class="{'highlight-drop':dropIndex==index, 'highlight-drag':dragIndex==index}">
-       <v-avatar>
-        <v-icon v-if="undefined!=detailedHomeValues[item].icon">{{detailedHomeValues[item].icon}}</v-icon>
-        <img v-else-if="detailedHomeValues[item].svg" class="svg-img" :src="detailedHomeValues[item].svg | svgIcon(darkUi)"></img>
-       </v-avatar>
-       <div>{{detailedHomeValues[item].title}}</div>
-      </v-list-tile>
-     </v-template>
+    <div v-if="haveScrollableLists" id="ui-settings-scrollable-list" class="msk-sortable-host">
+     <template v-for="(item, index) in detailedHomeItems">
+      <div v-if="'std_favorites'!=item || !sortFavorites" :key="'ui-sort-'+item" class="ui-settings-sort-row" :data-msk-index="index">
+       <v-list-tile class="settings-list-thin-item">
+        <div class="ui-settings-sort-handle" @click.stop.prevent :title="i18n('Drag to reorder')"><v-icon>drag_handle</v-icon></div>
+        <v-avatar>
+         <v-icon v-if="undefined!=detailedHomeValues[item].icon">{{detailedHomeValues[item].icon}}</v-icon>
+         <img v-else-if="detailedHomeValues[item].svg" class="svg-img" :src="detailedHomeValues[item].svg | svgIcon(darkUi)"></img>
+        </v-avatar>
+        <div class="ui-settings-sort-label">{{detailedHomeValues[item].title}}</div>
+       </v-list-tile>
+      </div>
+     </template>
     </div>
     <v-list-tile-sub-title v-else style="padding-left:12px">{{i18n("No scrollable lists have been enabled. Use the 'cog' icon (above) to select the lists you would like to appear on the home screen.")}}</v-list-tile-sub-title>
     <div class="dialog-padding"></div>
@@ -321,6 +374,15 @@ Vue.component('lms-ui-settings', {
      </v-list-tile-content>
     <v-list-tile-action><m3-switch v-model="nowPlayingContext"></m3-switch></v-list-tile-action>
     </v-list-tile>
+    <v-divider v-if="LMS_P_MAI"></v-divider>
+
+    <v-list-tile v-if="LMS_P_MAI">
+     <v-list-tile-content @click="maiIntegrated = !maiIntegrated" class="switch-label">
+      <v-list-tile-title>{{i18n('Music Artist Info in now playing')}}</v-list-tile-title>
+      <v-list-tile-sub-title>{{i18n('When enabled, artist and album info are swiped as cards inside now playing. When disabled, Music Artist Info opens as a separate panel from the toolbar.')}}</v-list-tile-sub-title>
+     </v-list-tile-content>
+     <v-list-tile-action><m3-switch v-model="maiIntegrated"></m3-switch></v-list-tile-action>
+    </v-list-tile>
 
     <div class="dialog-padding"></div>
     <v-header class="dialog-section-header">{{i18n('Queue')}}</v-header>
@@ -378,17 +440,6 @@ Vue.component('lms-ui-settings', {
     <v-list-tile-action><m3-switch v-model="autoCloseQueue"></m3-switch></v-list-tile-action>
     </v-list-tile>
 
-    <div class="dialog-padding" v-if="LMS_P_MAI && advanced"></div>
-    <v-header class="dialog-section-header" v-if="LMS_P_MAI && advanced">{{i18n('Track Information')}}</v-header>
-
-    <v-list-tile v-if="LMS_P_MAI && advanced">
-     <v-list-tile-content @click="infoBackdrop = !infoBackdrop" class="switch-label">
-      <v-list-tile-title>{{i18n('Draw background')}}</v-list-tile-title>
-      <v-list-tile-sub-title>{{i18n('Use cover of current track as background.')}}</v-list-tile-sub-title>
-     </v-list-tile-content>
-     <v-list-tile-action><m3-switch v-model="infoBackdrop"></m3-switch></v-list-tile-action>
-    </v-list-tile>
-
     <div class="dialog-padding" v-if="advanced"></div>
     <v-header class="dialog-section-header" v-if="advanced">{{i18n('Screensaver')}}</v-header>
     <v-list-tile v-if="advanced">
@@ -417,12 +468,27 @@ Vue.component('lms-ui-settings', {
      <v-list-tile-action><m3-switch v-model="ndShortcuts"></m3-switch></v-list-tile-action>
     </v-list-tile>
 
+    <div class="dialog-padding" v-if="unlockAll"></div>
+    <v-header class="dialog-section-header" v-if="unlockAll">{{i18n('Plugins')}}</v-header>
+    <v-list-tile v-if="unlockAll">
+     <v-list-tile-content @click="nativeManagePlugins = !nativeManagePlugins" class="switch-label">
+      <v-list-tile-title>{{i18n('Native plugin manager')}}</v-list-tile-title>
+      <v-list-tile-sub-title>{{i18n('Use the Material plugin manager instead of the classic server settings page. Disable to fall back to the classic manager.')}}</v-list-tile-sub-title>
+     </v-list-tile-content>
+     <v-list-tile-action><m3-switch v-model="nativeManagePlugins"></m3-switch></v-list-tile-action>
+    </v-list-tile>
+    <v-divider v-if="unlockAll"></v-divider>
+
     <div class="dialog-padding" v-if="unlockAll" ></div>
     <v-header class="dialog-section-header" v-if="unlockAll" >{{i18n('Defaults')}}</v-header>
     <v-list-tile class="settings-note" v-if="unlockAll"><p>{{i18n("Settings (and home screen items) are stored locally in your browser. However, some browser extensions can remove these. The 'Save as default' button can be used to store your current settings (and home screen items) on the Lyrion server. These will then be used for any settings that are not found in your browser. Likewise, 'Revert to default' can be used to manually revert to the settings stored on your Lyrion server.")}}</p></v-list-tile>
-    <div style="margin-left:-10px">
-    <v-btn flat @click="saveAsDefault($event)"><v-icon class="btn-icon">save_alt</v-icon>{{i18n('Save as default')}}</v-btn>
-    <v-btn flat @click="revertToDefault($event)"><v-icon class="btn-icon">settings_backup_restore</v-icon>{{i18n('Revert to default')}}</v-btn>
+    <div class="ui-settings-defaults-actions" v-if="unlockAll">
+     <v-btn flat class="ui-settings-defaults-btn" @click="saveAsDefault($event)">
+      <v-icon class="btn-icon">save_alt</v-icon>{{i18n('Save as default')}}
+     </v-btn>
+     <v-btn flat class="ui-settings-defaults-btn" @click="revertToDefault($event)">
+      <v-icon class="btn-icon">settings_backup_restore</v-icon>{{i18n('Revert to default')}}
+     </v-btn>
     </div>
     <div class="dialog-padding"></div>
     <div class="dialog-bottom-pad"></div>
@@ -488,8 +554,11 @@ Vue.component('lms-ui-settings', {
         return {
             show: false,
             showMenu: false,
+            saveOk: false,
             theme: LMS_DEFAULT_THEME,
             themes: [ ],
+            themeMode: 'dark',
+            themeModes: [ ],
             colorUsage: COLOR_USE_FROM_COVER,
             colorUsages: { },
             color: LMS_DEFAULT_COLOR,
@@ -520,6 +589,8 @@ Vue.component('lms-ui-settings', {
             swipeVolume:false,
             swipeChangeTrack:false,
             keyboardControl:true,
+            jumplistSide:'left',
+            jumplistSideOptions:[],
             layout: null,
             layoutItems: [],
             mobileBar: MBAR_REP_NAV,
@@ -552,6 +623,9 @@ Vue.component('lms-ui-settings', {
             homeButtonValues: [],
             gridPerView: true,
             browseSearch: true,
+            browseHomeSplit: true,
+            browseCatalogHeader: true,
+            browseCatalogTintToolbar: false,
             width: 500,
             mediaControls: false,
             mediaControlsSupported: !queryParams.hide.has('mediaControls') && ('mediaSession' in navigator),
@@ -559,12 +633,15 @@ Vue.component('lms-ui-settings', {
             showMoveDialogs: false,
             autoCloseQueue: false,
             ndShortcuts: false,
+            autoCollapseShortcuts: false,
+            nativeManagePlugins: true,
+
+            maiIntegrated: true,
             ndShortcutValues: [],
             detailedHomeValues:{},
             detailedHomeItems:[],
             detailedHomeDialog: {show:false, items:[]},
-            dragIndex: undefined,
-            dropIndex: undefined,
+            scrollableSortable: undefined,
             advanced: false
         }
     },
@@ -597,10 +674,19 @@ Vue.component('lms-ui-settings', {
             return this.detailedHomeItems.length>0
         },
         allowLayoutSettings() {
-            return this.allowLayoutAdjust && this.advanced
+            return true
+        },
+        layoutUrlLocked() {
+            return !this.allowLayoutAdjust
         },
         dialogWidth() {
             return this.width>=800 ? 750 : this.width-(this.width>=380 ? 50 : 10)
+        },
+        themeModeEnabled() {
+            if (this.theme===AUTO_THEME) {
+                return false;
+            }
+            return !!this.themePairFor(this.theme);
         }
     },
     mounted() {
@@ -618,10 +704,8 @@ Vue.component('lms-ui-settings', {
             this.readStore();
             this.password = getLocalStorageVal('password', '');
             this.browseModesDialog.categorize = getLocalStorageBool('groupMyMusicCategories', this.browseModesDialog.categorize);
-            if (this.allowLayoutAdjust) {
-                this.layout = getLocalStorageVal("layout", "auto");
-                this.layoutOrig = this.layout;
-            }
+            this.layout = this.allowLayoutAdjust ? getLocalStorageVal("layout", "auto") : (this.$store.state.desktopLayout ? "desktop" : "mobile");
+            this.layoutOrig = this.layout;
             this.advanced = getLocalStorageBool("advancedSettings", this.advanced);
             this.hasPassword = false;
             lmsCommand("", ["material-skin", "pass-isset"]).then(({data}) => {
@@ -682,7 +766,14 @@ Vue.component('lms-ui-settings', {
                     }
                 }
                 if (data && data.result && data.result.themes) {
+                    let existing = {};
+                    for (let t=0, tlen=this.themes.length; t<tlen; ++t) {
+                        existing[this.themes[t].key] = true;
+                    }
                     for (var i=0, list=data.result.themes, len=list.length; i<len; ++i) {
+                        if (existing[list[i].key]) {
+                            continue; // already listed (e.g. Mojave on mobile)
+                        }
                         let name = list[i].label.replace(/-/g, ' ');
                         if (!list[i].key.startsWith("user:")) {
                             name=name.replace("Dark", i18n("Dark"));
@@ -690,6 +781,8 @@ Vue.component('lms-ui-settings', {
                         this.themes.push({label:name, key:list[i].key, other:true});
                     }
                 }
+                // Platform pairs now available (e.g. Mojave light/dark)
+                this.syncThemeModeFromTheme();
                 this.userColors=[];
                 if (data && data.result && data.result.colors) {
                     this.userColors=data.result.colors;
@@ -697,6 +790,7 @@ Vue.component('lms-ui-settings', {
             }).catch(err => {
             });
             this.show = true;
+            this.$nextTick(function() { this.initScrollableSortable(); }.bind(this));
         }.bind(this));
         bus.$on('closeMenu', function() {
             if (this.showMenu) {
@@ -719,11 +813,79 @@ Vue.component('lms-ui-settings', {
         this.initItems();
     },
     methods: {
+        themePairFor(key) {
+            if (!key || key===AUTO_THEME) {
+                return null;
+            }
+            let keys = [];
+            for (let i=0, loop=this.themes, len=loop.length; i<len; ++i) {
+                keys.push(loop[i].key);
+            }
+            let has = function(k) { return keys.indexOf(k)>=0; };
+            // Built-in light/dark pair
+            if (key==='light' || key==='dark') {
+                return (has('light') && has('dark')) ? { light:'light', dark:'dark' } : null;
+            }
+            // Platform themes: …/light/Name ↔ …/dark/Name-Dark
+            let m = key.match(/^(.*)\/light\/(.+)$/);
+            if (m) {
+                let darkA = m[1]+'/dark/'+m[2]+'-Dark';
+                let darkB = m[1]+'/dark/'+m[2];
+                if (has(darkA)) { return { light:key, dark:darkA }; }
+                if (has(darkB) && darkB!==key) { return { light:key, dark:darkB }; }
+                return null;
+            }
+            m = key.match(/^(.*)\/dark\/(.+)$/);
+            if (m) {
+                let base = m[2].replace(/-Dark$/i, '');
+                let lightKey = m[1]+'/light/'+base;
+                if (has(lightKey)) { return { light:lightKey, dark:key }; }
+            }
+            return null;
+        },
+        syncThemeModeFromTheme() {
+            if (this.theme===AUTO_THEME) {
+                this.themeMode = 'auto';
+                return;
+            }
+            let pair = this.themePairFor(this.theme);
+            if (!pair) {
+                this.themeMode = this.theme.indexOf('/light/')>=0 || this.theme==='light' ? 'light' : 'dark';
+                return;
+            }
+            this.themeMode = (this.theme===pair.light) ? 'light' : 'dark';
+        },
+        onThemeChanged() {
+            this.syncThemeModeFromTheme();
+        },
+        onThemeModeChanged() {
+            if (!this.themeModeEnabled) {
+                return;
+            }
+            if ('auto'===this.themeMode) {
+                this.theme = AUTO_THEME;
+                return;
+            }
+            let pair = this.themePairFor(this.theme);
+            if (!pair && this.theme===AUTO_THEME) {
+                // Coming from auto: pick OS platform pair when possible
+                let autoKey = typeof autoTheme==='function' ? autoTheme() : 'dark';
+                pair = this.themePairFor(autoKey);
+                if (!pair) {
+                    this.theme = 'light'===this.themeMode ? 'light' : 'dark';
+                    return;
+                }
+            }
+            if (pair) {
+                this.theme = 'light'===this.themeMode ? pair.light : pair.dark;
+            }
+        },
         readStore() {
             let themeParts = this.$store.state.chosenTheme ? this.$store.state.chosenTheme.split('-') : ['dark'];
             let variant = themeParts.length>1 && ('colored'==themeParts[themeParts.length-1] || 'standard'==themeParts[themeParts.length-1]) ? themeParts.pop() : 'standard';
             this.theme = themeParts.join('-');
             this.colorToolbars = 'colored'==variant;
+            this.syncThemeModeFromTheme();
             this.color = this.$store.state.color;
             this.colorUsage = this.$store.state.colorUsage;
             this.tinted = this.$store.state.tinted;
@@ -749,6 +911,11 @@ Vue.component('lms-ui-settings', {
             this.swipeVolume = this.$store.state.swipeVolume;
             this.swipeChangeTrack = this.$store.state.swipeChangeTrack;
             this.keyboardControl = this.$store.state.keyboardControl;
+            this.jumplistSide = this.$store.state.jumplistSide==='right' ? 'right' : 'left';
+            this.jumplistSideOptions = [
+                { value: 'left', label: i18n('Left') },
+                { value: 'right', label: i18n('Right') }
+            ];
             this.sortFavorites = this.$store.state.sortFavorites;
             this.skipBSeconds = this.$store.state.skipBSeconds;
             this.skipFSeconds = this.$store.state.skipFSeconds;
@@ -760,10 +927,16 @@ Vue.component('lms-ui-settings', {
             this.homeButton = this.$store.state.homeButton;
             this.gridPerView = this.$store.state.gridPerView;
             this.browseSearch = this.$store.state.browseSearch;
+            this.browseHomeSplit = this.$store.state.browseHomeSplit;
+            this.browseCatalogHeader = this.$store.state.browseCatalogHeader;
+            this.browseCatalogTintToolbar = this.$store.state.browseCatalogTintToolbar;
             this.mediaControls = this.$store.state.mediaControls;
             this.moveDialogs = this.$store.state.moveDialogs;
             this.autoCloseQueue = this.$store.state.autoCloseQueue;
             this.ndShortcuts = this.$store.state.ndShortcuts;
+            this.autoCollapseShortcuts = !!this.$store.state.autoCollapseShortcuts;
+            this.nativeManagePlugins = lmsOptions.nativeManagePlugins;
+            this.maiIntegrated = this.$store.state.maiIntegrated;
             this.showItems=[{id: TOP_MYMUSIC_ID, name:i18n("My Music"), show:!this.hidden.has(TOP_MYMUSIC_ID)},
                             {id: TOP_RADIO_ID, name:i18n("Radio"), show:!this.hidden.has(TOP_RADIO_ID)},
                             {id: TOP_FAVORITES_ID, name:i18n("Favorites"), show:!this.hidden.has(TOP_FAVORITES_ID)},
@@ -780,8 +953,17 @@ Vue.component('lms-ui-settings', {
                 { key:'light',       label:i18n('Light')},
                 { key:'dark',        label:i18n('Dark')},
                 { key:'black',       label:i18n('Black')},
-                { key:'dark-lyrion', label:'Lyrion'}
+                { key:'neon',        label:'Neon'},
+                { key:'dark-lyrion', label:'Lyrion'},
+                // Always list Mojave (works on mobile + desktop)
+                { key:'mac/light/Mojave', label:'Mojave'},
+                { key:'mac/dark/Mojave-Dark', label:'Mojave Dark'}
                 ];
+            this.themeModes=[
+                { key:'light', label:i18n('Light')},
+                { key:'dark',  label:i18n('Dark')},
+                { key:'auto',  label:i18n('Automatic')}
+            ];
             this.layoutItems=[
                 { key:"auto",    label:i18n("Automatic")},
                 { key:"desktop", label:i18n("Use desktop layout")},
@@ -789,9 +971,9 @@ Vue.component('lms-ui-settings', {
                 ];
             this.mobileBars=[
                 { key:MBAR_NONE,    label:i18n("None")},
-                { key:MBAR_THIN,    label:i18n("Thin (single line of text)")},
-                { key:MBAR_THICK,   label:i18n("Thick (two lines of text)")},
-                { key:MBAR_REP_NAV, label:i18n("Replace navigation bar")},
+                { key:MBAR_THIN,    label:i18n("Slim")},
+                { key:MBAR_THICK,   label:i18n("Medium")},
+                { key:MBAR_REP_NAV, label:i18n("Large")},
                 ];
             this.colorUsages=[
                 { key:COLOR_USE_STANDARD,   label:i18n("For all players ") },
@@ -851,6 +1033,10 @@ Vue.component('lms-ui-settings', {
             this.detailedHomeValues[DETAILED_HOME_EXPLORE] = {title:i18n("Explore"), icon:"music_note"};
         },
         close() {
+            mskSortableDestroy(this.scrollableSortable);
+            this.scrollableSortable = undefined;
+            mskSortableCleanupDom();
+            bus.$emit('dragActive', false);
             this.show=false;
             this.showMenu = false;
             this.$store.commit('setUiSettings', this.settings(false, false) );
@@ -860,7 +1046,7 @@ Vue.component('lms-ui-settings', {
                 bus.$emit('groupMyMusicCategoriesChanged');
             }
 
-            if (this.allowLayoutSettings && (this.layout != this.layoutOrig)) {
+            if (!this.layoutUrlLocked && (this.layout != this.layoutOrig)) {
                 setLocalStorageVal("layout", this.layout);
                 bus.$emit('changeLayout', "desktop"==this.layout ? true : "mobile"==this.layout ? false : undefined);
             }
@@ -914,6 +1100,7 @@ Vue.component('lms-ui-settings', {
                       swipeVolume:this.swipeVolume,
                       swipeChangeTrack:this.swipeChangeTrack,
                       keyboardControl:this.keyboardControl,
+                      jumplistSide:this.jumplistSide==='right' ? 'right' : 'left',
                       volumeStep:this.volumeStep,
                       hidden:arrays ? Array.from(this.hiddenItems()) : this.hiddenItems(),
                       skipBSeconds:this.skipBSeconds,
@@ -924,11 +1111,16 @@ Vue.component('lms-ui-settings', {
                       homeButton:this.homeButton,
                       gridPerView:this.gridPerView,
                       browseSearch:this.browseSearch,
+                      browseHomeSplit:this.browseHomeSplit,
+                      browseCatalogHeader:this.browseCatalogHeader,
+                      browseCatalogTintToolbar:this.browseCatalogTintToolbar,
+                      maiIntegrated:this.maiIntegrated,
                       showRating:this.showRating,
                       mediaControls:this.mediaControls,
                       moveDialogs:this.moveDialogs,
                       autoCloseQueue:this.autoCloseQueue,
                       ndShortcuts:this.ndShortcuts,
+                      autoCollapseShortcuts:this.autoCollapseShortcuts,
                       detailedHomeItems:this.detailedHomeItems
                   };
             if (withSorts) {
@@ -955,7 +1147,9 @@ Vue.component('lms-ui-settings', {
                     settings.mai = {showTabs: getLocalStorageBool("showTabs", false),
                                     npScrollLyrics: getLocalStorageBool("npScrollLyrics", true),
                                     npHighlightLyrics: getLocalStorageBool("npHighlightLyrics", true),
-                                    npInfoZoom: parseFloat(getLocalStorageVal("npInfoZoom", 1.0))};
+                                    npInfoZoom: parseFloat(getLocalStorageVal("npInfoZoom", 1.0)),
+                                    npShowSectHeaders: getLocalStorageBool("npShowSectHeaders", true),
+                                    npShowSectHeadersExpanded: getLocalStorageBool("npShowSectHeadersExpanded", false)};
 
                     lmsCommand("", ["pref", LMS_MATERIAL_UI_DEFAULT_PREF, JSON.stringify(settings)]);
                     lmsCommand("", ["pref", LMS_MATERIAL_DEFAULT_ITEMS_PREF, getLocalStorageVal("topItems", "[]")]);
@@ -1029,19 +1223,21 @@ Vue.component('lms-ui-settings', {
                      ? [ shortcutStr("space")+SEPARATOR+i18n("Play/pause"),
                          shortcutStr("home")+SEPARATOR+i18n("Go to homescreen"),
                          shortcutStr("esc")+SEPARATOR+i18n("Go back"),
+                         shortcutStr(LMS_NAV_DRAWER_KEYBOARD)+SEPARATOR+i18n("Show main menu / shortcuts"),
                          shortcutStr(ACTIONS[SEARCH_LIB_ACTION].key)+SEPARATOR+ACTIONS[SEARCH_LIB_ACTION].title + " / " + ACTIONS[SEARCH_LIST_ACTION].title,
                          shortcutStr(ACTIONS[SEARCH_LIB_ACTION].key, false, true)+SEPARATOR+ACTIONS[ADV_SEARCH_ACTION].title,
                          shortcutStr(ACTIONS[SEARCH_LIST_ACTION].key, true)+SEPARATOR+ACTIONS[SEARCH_LIST_ACTION].title+" ("+i18n("Queue")+")",
                          shortcutStr(ACTIONS[ADD_ACTION].skey, true)+SEPARATOR+ACTIONS[ADD_ACTION].title,
                          shortcutStr(LMS_TRACK_INFO_KEYBOARD)+SEPARATOR+i18n("Show current track information")
                        ]
-                     : [ shortcutStr("up", false, true)+SEPARATOR+i18n("Increase volume"),
-                         shortcutStr("down", false, true)+SEPARATOR+i18n("Decrease volume"),
-                         shortcutStr("left", false, true)+SEPARATOR+i18n("Previous track"),
-                         shortcutStr("right", false, true)+SEPARATOR+i18n("Next track"),
+                     : [ (IS_APPLE ? shortcutStr("up") : shortcutStr("up", false, true))+SEPARATOR+i18n("Increase volume"),
+                         (IS_APPLE ? shortcutStr("down") : shortcutStr("down", false, true))+SEPARATOR+i18n("Decrease volume"),
+                         (IS_APPLE ? shortcutStr("left") : shortcutStr("left", false, true))+SEPARATOR+i18n("Previous track"),
+                         (IS_APPLE ? shortcutStr("right") : shortcutStr("right", false, true))+SEPARATOR+i18n("Next track"),
                          shortcutStr("space")+SEPARATOR+i18n("Play/pause"),
                          shortcutStr("home")+SEPARATOR+i18n("Go to homescreen"),
                          shortcutStr("esc")+SEPARATOR+i18n("Go back"),
+                         shortcutStr(LMS_NAV_DRAWER_KEYBOARD)+SEPARATOR+i18n("Show main menu / shortcuts"),
                          shortcutStr(ACTIONS[SEARCH_LIB_ACTION].key)+SEPARATOR+ACTIONS[SEARCH_LIB_ACTION].title + " / " + ACTIONS[SEARCH_LIST_ACTION].title,
                          shortcutStr(ACTIONS[SEARCH_LIB_ACTION].key, false, true)+SEPARATOR+ACTIONS[ADV_SEARCH_ACTION].title,
                          shortcutStr(ACTIONS[SEARCH_LIST_ACTION].key, true)+SEPARATOR+ACTIONS[SEARCH_LIST_ACTION].title+" ("+i18n("Queue")+")",
@@ -1076,7 +1272,7 @@ Vue.component('lms-ui-settings', {
                 list.push(shortcutStr(LMS_MANAGEPLAYERS_KEYBOARD)+SEPARATOR+TB_MANAGE_PLAYERS.title);
             }
             if (!queryParams.single) {
-                list.push(shortcutStr("(N)", false, true)+SEPARATOR+i18n("Switch to Nth player"));
+                list.push((IS_APPLE ? shortcutStr("(N)") : shortcutStr("(N)", false, true))+SEPARATOR+i18n("Switch to Nth player"));
             }
             if (!this.$store.state.desktopLayout) {
                 list.push("F1"+SEPARATOR+i18n("Browse"));
@@ -1155,38 +1351,73 @@ Vue.component('lms-ui-settings', {
             }
             this.detailedHomeDialog.items=[];
             this.detailedHomeDialog.show=false;
+            this.$nextTick(function() { this.initScrollableSortable(); }.bind(this));
         },
         mouseDown(ev) {
             toolbarMouseDown(ev);
         },
-        dragStart(which, ev) {
-            ev.dataTransfer.dropEffect = 'move';
-            ev.dataTransfer.setData('text/plain', "dth:"+which);
-            this.dragIndex = which;
-            this.dropIndex = undefined;
-        },
-        dragEnd() {
-            this.dragIndex = undefined;
-            this.dropIndex = undefined;
-        },
-        dragOver(index, ev) {
-            if (index!=this.dragIndex) {
-                this.dropIndex = index;
+        initScrollableSortable() {
+            mskSortableDestroy(this.scrollableSortable);
+            this.scrollableSortable = undefined;
+            if (!this.show || !this.haveScrollableLists) {
+                return;
             }
-            ev.preventDefault(); // Otherwise drop is never called!
-        },
-        drop(to, ev) {
-            ev.preventDefault();
-            if (to!=this.dragIndex) {
-                this.detailedHomeItems = arrayMove(this.detailedHomeItems, this.dragIndex, to);
+            let list = document.getElementById('ui-settings-scrollable-list');
+            // Count visible rows (favorites may be hidden when sortFavorites is on)
+            let rows = list ? list.querySelectorAll('.ui-settings-sort-row') : [];
+            if (!list || rows.length < 2) {
+                return;
             }
-            this.dragIndex = undefined;
-            this.dropIndex = undefined;
+            // forceFallback: native HTML5 DnD inside a scrollable fullscreen dialog
+            // loses to text-selection on desktop; mouse fallback is reliable.
+            this.scrollableSortable = mskSortableCreate(list, {
+                draggable: '> .ui-settings-sort-row',
+                // Whole row (grip + icon + label) is the drag target.
+                handle: '.ui-settings-sort-row',
+                animation: 200,
+                forceFallback: true,
+                fallbackOnBody: true,
+                fallbackTolerance: 4,
+                delay: 0,
+                delayOnTouchOnly: true,
+                touchStartThreshold: 5,
+                emitDragActive: false,
+                scroll: list.closest('.v-card__text') || true,
+                bubbleScroll: true,
+                onEnd: function(evt) {
+                    let indices = mskSortableReorderIndices(evt, this.detailedHomeItems.length);
+                    if (!indices) {
+                        this.$nextTick(function() { this.initScrollableSortable(); }.bind(this));
+                        return;
+                    }
+                    let play = typeof flipListPrepare==='function' ? flipListPrepare(list, '.ui-settings-sort-row', 200) : function(){};
+                    this.detailedHomeItems = arrayMove(this.detailedHomeItems.slice(), indices.from, indices.to);
+                    this.$nextTick(function() {
+                        play();
+                        this.initScrollableSortable();
+                    }.bind(this));
+                }.bind(this)
+            });
         }
     },
     watch: {
         'show': function(val) {
             this.$store.commit('dialogOpen', {name:'uisettings', shown:val});
+            if (val) {
+                this.$nextTick(function() { this.initScrollableSortable(); }.bind(this));
+            } else {
+                mskSortableDestroy(this.scrollableSortable);
+                this.scrollableSortable = undefined;
+            }
+        },
+        'sortFavorites': function() {
+            if (this.show && !this._scrollableSortBusy) {
+                this.$nextTick(function() { this.initScrollableSortable(); }.bind(this));
+            }
+        },
+        'nativeManagePlugins': function(val) {
+            lmsOptions.nativeManagePlugins = val;
+            setLocalStorageVal('nativeManagePlugins', val);
         },
         'browseModesDialog.show': function(val) {
             this.$store.commit('dialogOpen', {name:'ui-browsemodes', shown:val});

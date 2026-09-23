@@ -18,8 +18,8 @@ Vue.component('lms-player-settings', {
     <v-toolbar app-data class="dialog-toolbar" @mousedown="mouseDown" id="playersettings-toolbar">
      <lms-windowcontrols v-if="queryParams.nativeTitlebar && queryParams.tbarBtnsPos=='l'"></lms-windowcontrols>
      <div class="drag-area-left"></div>
-     <v-btn v-if="IS_IOS" flat icon @click="close(false)" :title="ttShortcutStr(i18n('Go back'), 'esc')"><v-icon>arrow_back</v-icon></v-btn>
-     <v-btn v-else flat icon v-longpress:stop="close" :title="ttShortcutStr(i18n('Go back'), 'esc')"><v-icon>arrow_back</v-icon></v-btn>
+     <v-btn v-if="IS_IOS" flat icon @click="close(false)" :title="ttShortcutStr(i18n('Go back'), 'esc')"><v-icon>{{BACK_ICON}}</v-icon></v-btn>
+     <v-btn v-else flat icon v-longpress:stop="close" :title="ttShortcutStr(i18n('Go back'), 'esc')"><v-icon>{{BACK_ICON}}</v-icon></v-btn>
      <v-btn v-if="showHome && homeButton" flat icon @click="goHome" :title="ttShortcutStr(i18n('Go home'), 'home')"><v-icon>home</v-icon></v-btn>
      <v-toolbar-title v-if="numPlayers>1" @click="openPlayerMenu" class="pointer">{{TB_PLAYER_SETTINGS.title+SEPARATOR+playerName}} <v-icon>arrow_drop_down</v-icon></v-toolbar-title>
      <v-toolbar-title v-else>{{TB_PLAYER_SETTINGS.title+SEPARATOR+playerName}}</v-toolbar-title>
@@ -153,6 +153,12 @@ Vue.component('lms-player-settings', {
      </v-list-tile>
      <v-list-tile v-if="unlockAll" class="other-setting">
       <v-list-tile-content>
+       <v-list-tile-title><v-btn flat @click="showPresetsEditor"><v-icon class="btn-icon">dialpad</v-icon>{{i18n('Presets editor')}}</v-btn></v-list-tile-title>
+       <v-list-tile-sub-title>{{i18n('Assign playlists or streams to this player’s numbered preset keys.')}}</v-list-tile-sub-title>
+      </v-list-tile-content>
+     </v-list-tile>
+     <v-list-tile v-if="unlockAll" class="other-setting">
+      <v-list-tile-content>
        <v-list-tile-title><v-btn flat @click="showExtraSettings"><img class="svg-img btn-icon" :src="'configure'| svgIcon(darkUi)"></img>{{i18n('Extra settings')}}</v-btn></v-list-tile-title>
        <v-list-tile-sub-title>{{i18n('Extra player settings, such as synchronization options, player specific plugin settings, etc.')}}</v-list-tile-sub-title>
       </v-list-tile-content>
@@ -222,8 +228,14 @@ Vue.component('lms-player-settings', {
     <v-list-tile class="settings-compact-row" v-if="wide==0"><v-checkbox class="ellipsis" v-model="alarmDialog.dow" :label="i18n('Sunday')" value="0"></v-checkbox></v-list-tile>
     <div class="dialog-padding"></div>
 
-    <v-list-tile>
-     <v-select menu-props="auto" :items="alarmSounds" :label="i18n('Sound')" v-model="alarmDialog.url" item-text="label" item-value="key"></v-select>
+    <v-list-tile class="alarm-sound-row" @click="openAlarmSoundPicker" role="button">
+     <v-list-tile-content>
+      <v-list-tile-title>{{i18n('Sound')}}</v-list-tile-title>
+      <v-list-tile-sub-title class="ellipsis">{{alarmSoundLabel}}</v-list-tile-sub-title>
+     </v-list-tile-content>
+     <v-list-tile-action>
+      <v-icon class="alarm-sound-chevron-icon">chevron_right</v-icon>
+     </v-list-tile-action>
     </v-list-tile>
 
     <v-list-tile class="settings-compact-row">
@@ -265,6 +277,66 @@ Vue.component('lms-player-settings', {
   </v-list>
  </v-menu>
 
+ <!-- Hierarchical alarm sound picker — standard Material dialog (theme fonts/colors/lists) -->
+ <v-dialog v-model="alarmSoundPicker.show" width="440" persistent scrollable content-class="alarm-sound-dialog">
+  <v-card class="alarm-sound-card">
+   <v-card-title class="alarm-sound-title">
+    <v-btn v-if="alarmSoundPicker.category" icon flat @click="alarmSoundPickerBack" :title="i18n('Go back')">
+     <v-icon>{{BACK_ICON}}</v-icon>
+    </v-btn>
+    <span class="ellipsis">{{alarmSoundPickerTitle}}</span>
+    <v-spacer></v-spacer>
+    <v-btn icon flat @click="closeAlarmSoundPicker" :title="i18n('Close')"><v-icon>close</v-icon></v-btn>
+   </v-card-title>
+   <v-card-text class="alarm-sound-body" ref="alarmSoundPickerList">
+    <v-list two-line class="alarm-sound-list settings-list">
+     <template v-if="!alarmSoundPicker.category">
+      <template v-for="(cat, cidx) in alarmSoundCategories">
+       <v-divider v-if="showAlarmSoundSeparatorBefore(cat, cidx)" :key="'ascs-'+cidx" class="alarm-sound-sep"></v-divider>
+       <v-list-tile :key="'asc-'+cidx" class="alarm-sound-cat-row" @click="openAlarmSoundCategory(cat.label)">
+        <v-list-tile-avatar>
+         <v-icon>{{alarmCategoryIcon(cat.label)}}</v-icon>
+        </v-list-tile-avatar>
+        <v-list-tile-content>
+         <v-list-tile-title>{{cat.label}}</v-list-tile-title>
+        </v-list-tile-content>
+        <v-list-tile-action>
+         <v-icon>chevron_right</v-icon>
+        </v-list-tile-action>
+       </v-list-tile>
+      </template>
+      <v-list-tile v-if="!alarmSoundCategories.length" class="disabled">
+       <v-list-tile-title class="subtext">{{i18n('No sources found')}}</v-list-tile-title>
+      </v-list-tile>
+     </template>
+     <template v-else>
+      <v-list-tile v-for="(opt, oidx) in alarmSoundPickerItems" :key="'asi-'+oidx"
+                   class="alarm-sound-item-row"
+                   :class="{'alarm-sound-selected': opt.key===alarmDialog.url}"
+                   @click="selectAlarmSound(opt)">
+       <v-list-tile-avatar>
+        <v-icon>{{opt.isCurrent ? 'queue_music' : 'music_note'}}</v-icon>
+       </v-list-tile-avatar>
+       <v-list-tile-content>
+        <v-list-tile-title class="ellipsis">{{opt.title}}</v-list-tile-title>
+       </v-list-tile-content>
+       <v-list-tile-action v-if="opt.key===alarmDialog.url">
+        <v-icon class="alarm-sound-check">check</v-icon>
+       </v-list-tile-action>
+      </v-list-tile>
+      <v-list-tile v-if="!alarmSoundPickerItems.length" class="disabled">
+       <v-list-tile-title class="subtext">{{i18n('No items in this category')}}</v-list-tile-title>
+      </v-list-tile>
+     </template>
+    </v-list>
+   </v-card-text>
+   <v-card-actions>
+    <v-spacer></v-spacer>
+    <v-btn flat @click="closeAlarmSoundPicker">{{i18n('Cancel')}}</v-btn>
+   </v-card-actions>
+  </v-card>
+ </v-dialog>
+
 </div>
 `,
     props: [],
@@ -300,6 +372,8 @@ Vue.component('lms-player-settings', {
             sleepTime: undefined,
             alarmShuffeItems:[],
             alarmSounds:[],
+            alarmOptions:[],
+            alarmSoundPicker: { show: false, category: null },
             alarmDialog: {
                 show: false,
                 id: undefined,
@@ -359,6 +433,67 @@ Vue.component('lms-player-settings', {
         },
         perPlayerColor() {
             return COLOR_USE_PER_PLAYER==this.$store.state.colorUsage;
+        },
+        desktopLayout() {
+            return this.$store.state.desktopLayout;
+        },
+        /** Hierarchical categories for alarm sound picker (same ordering as presets). */
+        alarmSoundCategories() {
+            let map = {};
+            let order = [];
+            for (let i = 0; i < this.alarmOptions.length; i++) {
+                let o = this.alarmOptions[i];
+                let cat = o.category || this.i18n('Other');
+                if (!map[cat]) {
+                    map[cat] = [];
+                    order.push(cat);
+                }
+                map[cat].push(o);
+            }
+            order = this._sortAlarmCategoryLabels(order);
+            return order.map(function(label) {
+                return { label: label, items: map[label] };
+            });
+        },
+        alarmSoundPickerTitle() {
+            if (this.alarmSoundPicker.category) {
+                return this.alarmSoundPicker.category;
+            }
+            return this.i18n('Sound');
+        },
+        alarmSoundPickerItems() {
+            let label = this.alarmSoundPicker.category;
+            if (!label) { return []; }
+            let cats = this.alarmSoundCategories;
+            for (let i = 0; i < cats.length; i++) {
+                if (cats[i].label === label) {
+                    return cats[i].items;
+                }
+            }
+            return [];
+        },
+        alarmSoundLabel() {
+            let key = this.alarmDialog && this.alarmDialog.url;
+            if (key===undefined || key===null || key==='' || key==='0' || key===0) {
+                key = CURRENT_PLAYLIST;
+            }
+            for (let i = 0; i < this.alarmOptions.length; i++) {
+                let o = this.alarmOptions[i];
+                if (o.key === key) {
+                    if (o.isCurrent || !o.category) {
+                        return o.title;
+                    }
+                    // Avoid "Category: Title" when title already matches category
+                    if (o.title && o.category && o.title.toLowerCase() !== o.category.toLowerCase()) {
+                        return o.category + ' · ' + o.title;
+                    }
+                    return o.title || o.category;
+                }
+            }
+            if (key === CURRENT_PLAYLIST) {
+                return this.i18n('Current play queue');
+            }
+            return key ? String(key) : this.i18n('Select sound');
         }
     },
     mounted() {
@@ -426,6 +561,7 @@ Vue.component('lms-player-settings', {
         }.bind(this));
         bus.$on('noPlayers', function() {
             this.show=this.alarmDialog.show=this.playerMenu.show=false;
+            this.closeAlarmSoundPicker();
         }.bind(this));
         this.sleepOpen = false;
         bus.$on('dialogOpen', function(name, open) {
@@ -442,7 +578,15 @@ Vue.component('lms-player-settings', {
             }
         }.bind(this));
         bus.$on('closeDialog', function(dlg) {
-            if (dlg == 'alarm') {
+            if (dlg == 'alarmsound') {
+                // Hierarchical: Esc backs out one level, then closes
+                if (this.alarmSoundPicker && this.alarmSoundPicker.category) {
+                    this.alarmSoundPickerBack();
+                } else {
+                    this.closeAlarmSoundPicker();
+                }
+            } else if (dlg == 'alarm') {
+                this.closeAlarmSoundPicker();
                 this.alarmDialog.show=false;
             } else if (dlg == 'playersettings') {
                 this.close();
@@ -528,20 +672,67 @@ Vue.component('lms-player-settings', {
                 }
             });
             this.alarmSounds=[];
+            this.alarmOptions=[];
             this.alarms.scheduled=[];
             lmsList(this.playerId, ["alarm", "playlists"], undefined, 0).then(({data}) => {
+                let opts = [];
+                let flat = [];
                 if (data && data.result && data.result.item_loop) {
                     data.result.item_loop.forEach(i => {
-                        if (!i.url) {
-                            this.alarmSounds.push({key:CURRENT_PLAYLIST, label:i18n('Current play queue')});
-                        } else {
-                            this.alarmSounds.push({key:i.url, label:i.category+": "+i.title});
+                        let isCurrent = !i.url;
+                        let key = isCurrent ? CURRENT_PLAYLIST : i.url;
+                        let title = i.title || (isCurrent ? i18n('Current play queue') : '');
+                        let category = i.category || (isCurrent
+                            ? i18n('Current playlist')
+                            : i18n('Other'));
+                        // Prefer LMS "current playlist" category naming when present
+                        if (isCurrent && i.category) {
+                            category = i.category;
                         }
+                        if (!title) { return; }
+                        let opt = {
+                            key: key,
+                            title: title,
+                            category: category,
+                            url: i.url || '',
+                            isCurrent: isCurrent
+                        };
+                        opts.push(opt);
+                        // Flat list kept for any legacy callers
+                        flat.push({
+                            key: key,
+                            label: isCurrent ? title : (category + ': ' + title)
+                        });
                     });
                 }
-                if (this.alarmSounds.length<1) {
-                    this.alarmSounds.push({key:CURRENT_PLAYLIST, label:i18n('Current play queue')});
+                if (opts.length < 1) {
+                    let cur = {
+                        key: CURRENT_PLAYLIST,
+                        title: i18n('Current play queue'),
+                        category: i18n('Current playlist'),
+                        url: '',
+                        isCurrent: true
+                    };
+                    opts.push(cur);
+                    flat.push({ key: CURRENT_PLAYLIST, label: cur.title });
                 }
+                // Alpha within category; preserve server category order then apply preferred rank
+                let catFirst = {};
+                let catIdx = 0;
+                for (let i = 0; i < opts.length; i++) {
+                    let c = opts[i].category || '';
+                    if (catFirst[c] === undefined) {
+                        catFirst[c] = catIdx++;
+                    }
+                }
+                opts.sort(function(a, b) {
+                    let ca = (catFirst[a.category || ''] || 0) - (catFirst[b.category || ''] || 0);
+                    if (ca !== 0) { return ca; }
+                    if (a.isCurrent !== b.isCurrent) { return a.isCurrent ? -1 : 1; }
+                    return (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base', numeric: true });
+                });
+                this.alarmOptions = opts;
+                this.alarmSounds = flat;
                 this.loadAlarms();
             });
             lmsCommand(this.playerId, ["sleep", "?"]).then(({data}) => {
@@ -738,13 +929,98 @@ Vue.component('lms-player-settings', {
         },
         addAlarm(event) {
             storeClickOrTouchPos(event);
+            this.closeAlarmSoundPicker();
             this.alarmDialog = { show: true, id: undefined, time: "00:00", dow:["1", "2", "3", "4", "5"], repeat: false,
                                  url: CURRENT_PLAYLIST, shufflemode: this.alarmShuffeItems[0].key };
         },
         editAlarm(alarm, event) {
             storeClickOrTouchPos(event);
+            this.closeAlarmSoundPicker();
+            let url = alarm.url;
+            if (url===undefined || url===null || url==='' || url==='0' || url===0) {
+                url = CURRENT_PLAYLIST;
+            }
             this.alarmDialog = { show: true, id: alarm.id, time: formatTime(alarm.time, true), dow: alarm.dow.split(","),
-                                 repeat: alarm.repeat, url: alarm.url, shufflemode: alarm.shufflemode, enabled: alarm.enabled };
+                                 repeat: alarm.repeat, url: url, shufflemode: alarm.shufflemode, enabled: alarm.enabled };
+        },
+        _alarmCategoryRank(label) {
+            let s = String(label || '').toLowerCase();
+            if (/current|en cours|courante|play queue/.test(s)) { return 0; }
+            if (/favor/.test(s)) { return 10; }
+            if (/playlist|listes de lecture|^listes\b/.test(s) && !/en cours|courante/.test(s)) { return 20; }
+            // Random mix with media sources (before sound separator)
+            if (/random|al[eé]atoire|\bmix\b/.test(s)) { return 25; }
+            if (/effet|sound effect/.test(s)) { return 40; }
+            if (/alarm|alarme/.test(s)) { return 50; }
+            if (/musical/.test(s)) { return 51; }
+            if (/naturel|nature/.test(s)) { return 52; }
+            if (/\bson|sound/.test(s)) { return 55; }
+            return 30;
+        },
+        _sortAlarmCategoryLabels(labels) {
+            let self = this;
+            return (labels || []).slice().sort(function(a, b) {
+                let ra = self._alarmCategoryRank(a);
+                let rb = self._alarmCategoryRank(b);
+                if (ra !== rb) { return ra - rb; }
+                return String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+            });
+        },
+        isAlarmSoundCategory(label) {
+            let s = String(label || '').toLowerCase();
+            return /effet|sound effect|alarm|alarme|musical|naturel|nature|\bson|sound/.test(s);
+        },
+        showAlarmSoundSeparatorBefore(cat, cidx) {
+            if (!cat || !this.isAlarmSoundCategory(cat.label)) { return false; }
+            if (cidx <= 0) { return true; }
+            let prev = this.alarmSoundCategories[cidx - 1];
+            return !prev || !this.isAlarmSoundCategory(prev.label);
+        },
+        alarmCategoryIcon(label) {
+            let s = String(label || '').toLowerCase();
+            if (/current|en cours|courante|play queue/.test(s)) { return 'queue_music'; }
+            if (/favor/.test(s)) { return 'favorite'; }
+            if (/playlist|listes de lecture|listes/.test(s) && !/en cours/.test(s)) { return 'library_music'; }
+            if (/random|al[eé]atoire|mix/.test(s)) { return 'shuffle'; }
+            if (/sound|son|nature|alarm|effet|musical/.test(s)) { return 'graphic_eq'; }
+            if (/radio/.test(s)) { return 'radio'; }
+            if (/podcast/.test(s)) { return 'podcasts'; }
+            return 'folder';
+        },
+        openAlarmSoundPicker() {
+            if (!this.alarmDialog || !this.alarmDialog.show) { return; }
+            this.alarmSoundPicker.category = null;
+            this.alarmSoundPicker.show = true;
+        },
+        closeAlarmSoundPicker() {
+            if (this.alarmSoundPicker) {
+                this.alarmSoundPicker.show = false;
+                this.alarmSoundPicker.category = null;
+            }
+        },
+        openAlarmSoundCategory(label) {
+            if (!label) { return; }
+            this.alarmSoundPicker.category = label;
+            this.$nextTick(function() {
+                let sc = this.$refs.alarmSoundPickerList;
+                if (sc) {
+                    try { sc.scrollTop = 0; } catch (e) {}
+                }
+            }.bind(this));
+        },
+        alarmSoundPickerBack() {
+            this.alarmSoundPicker.category = null;
+            this.$nextTick(function() {
+                let sc = this.$refs.alarmSoundPickerList;
+                if (sc) {
+                    try { sc.scrollTop = 0; } catch (e) {}
+                }
+            }.bind(this));
+        },
+        selectAlarmSound(opt) {
+            if (!opt || !this.alarmDialog) { return; }
+            this.alarmDialog.url = opt.key;
+            this.closeAlarmSoundPicker();
         },
         saveAlarm() {
             var parts = this.alarmDialog.time.split(":");
@@ -767,6 +1043,7 @@ Vue.component('lms-player-settings', {
             lmsCommand(this.playerId, cmd).then(({data}) => {
                 this.loadAlarms();
             });
+            this.closeAlarmSoundPicker();
             this.alarmDialog.show = false;
         },
         deleteAlarm(alarm, event) {
@@ -833,6 +1110,16 @@ Vue.component('lms-player-settings', {
             } else {
                 // No name change, so can show straight away...
                 this.openExtraSettings();
+            }
+        },
+        showPresetsEditor() {
+            this.showMenu = false;
+            if (this.save()) {
+                setTimeout(function() {
+                    bus.$emit('dlg.open', 'presetseditor', this.playerId, this.playerName);
+                }.bind(this), 250);
+            } else {
+                bus.$emit('dlg.open', 'presetseditor', this.playerId, this.playerName);
             }
         },
         openExtraSettings() {
@@ -953,6 +1240,15 @@ Vue.component('lms-player-settings', {
         },
         'alarmDialog.show': function(val) {
             this.$store.commit('dialogOpen', {name:'alarm', shown:val});
+            if (!val) {
+                this.closeAlarmSoundPicker();
+            }
+        },
+        'alarmSoundPicker.show': function(val) {
+            this.$store.commit('dialogOpen', {name:'alarmsound', shown:val});
+            if (!val && this.alarmSoundPicker) {
+                this.alarmSoundPicker.category = null;
+            }
         },
         'showMenu': function(val) {
             this.$store.commit('menuVisible', {name:'playersettings', shown:val});

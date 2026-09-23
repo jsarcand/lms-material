@@ -14,7 +14,7 @@ Vue.component('lms-information-dialog', {
    <v-toolbar app-data class="dialog-toolbar" @mousedown="mouseDown" id="information-toolbar">
     <lms-windowcontrols v-if="queryParams.nativeTitlebar && queryParams.tbarBtnsPos=='l'"></lms-windowcontrols>
     <div class="drag-area-left"></div>
-    <v-btn flat icon @click="close" :title="ttShortcutStr(i18n('Go back'), 'esc')"><v-icon>arrow_back</v-icon></v-btn>
+    <v-btn flat icon @click="close" :title="ttShortcutStr(i18n('Go back'), 'esc')"><v-icon>{{BACK_ICON}}</v-icon></v-btn>
     <v-toolbar-title>
      <div>{{i18n('Information')+(undefined==serverName ? "" : (SEPARATOR+serverName))}}</div>
     </v-toolbar-title>
@@ -59,7 +59,7 @@ Vue.component('lms-information-dialog', {
     <template v-for="(plug, index) in updates.details"><li><object @click="pluginInfo(plug)" class="link-item">{{plug.title}} {{plug.version}}</object></li></template>
    </ul>
    <v-btn v-if="updates.details.length>0 && 'idle'==pluginStatus && unlockAll" @click="updatePlugins" flat><img class="svg-img btn-icon" :src="'update' | svgIcon(darkUi)">{{i18n('Update plugins')}}</v-btn>
-   <p v-if="updates.details.length>0 && 'idle'==pluginStatus && unlockAll" style="padding-top:16px" class="subtext cursor link-item" @click='openPluginSettings'>{{i18n("For more fine-grained control over plugins please visit the 'Manage Plugins' section of 'Server settings'")}}</p>
+   <p v-if="updates.details.length>0 && 'idle'==pluginStatus && unlockAll" style="padding-top:16px" class="subtext cursor link-item" @click='openPluginSettings'>{{i18n('Open the plugin manager for more control.')}}</p>
 
    <p v-if="'downloading'==pluginStatus"><v-icon>cloud_download</v-icon> {{i18n('Downloading plugin updates')}}</p>
    <v-btn v-if="'needs_restart'==pluginStatus && unlockAll" @click="restartServer" flat><img class="svg-img btn-icon" :src="'restart' | svgIcon(darkUi)">{{i18n('Restart server')}}</v-btn>
@@ -396,7 +396,11 @@ Vue.component('lms-information-dialog', {
             bus.$emit('dlg.open', 'playersettings', player, undefined, 2);
         },
         openPluginSettings() {
-            openServerSettings(this.serverName, 0, '/material/plugins/Extensions/settings/basic.html');
+            if (typeof openManagePlugins == 'undefined') {
+                setTimeout(function() { this.openPluginSettings(); }.bind(this), 50);
+                return;
+            }
+            openManagePlugins(this.serverName);
             this.close();
         },
         openHelp() {
