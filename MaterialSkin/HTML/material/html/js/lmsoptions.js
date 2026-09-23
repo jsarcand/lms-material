@@ -62,7 +62,10 @@ var lmsOptions = {techInfo: getLocalStorageBool('techInfo', false),
                   groupMyMusicCategories: getLocalStorageBool('groupMyMusicCategories', true),
                   disabledPlayers: new Set(getLocalStorageVal('disabledPlayers', '').split(',')),
                   playerWeightMap: JSON.parse(getLocalStorageVal('playerWeightMap', '{}')),
-                  playersAlphaSort: getLocalStorageBool('playersAlphaSort', true)
+                  playersAlphaSort: getLocalStorageBool('playersAlphaSort', true),
+                  nativeManagePlugins: getLocalStorageBool('nativeManagePlugins', true),
+                  contextStatsHome: getLocalStorageBool('contextStatsHome', true),
+                  contextStatsSessionEnhance: getLocalStorageBool('contextStatsSessionEnhance', false)
                 };
 
 function initLmsOptions() {

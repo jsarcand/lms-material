@@ -113,7 +113,8 @@ Vue.directive('longpress', {
         }
         el.addEventListener("mousedown", el.longpress.start);
         el.addEventListener("click", el.longpress.cancel);
-        el.addEventListener("mouseout", el.longpress.cancel);
+        // mouseleave: do not cancel when the pointer moves onto a child (icon inside a v-btn)
+        el.addEventListener("mouseleave", el.longpress.cancel);
         el.addEventListener("contextmenu", el.longpress.context);
     },
     unbind: function (el) {
@@ -129,6 +130,7 @@ Vue.directive('longpress', {
         }
         el.removeEventListener("mousedown", el.longpress.start);
         el.removeEventListener("click", el.longpress.cancel);
+        el.removeEventListener("mouseleave", el.longpress.cancel);
         el.removeEventListener("mouseout", el.longpress.cancel);
         el.removeEventListener("contextmenu", el.longpress.context);
     }
