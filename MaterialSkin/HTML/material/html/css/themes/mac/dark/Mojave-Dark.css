@@ -1,36 +1,384 @@
 /**
- * LMS-Material
+ * LMS-Material — macOS Mojave (Dark)
+ * Apple design cues: SF system font, system blue, vibrancy/glass, denser lists.
  *
  * Copyright (c) 2018-2026 Craig Drummond <craig.p.drummond@gmail.com>
  * MIT license.
  */
 
-:root {
- --active-color:var(--accent-color);
- --std-scrollbar-thumb-color:#5f5f5f;
- --std-scrollbar-thumb-hover-color:#7f7f7f;
- --std-background-color:#272625;
- --background-shadow-color:rgba(38, 38, 38, 0.9);
- --subtoolbar-shadow-color:rgba(38, 38, 38, 0.75);
- --text-shadow-color:#000;
- --active-nav-btn-color:var(--accent-color);
- --toolbar-volume-color:var(--primary-color);
- --bottom-position-slider-color:var(--primary-color);
- --browse-header-color:rgba(64, 64, 64, 0.35);
- --nav-hover-color:rgba(96, 96, 96, 0.2)!important;
- --std-popup-background-color:#353537;
- --popup-border-color:var(--sub-toolbar-border-color);
- scrollbar-color:var(--scrollbar-thumb-color) var(--scrollbar-track-color);
+/* html:root beats style.css :root so density/typography/glass vars stick */
+html:root {
+ /* —— Apple system blue (dark-mode accent is slightly brighter) —— */
+ --default-primary-color:#0A84FF;
+ --default-accent-color:#64D2FF;
+ --default-highlight-rgb:10,132,255;
+ --primary-color:#0A84FF;
+ --accent-color:#64D2FF;
+ --highlight-rgb:10,132,255;
+ --active-color:#0A84FF;
+ --active-nav-btn-color:#0A84FF;
+ --toolbar-volume-color:#0A84FF;
+ --bottom-position-slider-color:#0A84FF;
+
+ /* —— Surfaces (Mojave dark / modern macOS dark) —— */
+ --std-background-color:#1C1C1E;
+ --std-popup-background-color:rgba(44,44,46,0.92);
+ --popup-border-color:rgba(255,255,255,0.08);
+ --background-shadow-color:rgba(28,28,30,0.82);
+ --subtoolbar-shadow-color:rgba(28,28,30,0.68);
+ --background-fade-start:rgba(28,28,30,0);
+ --background-fade-end:rgba(28,28,30,1);
+ --text-shadow-color:rgba(0,0,0,0.85);
+ --browse-header-color:rgba(58,58,60,0.45);
+
+ /* Labels */
+ --light-text-color:#F5F5F7;
+ --dark-text-color:#1D1D1F;
+ --text-color:#F5F5F7;
+ --icon-color:rgba(245,245,247,0.92);
+ --dlg-icon-color:rgba(245,245,247,0.92);
+ --subheader-color:rgba(235,235,245,0.55);
+ --top-toolbar-text-color:#F5F5F7;
+ --sub-toolbar-text-color:#F5F5F7;
+ --bottom-toolbar-text-color:#F5F5F7;
+ --dialog-toolbar-text-color:#F5F5F7;
+
+ /* Separators */
+ --border-color:rgba(84,84,88,0.65);
+ --tab-border-color:rgba(84,84,88,0.45);
+ --list-item-border-color:rgba(84,84,88,0.45);
+ --top-toolbar-border-color:rgba(255,255,255,0.08);
+ --sub-toolbar-border-color:rgba(255,255,255,0.06);
+ --bottom-toolbar-border-color:rgba(255,255,255,0.08);
+ --dialog-toolbar-border-color:rgba(255,255,255,0.08);
+ --splitter-color:rgba(255,255,255,0.08);
+ --album-separator-color:rgba(84,84,88,0.55);
+ --npbar-border-color:rgba(255,255,255,0.08);
+
+ /* Hover / selection */
+ --btn-hover-color:rgba(255,255,255,0.08)!important;
+ --list-hover-color:rgba(255,255,255,0.06)!important;
+ --list-active-color:rgba(10,132,255,0.22)!important;
+ --nav-hover-color:rgba(10,132,255,0.16)!important;
+ --pq-current-color:rgba(10,132,255,0.24);
+ --pq-current-album-color:rgba(10,132,255,0.10);
+ --drop-target-color:rgba(10,132,255,0.4);
+ --window-btn-color:rgba(255,255,255,0.1);
+ --window-btn-hover-color:rgba(255,255,255,0.18);
+ --image-background-color:rgba(0,0,0,0.25);
+ --pbar-bgnd:rgba(255,255,255,0.1);
+ --pbar-colored-bgnd:rgba(10,132,255,0.28);
+
+ /* Scrollbars */
+ --std-scrollbar-thumb-color:rgba(255,255,255,0.22);
+ --std-scrollbar-thumb-hover-color:rgba(255,255,255,0.38);
+ --scrollbar-size:9px;
+ scrollbar-color:var(--std-scrollbar-thumb-color) transparent;
+
+ /* Typography */
+ --std-font-size:13px;
+ --small-font-size:11px;
+ --std-weight:400;
+ --bold-weight:600;
+ --sub-opacity:0.55;
+
+ /* Density */
+ --list-elem-height:40px;
+ --list-elem-3line-height:60px;
+ --main-toolbar-height:calc(var(--top-pad) + 46px);
+ --sub-toolbar-height:44px;
+ --icon-size:20px;
+ --small-icon-size:16px;
+ --toolbar-button-margin:2px;
+ --grid-icon-size:64px;
+
+ /* Glass / vibrancy (dark materials) */
+ --toolbar-filter:blur(40px) saturate(180%);
+ --backdrop-filter:blur(28px) saturate(160%);
+ --bgnd-filter-size:8px;
+ --np-bgnd-filter-size:12px;
+ --menu-dlg-shadow:0 12px 48px rgba(0,0,0,0.55), 0 0 0 0.5px rgba(255,255,255,0.08);
+ --trans-bottom-toolbar-color:rgba(28,28,30,0.55);
+ --np-bgnd-full-shadow-color:rgba(28,28,30,0.78);
+}
+
+html, body, .v-application, .v-application .v-btn, .v-list, .v-toolbar,
+.v-dialog, .v-menu__content, .v-card, .v-input, .v-label, .v-chip,
+.presets-picker-panel, .presets-picker-panel button, .presets-picker-item,
+.presets-picker-item-title, .presets-picker-item-sub, .presets-picker-title,
+.presets-picker-empty, .presets-picker-footer, .presets-picker-footer .v-btn,
+.presets-editor-menu, .presets-editor-menu-list,
+.presets-editor-menu-list .v-list__tile__title {
+ font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+             "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+ -webkit-font-smoothing:antialiased;
+ -moz-osx-font-smoothing:grayscale;
+ letter-spacing:-0.01em;
+}
+
+.material-icons, .v-icon {
+ font-family:"Material Icons" !important;
+ font-weight:400 !important;
+ font-size:var(--icon-size) !important;
+ opacity:0.9;
+ transform:scale(0.94);
+ transform-origin:center;
+ -webkit-font-smoothing:antialiased;
+}
+
+.lms-toolbar .v-icon,
+.subtoolbar .v-icon,
+.toolbar-button .v-icon {
+ font-size:22px !important;
+ opacity:0.88;
+}
+
+.lms-toolbar .v-btn__content i.active-btn {
+ color:var(--active-color) !important;
+ opacity:1 !important;
+}
+
+.inactive-btn, .dimmed, .subtext {
+ opacity:var(--sub-opacity);
+}
+
+/* Elevated chrome vs base window */
+.lms-toolbar {
+ background-color:rgba(44,44,46,0.72) !important;
+ border-bottom-color:rgba(255,255,255,0.08) !important;
+}
+
+.subtoolbar {
+ background-color:rgba(44,44,46,0.58) !important;
+ border-bottom-color:rgba(255,255,255,0.06) !important;
+}
+
+.np-bar {
+ background-color:rgba(44,44,46,0.78) !important;
+ border-top-color:rgba(255,255,255,0.08) !important;
+}
+
+/* Glass — dark material */
+#main-toolbar.lms-toolbar.maintoolbar-glass {
+ background-color:transparent !important;
+ border-bottom:0.5px solid rgba(255,255,255,0.1) !important;
+ box-shadow:none !important;
+}
+#main-toolbar.lms-toolbar.maintoolbar-glass::before {
+ backdrop-filter:blur(40px) saturate(180%) !important;
+ -webkit-backdrop-filter:blur(40px) saturate(180%) !important;
+ background-color:rgba(44,44,46,0.55) !important;
+}
+
+#browse-view .browse-subheader-glass {
+ border:none !important;
+ box-shadow:none !important;
+ filter:none !important;
+}
+
+.lms-list .v-list__tile {
+ border-radius:8px;
+}
+.lms-list .v-list__tile--link:hover,
+.lms-list .list-active .v-list__tile,
+.list-active {
+ border-radius:8px;
+}
+
+.v-menu__content, .menu-content, .v-dialog:not(.v-dialog--fullscreen) {
+ border-radius:12px !important;
+ backdrop-filter:blur(40px) saturate(180%);
+ -webkit-backdrop-filter:blur(40px) saturate(180%);
+ box-shadow:var(--menu-dlg-shadow) !important;
+ border:0.5px solid rgba(255,255,255,0.1) !important;
+ background-color:rgba(44,44,46,0.88) !important;
+}
+
+.v-dialog .v-card {
+ border-radius:14px !important;
+ background-color:#2C2C2E !important;
+}
+.v-overlay:before {
+ transition:opacity 0.28s cubic-bezier(0.32, 0.72, 0, 1) !important;
+ transition-delay:0s !important;
+}
+.v-overlay--active:before {
+ opacity:0.55 !important;
+ background:#000 !important;
+}
+
+.v-navigation-drawer {
+ backdrop-filter:blur(40px) saturate(180%);
+ -webkit-backdrop-filter:blur(40px) saturate(180%);
+ background-color:rgba(28,28,30,0.88) !important;
+ border-right:0.5px solid rgba(255,255,255,0.08) !important;
+}
+
+::-webkit-scrollbar {
+ width:9px;
+ height:9px;
+}
+::-webkit-scrollbar-thumb {
+ background:var(--std-scrollbar-thumb-color) !important;
+ border-radius:9px;
+ border:2px solid transparent;
+ background-clip:content-box;
+}
+::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active {
+ background:var(--std-scrollbar-thumb-hover-color) !important;
+ background-clip:content-box;
+}
+::-webkit-scrollbar-track {
+ background:transparent !important;
 }
 
 .np-info-cover {
  background-color:#000;
 }
 
-.lms-toolbar .v-btn__content i.active-btn {
- color:var(--active-color) !important;
+#browse-view.browse-home-split .browse-home-pane {
+ background:rgba(28,28,30,0.92);
+}
+#browse-view.browse-home-split .browse-home-pane-search {
+ border-radius:10px;
+ background:rgba(255,255,255,0.08);
+ padding:8px 12px;
+ min-height:40px;
+ box-sizing:border-box;
+}
+#browse-view.browse-home-split .browse-home-pane-search:hover {
+ background:rgba(255,255,255,0.11);
 }
 
-.v-overlay--active:before {
- opacity:0.8!important;
+/* Home sidebar selection: only the rounded selection pill is inset — not the row layout */
+#browse-view.browse-home-split .browse-home-pane .list-active .v-list__tile,
+#browse-view.browse-home-split .browse-home-pane-item.list-active .v-list__tile,
+#browse-view.browse-home-split .browse-home-pane-home.list-active .v-list__tile {
+ margin:0 8px !important;
+ width:calc(100% - 16px) !important;
+ max-width:calc(100% - 16px) !important;
+ border-radius:10px !important;
+ background:rgba(10,132,255,0.22) !important;
+ box-shadow:none !important;
+ box-sizing:border-box !important;
+}
+/* Unified primary tint for ALL sidebar icons (material + svg); no dual filters */
+#browse-view.browse-home-split .browse-home-pane .v-list__tile__avatar .v-icon,
+#browse-view.browse-home-split .browse-home-pane .browse-home-pane-search-icon,
+#browse-view.browse-home-split .browse-home-pane .v-icon {
+ color:var(--primary-color, #0A84FF) !important;
+ opacity:0.9 !important;
+ fill:var(--primary-color, #0A84FF) !important;
+}
+#browse-view.browse-home-split .browse-home-pane .list-active .v-list__tile__avatar .v-icon,
+#browse-view.browse-home-split .browse-home-pane .list-active .v-icon {
+ opacity:1 !important;
+}
+/* SVG: single consistent monochrome tint (do not stack invert+sepia with skin svg colors) */
+#browse-view.browse-home-split .browse-home-pane .svg-list-img,
+#browse-view.browse-home-split .browse-home-pane img.svg-list-img {
+ filter:brightness(0) saturate(100%) invert(48%) sepia(98%) saturate(2000%) hue-rotate(190deg) brightness(1.05) !important;
+ opacity:0.9 !important;
+}
+#browse-view.browse-home-split .browse-home-pane .list-active .svg-list-img {
+ opacity:1 !important;
+}
+
+.pbar .value {
+ border-radius:3px;
+}
+
+.v-btn--floating, .v-btn--depressed {
+ box-shadow:none !important;
+}
+.toolbar-button:hover:before,
+.v-btn:hover:before {
+ opacity:0.08 !important;
+}
+
+.np-bar-tech, .browse-html code, .mono {
+ font-family:"SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace !important;
+ font-size:11px !important;
+ letter-spacing:0;
+}
+
+/* Queue: fully frosted glass surface */
+.frosted,
+.pq-unpinned > .lms-list.frosted,
+.pq-unpinned-np0 > .lms-list.frosted,
+.pq-unpinned-np2 > .lms-list.frosted,
+#queue-view .lms-list,
+#queue-view .lms-list.frosted,
+#queue-view #queue-list {
+ background-color:rgba(28,28,30,0.55) !important;
+ backdrop-filter:blur(40px) saturate(180%) !important;
+ -webkit-backdrop-filter:blur(40px) saturate(180%) !important;
+}
+/* Queue rows + section headers: transparent so frost shows through */
+#queue-view .list-swipe-row,
+#queue-view .list-swipe-tile,
+#queue-view .list-swipe-tile .v-list__tile,
+#queue-view .lms-list-item,
+#queue-view .v-list__tile,
+#queue-view .pq-grp-header,
+#queue-view .pq-work-header,
+#queue-view .pq-albumstyle,
+#queue-view .browse-header {
+ background-color:transparent !important;
+ background:transparent !important;
+}
+#queue-view .list-swipe-row {
+ max-height:none !important;
+ border-bottom:none !important;
+}
+/* Tighter queue item spacing */
+#queue-view .lms-list-album .pq-track,
+#queue-view .lms-list-album .pq-track .v-list__tile {
+ height:calc(var(--pq-album-track) - 4px) !important;
+}
+#queue-view .v-list__tile {
+ min-height:0 !important;
+}
+#queue-view .list-active .v-list__tile,
+#queue-view .pq-current .v-list__tile {
+ background-color:rgba(10,132,255,0.18) !important;
+}
+/* Browse section headers also transparent over glass */
+#browse-view .browse-header .v-list__tile,
+#browse-view .browse-header {
+ background-color:transparent !important;
+}
+
+/* Volume popover — Apple menu-bar attachment (chevron + HUD glass) */
+.vol-modal-scrim {
+ background:rgba(0,0,0,0.28) !important;
+}
+.vol-sheet-modal.vol-sheet-popover {
+ border-radius:10px !important;
+ border:0.5px solid rgba(255,255,255,0.12) !important;
+ background:rgba(44,44,46,0.82) !important;
+ --vol-sheet-bg:rgba(44,44,46,0.92) !important;
+ --vol-sheet-border:rgba(255,255,255,0.12) !important;
+ box-shadow:var(--menu-dlg-shadow, 0 12px 48px rgba(0,0,0,0.55), 0 0 0 0.5px rgba(255,255,255,0.08)) !important;
+ backdrop-filter:blur(40px) saturate(180%) !important;
+ -webkit-backdrop-filter:blur(40px) saturate(180%) !important;
+}
+.vol-popover-arrow::before {
+ background:rgba(44,44,46,0.94) !important;
+ border-color:rgba(255,255,255,0.12) !important;
+ box-shadow:none !important;
+}
+.vol-modal-header-compact {
+ border-bottom-color:rgba(255,255,255,0.08) !important;
+ padding:6px 4px 6px 6px !important;
+}
+.vol-modal-mute-text {
+ color:var(--primary-color, #0A84FF) !important;
+ font-weight:600 !important;
+}
+.vol-modal-mute-text-on {
+ background:rgba(10,132,255,0.18) !important;
+}
+.vol-modal-body-compact {
+ padding:4px 4px 10px !important;
 }
