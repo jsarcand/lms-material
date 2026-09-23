@@ -1,0 +1,567 @@
+/* Squeezebox bridge plugins (UPnPBridge, RaopBridge) — Material iframe adaptations */
+
+html.msk-squeezebridge,
+html.msk-squeezebridge body {
+ overflow-x:hidden !important;
+ overflow-y:auto !important;
+ max-width:100% !important;
+ width:100% !important;
+ box-sizing:border-box;
+ height:auto !important;
+ min-height:100% !important;
+ background-color:var(--background-color, #212121) !important;
+ background:var(--background-color, #212121) !important;
+ color:var(--text-color) !important;
+ opacity:1 !important;
+ visibility:visible !important;
+}
+
+html.msk-squeezebridge body:not(.theme--dark) {
+ background-color:var(--background-color, #fafafa) !important;
+ background:var(--background-color, #fafafa) !important;
+}
+
+/* Beat .lms-settings-section-SETUP_PLUGINS_9 div#innerSettingsBlock height rules in mods.css */
+html.msk-squeezebridge div#homeMenu,
+html.msk-squeezebridge.lms-settings-section-SETUP_PLUGINS_9 div#homeMenu,
+html.msk-squeezebridge div#settingsRegion,
+html.msk-squeezebridge.lms-settings-section-SETUP_PLUGINS_9 div#homeMenu > div#settingsRegion,
+html.msk-squeezebridge div#settingsForm,
+html.msk-squeezebridge div#innerSettingsBlock,
+html.msk-squeezebridge.lms-settings-section-SETUP_PLUGINS_9 div#innerSettingsBlock {
+ width:100% !important;
+ max-width:100% !important;
+ margin-left:0 !important;
+ margin-right:0 !important;
+ margin-top:0 !important;
+ height:auto !important;
+ min-height:0 !important;
+ max-height:none !important;
+ overflow:visible !important;
+ overflow-x:hidden !important;
+ overflow-y:visible !important;
+ opacity:1 !important;
+ visibility:visible !important;
+ box-sizing:border-box;
+ position:static !important;
+ background-color:var(--background-color, #212121) !important;
+ background:var(--background-color, #212121) !important;
+}
+
+html.msk-squeezebridge body:not(.theme--dark) div#homeMenu,
+html.msk-squeezebridge body:not(.theme--dark) div#settingsRegion,
+html.msk-squeezebridge body:not(.theme--dark) div#settingsForm,
+html.msk-squeezebridge body:not(.theme--dark) div#innerSettingsBlock {
+ background-color:var(--background-color, #fafafa) !important;
+ background:var(--background-color, #fafafa) !important;
+}
+
+html.msk-squeezebridge div#innerSettingsBlock,
+html.msk-squeezebridge.lms-settings-section-SETUP_PLUGINS_9 div#innerSettingsBlock {
+ padding:8px 12px 96px 12px !important;
+}
+
+.msk-squeezebridge .settingSection,
+.msk-squeezebridge .settingGroup {
+ max-width:100%;
+ min-width:0;
+ box-sizing:border-box;
+ overflow:visible;
+}
+
+.msk-squeezebridge .settingSection .settingGroup {
+ margin-bottom:8px !important;
+ padding:10px 12px 8px 12px !important;
+ padding-left:12px !important;
+ background-color:var(--background-color, #212121) !important;
+ border:1px solid var(--list-item-border-color);
+ border-radius:4px;
+}
+
+.msk-squeezebridge .settingGroup .prefHead,
+.msk-squeezebridge .settingSection .prefHead {
+ position:static !important;
+ width:auto !important;
+ text-align:left !important;
+ margin:0 0 6px 0 !important;
+ padding:0 0 6px 0 !important;
+ border-bottom:1px solid var(--list-item-border-color);
+}
+
+.msk-squeezebridge .settingGroup .groupDesc,
+.msk-squeezebridge .settingGroup .prefDesc {
+ margin:0 0 8px 0 !important;
+ padding:0 !important;
+}
+
+html.msk-squeezebridge .settingGroup .prefs,
+.msk-squeezebridge .settingGroup .prefs {
+ display:flex;
+ flex-wrap:wrap;
+ align-items:center;
+ line-height:1.45;
+ max-width:100%;
+ min-width:0;
+ margin-top:0 !important;
+}
+
+.msk-squeezebridge .settingGroup .prefs > * {
+ margin:0 10px 6px 0;
+}
+
+@supports (gap: 6px) {
+ .msk-squeezebridge .settingGroup .prefs {
+  gap:6px 10px;
+ }
+
+ .msk-squeezebridge .settingGroup .prefs > * {
+  margin:0;
+ }
+}
+
+.msk-squeezebridge .settingGroup .prefs input.stdedit,
+.msk-squeezebridge .settingGroup .prefs select.stdedit {
+ flex:1 1 100px;
+ min-width:0;
+ max-width:100%;
+ box-sizing:border-box;
+}
+
+.msk-squeezebridge #opts {
+ width:100% !important;
+ max-width:100% !important;
+}
+
+/* Device selector */
+.msk-squeezebridge .msk-rb-device-picker {
+ margin-bottom:8px;
+ padding-bottom:8px;
+ overflow:visible !important;
+ position:relative;
+ z-index:1;
+}
+
+.msk-squeezebridge .msk-rb-device-picker > b {
+ display:none !important;
+}
+
+.msk-squeezebridge .msk-rb-device-select {
+ display:block !important;
+ width:100% !important;
+ max-width:100% !important;
+ min-width:0 !important;
+ margin-bottom:0 !important;
+ position:relative;
+}
+
+.msk-squeezebridge .msk-rb-device-select .custom-select-opener {
+ width:100% !important;
+ cursor:pointer;
+ -webkit-tap-highlight-color:transparent;
+}
+
+.msk-squeezebridge .msk-rb-device-select .custom-select-panel .custom-select-option:first-child {
+ font-weight:500 !important;
+ border-bottom:1px solid var(--list-item-border-color);
+ margin-bottom:6px;
+ padding-bottom:10px !important;
+}
+
+.msk-squeezebridge .msk-rb-hidden-info,
+.msk-squeezebridge .msk-rb-hide-delete-ui {
+ display:none !important;
+}
+
+html.msk-rb-no-config .msk-rb-needs-config,
+.msk-squeezebridge.msk-rb-no-config .msk-rb-needs-config {
+ display:none !important;
+}
+
+.msk-squeezebridge .msk-rb-vcredist-notice {
+ display:none !important;
+ margin:10px 0 4px 0;
+ padding:12px 14px;
+ border-radius:6px;
+ border:1px solid #ffb74d;
+ background:rgba(255, 183, 77, 0.18);
+ box-shadow:0 1px 4px rgba(0, 0, 0, 0.2);
+ max-width:100%;
+ box-sizing:border-box;
+}
+
+.msk-squeezebridge .msk-rb-vcredist-notice.msk-rb-visible {
+ display:block !important;
+}
+
+.msk-squeezebridge .msk-rb-vcredist-notice a {
+ color:#ffe082 !important;
+ font-weight:600 !important;
+ text-decoration:underline;
+}
+
+.msk-squeezebridge .msk-rb-vcredist-notice a:hover {
+ color:#fff59d !important;
+}
+
+.msk-squeezebridge font[color="red"]:not(.msk-rb-hidden-info),
+.msk-squeezebridge font[color=red]:not(.msk-rb-hidden-info) {
+ color:#ff8a80 !important;
+ display:inline-block;
+ margin:4px 0;
+ padding:6px 10px;
+ border-radius:4px;
+ background:rgba(255, 82, 82, 0.12);
+ font-weight:500;
+ max-width:100%;
+}
+
+.msk-squeezebridge .msk-bridge-status-anchor {
+ width:100%;
+ margin:0 0 12px 0;
+ box-sizing:border-box;
+}
+
+.msk-squeezebridge .msk-rb-noconfig-msg {
+ display:flex !important;
+ align-items:flex-start;
+ gap:12px;
+ margin:8px 0 12px 0 !important;
+ padding:14px 16px !important;
+ border-radius:6px;
+ border:1px solid #ffb74d !important;
+ background:rgba(255, 183, 77, 0.14) !important;
+ color:#ffe082 !important;
+ font-weight:500;
+ max-width:100%;
+ box-sizing:border-box;
+ line-height:1.45;
+}
+
+.msk-squeezebridge .msk-rb-noconfig-msg.msk-rb-generating-config {
+ border-color:var(--active-color) !important;
+ background:rgba(25, 118, 210, 0.16) !important;
+ color:var(--text-color) !important;
+}
+
+.msk-squeezebridge .msk-rb-gen-text {
+ flex:1 1 auto;
+ min-width:0;
+}
+
+.msk-squeezebridge .msk-rb-generating-spinner {
+ display:inline-block;
+ width:18px;
+ height:18px;
+ min-width:18px;
+ border:2px solid rgba(255, 255, 255, 0.25);
+ border-top-color:var(--active-color);
+ border-radius:50%;
+ animation:msk-rb-spin 0.9s linear infinite;
+ vertical-align:middle;
+}
+
+.msk-squeezebridge .msk-rb-generating-spinner-lg {
+ width:36px;
+ height:36px;
+ min-width:36px;
+ border-width:3px;
+}
+
+.msk-squeezebridge .msk-rb-gen-overlay {
+ position:fixed;
+ inset:0;
+ z-index:500;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ background:rgba(0, 0, 0, 0.45);
+ padding:24px;
+ box-sizing:border-box;
+}
+
+.msk-squeezebridge .msk-rb-gen-panel {
+ display:flex;
+ flex-direction:column;
+ align-items:center;
+ text-align:center;
+ gap:12px;
+ max-width:320px;
+ padding:24px 20px;
+ border-radius:8px;
+ border:1px solid var(--list-item-border-color);
+ background:var(--background-color, #212121);
+ box-shadow:0 4px 20px rgba(0, 0, 0, 0.35);
+}
+
+.msk-squeezebridge .msk-rb-gen-title {
+ font-size:17px !important;
+ font-weight:600;
+ color:var(--text-color) !important;
+}
+
+.msk-squeezebridge .msk-rb-gen-sub {
+ font-size:14px !important;
+ opacity:0.85;
+ line-height:1.4;
+ color:var(--text-color) !important;
+}
+
+@keyframes msk-rb-spin {
+ to { transform:rotate(360deg); }
+}
+
+.msk-squeezebridge input.stdedit::placeholder {
+ color:var(--text-color);
+ opacity:0.42;
+ font-style:italic;
+}
+
+.msk-squeezebridge input[type="submit"]:not(#saveSettings) {
+ background:rgba(25, 118, 210, 0.15);
+ border:1px solid var(--active-color);
+ border-radius:4px;
+ margin:4px 8px 4px 0;
+ padding:6px 12px !important;
+}
+
+.msk-squeezebridge input[name="delconfig"],
+.msk-squeezebridge input[name="restart"] {
+ border-color:#ff8a80 !important;
+ background:rgba(255, 82, 82, 0.1) !important;
+}
+
+/* Player list table */
+.msk-squeezebridge table.msk-rb-player-list {
+ width:100%;
+ max-width:100%;
+ border-collapse:collapse;
+ margin:8px 0 12px 0;
+ table-layout:fixed;
+ background-color:var(--background-color, #212121);
+ border:1px solid var(--list-item-border-color);
+ border-radius:4px;
+}
+
+.msk-squeezebridge table.msk-rb-player-list tr.msk-rb-player-row {
+ border-bottom:1px solid var(--list-item-border-color);
+}
+
+.msk-squeezebridge table.msk-rb-player-list tr.msk-rb-player-row-clickable {
+ cursor:pointer;
+}
+
+.msk-squeezebridge table.msk-rb-player-list tr.msk-rb-player-row-clickable:hover {
+ background:rgba(25, 118, 210, 0.05);
+}
+
+.msk-squeezebridge .msk-rb-config-anchor {
+ scroll-margin-top:12px;
+}
+
+.msk-squeezebridge table.msk-rb-player-list tr.msk-rb-row-active {
+ background:rgba(25, 118, 210, 0.08);
+}
+
+.msk-squeezebridge table.msk-rb-player-list .msk-rb-legacy-th {
+ display:none !important;
+}
+
+.msk-squeezebridge table.msk-rb-player-list td,
+.msk-squeezebridge table.msk-rb-player-list th {
+ vertical-align:middle;
+ padding:10px 4px;
+}
+
+.msk-squeezebridge table.msk-rb-player-list .msk-rb-col-enable {
+ width:52px;
+ min-width:52px !important;
+ text-align:center;
+ padding:8px 4px !important;
+ overflow:visible !important;
+}
+
+.msk-squeezebridge table.msk-rb-player-list .msk-rb-col-info {
+ width:auto;
+ padding-left:0;
+ padding-right:8px;
+}
+
+.msk-squeezebridge table.msk-rb-player-list .msk-rb-player-info {
+ display:block;
+ min-width:0;
+}
+
+.msk-squeezebridge table.msk-rb-player-list .msk-rb-player-name {
+ font-weight:500;
+ font-size:16px !important;
+ line-height:1.3;
+ word-break:break-word;
+ color:var(--text-color) !important;
+}
+
+.msk-squeezebridge table.msk-rb-player-list .msk-rb-player-network {
+ font-size:13px !important;
+ opacity:0.7;
+ line-height:1.3;
+ word-break:break-word;
+ margin-top:2px;
+ color:var(--text-color) !important;
+}
+
+.msk-squeezebridge table.msk-rb-player-list .msk-rb-player-network.msk-rb-no-network {
+ display:none;
+}
+
+.msk-squeezebridge table.msk-rb-player-list .msk-rb-col-actions {
+ width:auto;
+ min-width:148px;
+ text-align:right;
+ white-space:nowrap;
+ padding-right:0;
+}
+
+.msk-squeezebridge table.msk-rb-player-list .msk-rb-enable-input {
+ pointer-events:none !important;
+}
+
+.msk-squeezebridge .msk-rb-config,
+.msk-squeezebridge .msk-rb-delete {
+ min-width:64px;
+ height:32px;
+ border:1px solid var(--list-item-border-color);
+ border-radius:4px;
+ background:rgba(25, 118, 210, 0.1);
+ cursor:pointer;
+ padding:0 10px;
+ line-height:30px;
+ text-align:center;
+ font-size:13px !important;
+ font-weight:500;
+ display:inline-block;
+ vertical-align:middle;
+ margin-left:4px;
+ color:var(--text-color) !important;
+}
+
+.msk-squeezebridge .msk-rb-config {
+ color:var(--active-color) !important;
+ border-color:var(--active-color);
+}
+
+.msk-squeezebridge .msk-rb-config:hover {
+ background:rgba(25, 118, 210, 0.2);
+}
+
+.msk-squeezebridge .msk-rb-delete {
+ color:#ff8a80 !important;
+ border-color:#ff8a80;
+ background:rgba(255, 82, 82, 0.1);
+}
+
+.msk-squeezebridge .msk-rb-delete:hover {
+ background:rgba(255, 82, 82, 0.2);
+}
+
+.msk-squeezebridge hr {
+ margin:12px 0;
+ border:none;
+ border-top:1px solid var(--list-item-border-color);
+ background:transparent;
+}
+
+.msk-squeezebridge .msk-rb-device-picker.settingSection {
+ padding:10px 12px 8px 12px !important;
+ margin-bottom:8px !important;
+ background-color:var(--background-color, #212121) !important;
+ border:1px solid var(--list-item-border-color);
+ border-radius:4px;
+ border-bottom:1px solid var(--list-item-border-color);
+}
+
+@media (min-width:1000px) {
+ .msk-squeezebridge .settingGroup {
+  padding-left:12px !important;
+ }
+
+ .msk-squeezebridge table.msk-rb-player-list td,
+ .msk-squeezebridge table.msk-rb-player-list th {
+  padding:12px 4px;
+ }
+
+ .msk-squeezebridge table.msk-rb-player-list .msk-rb-player-info {
+  display:block;
+ }
+
+ .msk-squeezebridge table.msk-rb-player-list .msk-rb-player-name {
+  white-space:normal;
+  margin-right:0;
+ }
+
+ .msk-squeezebridge table.msk-rb-player-list .msk-rb-player-network:not(.msk-rb-no-network) {
+  min-width:0;
+  opacity:0.7;
+  margin-top:2px;
+ }
+
+ .msk-squeezebridge table.msk-rb-player-list .msk-rb-col-actions {
+  min-width:156px;
+ }
+}
+
+/* Bridge auxiliary pages (config XML, log, guide) */
+html.msk-bridge-aux,
+html.msk-bridge-aux body {
+ background-color:var(--background-color, #212121) !important;
+ background:var(--background-color, #212121) !important;
+ color:var(--text-color) !important;
+ min-height:100%;
+ margin:0;
+ padding:0;
+}
+
+html.msk-bridge-aux body:not(.theme--dark) {
+ background-color:var(--background-color, #fafafa) !important;
+ background:var(--background-color, #fafafa) !important;
+}
+
+.msk-bridge-aux-back {
+ position:sticky;
+ top:0;
+ z-index:100;
+ padding:10px 12px;
+ background-color:var(--background-color, #212121) !important;
+ border-bottom:1px solid var(--list-item-border-color);
+ box-sizing:border-box;
+}
+
+.msk-bridge-aux-back-btn {
+ min-height:36px;
+ padding:6px 14px;
+ border:1px solid var(--active-color);
+ border-radius:4px;
+ background:rgba(25, 118, 210, 0.12);
+ color:var(--active-color) !important;
+ font-size:14px !important;
+ font-weight:500;
+ cursor:pointer;
+}
+
+.msk-bridge-aux-back-btn:hover {
+ background:rgba(25, 118, 210, 0.22);
+}
+
+html.msk-bridge-aux pre,
+html.msk-bridge-aux code,
+html.msk-bridge-aux .msk-bridge-aux-content {
+ display:block;
+ margin:0;
+ padding:12px 14px 24px 14px;
+ white-space:pre-wrap;
+ word-break:break-word;
+ font-family:monospace;
+ font-size:13px !important;
+ line-height:1.45;
+ color:var(--text-color) !important;
+ background:transparent !important;
+ box-sizing:border-box;
+}
