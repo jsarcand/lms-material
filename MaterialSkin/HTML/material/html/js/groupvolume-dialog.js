@@ -8,42 +8,32 @@
 
 const GRP_PLAYER_ID = "grp";
 
-function grpVolSort(a, b) {
-    if (a.isgroup!=b.isgroup) {
-        return a.isgroup ? -1 : 1;
-    }
-    var nameA = a.name.toLowerCase();
-    var nameB = b.name.toLowerCase();
-    if (nameA < nameB) {
-        return -1;
-    }
-    if (nameA > nameB) {
-        return 1;
-    }
-    return 0;
-}
-
 Vue.component('lms-groupvolume', {
     template: `
-<v-sheet v-model="show" v-if="show" elevation="5" class="vol-sheet group-vol noselect" v-clickoutside="outsideClick">
- <v-container grid-list-md text-xs-center id="gv-container">
-  <v-layout row wrap>
-   <template v-for="(player, index) in players">
-    <div style="width:100%" :key="player.id" v-bind:class="{'active-player':currentPlayer && currentPlayer.id === player.id,'group-vol-grp':GRP_PLAYER_ID==player.id || player.isgroup}" :id="currentPlayer && currentPlayer.id === player.id ? 'gv-active' : ('gv-'+index)">
-     <v-flex :disabled="VOL_HIDDEN==player.dvc" xs12 style="height:8px"></v-flex>
-     <volume-control :value="player.volume" :muted="player.muted" :playing="player.isplaying" :dvc="player.dvc" :layout="0" :name="player.name" :id="player.id" @inc="volumeUp" @dec="volumeDown" @changed="setVolume" @moving="movingSlider" @toggleMute="toggleMute"></volume-control>
-     <v-flex xs12 style="height:8px"></v-flex>
+<div v-if="show" class="vol-modal-root group-vol-modal noselect" v-clickoutside="outsideClick">
+ <div class="vol-modal-scrim" @click="close"></div>
+ <div class="vol-sheet vol-sheet-modal vol-sheet-compact group-vol-sheet" :style="{'--vol-player-count': Math.max(1, players.length)}">
+  <div class="vol-modal-header vol-modal-header-compact">
+   <v-icon class="vol-modal-group-icon">speaker_group</v-icon>
+   <div class="vol-modal-title-block">
+    <div class="vol-modal-pct-compact ellipsis">{{groupTitle}}</div>
+    <div class="vol-modal-sub-compact" v-if="hasEndpoints && !expanded">{{endpointCountLabel}}</div>
+   </div>
+   <v-btn v-if="hasEndpoints" icon flat small class="vol-modal-expand" @click="toggleExpanded" :title="expanded ? i18n('Hide individual volumes') : i18n('Show individual volumes')"><v-icon>{{expanded ? 'expand_less' : 'expand_more'}}</v-icon></v-btn>
+   <v-btn icon flat small class="vol-modal-close" @click="close" :title="i18n('Close')"><v-icon>close</v-icon></v-btn>
+  </div>
+  <div class="group-vol-list" id="gv-container" v-bind:class="{'group-vol-list-expanded':expanded}">
+   <div v-if="groupRowPlayer" class="group-vol-row group-vol-grp-row" v-bind:class="{'active-player':currentPlayer && currentPlayer.id === groupRowPlayer.id}" :id="currentPlayer && currentPlayer.id === groupRowPlayer.id ? 'gv-active' : 'gv-grp'">
+    <volume-control :value="groupRowPlayer.volume" :muted="groupRowPlayer.muted" :playing="groupRowPlayer.isplaying" :dvc="groupRowPlayer.dvc" :layout="3" :id="groupRowPlayer.id" :groupRow="true" @inc="volumeUp" @dec="volumeDown" @changed="setVolume" @moving="movingSlider" @toggleMute="toggleMute"></volume-control>
+   </div>
+   <div v-if="expanded && hasEndpoints" class="group-vol-endpoints">
+    <div v-for="(player, index) in endpointPlayers" :key="player.id" class="group-vol-row group-vol-endpoint-row" v-bind:class="{'active-player':currentPlayer && currentPlayer.id === player.id}" :id="currentPlayer && currentPlayer.id === player.id ? 'gv-active' : ('gv-'+index)">
+     <volume-control :value="player.volume" :muted="player.muted" :playing="player.isplaying" :dvc="player.dvc" :layout="4" :name="player.name" :id="player.id" @inc="volumeUp" @dec="volumeDown" @changed="setVolume" @moving="movingSlider" @toggleMute="toggleMute"></volume-control>
     </div>
-    <v-flex xs12 style="height:24px" v-if="GRP_PLAYER_ID==player.id || player.isgroup"></v-flex>
-   </template>
-  </v-layout>
- </v-container>
- <div class="padding"></div>
- <v-card-actions>
-  <v-spacer></v-spacer>
-  <v-btn flat @click.native="close">{{i18n('Close')}}</v-btn>
- </v-card-actions>
-</v-sheet>
+   </div>
+  </div>
+ </div>
+</div>
     `,
     props: [],
     data() {
@@ -52,6 +42,7 @@ Vue.component('lms-groupvolume', {
                  playing: false,
                  sync: false,
                  players: [],
+                 expanded: getLocalStorageBool('groupVolExpanded', true),
                }
     },
     mounted() {
@@ -97,7 +88,18 @@ Vue.component('lms-groupvolume', {
                     this.players[this.players.length-1].volume = playerStatus.volume;
                 }
             }
-            this.players.sort(grpVolSort);
+            let cur = this.$store.state.player;
+            if (cur && cur.isgroup && cur.members) {
+                let have = {};
+                for (let i=0; i<this.players.length; ++i) { have[this.players[i].id] = true; }
+                for (let i=0; i<cur.members.length; ++i) {
+                    let mid = cur.members[i];
+                    if (!mid || have[mid] || !pMap[mid] || pMap[mid].isgroup) { continue; }
+                    have[mid] = true;
+                    this.players.push({id: mid, master:false, name:pMap[mid].name, isgroup:false,
+                                       volume:playerVolMap[mid], dvc:VOL_STD, muted:false, isplaying:false});
+                }
+            }
             this.playerMap={};
             let haveGroupPlayer = pMap[playerStatus.syncmaster].isgroup;
             for (var p=0, len=this.players.length; p<len; ++p) {
@@ -110,6 +112,10 @@ Vue.component('lms-groupvolume', {
                 this.playerMap[GRP_PLAYER_ID]=0;
             }
             this.setAverage();
+
+            if (scrollCurrent && this.$store.state.player && this.groupRowPlayer && this.$store.state.player.id!=this.groupRowPlayer.id) {
+                this.expanded = true;
+            }
 
             if (scrollCurrent) {
                 // Scroll current player's volume into view
@@ -346,9 +352,23 @@ Vue.component('lms-groupvolume', {
                 clearTimeout(this.updateTimer);
                 this.updateTimer = undefined;
             }
+        },
+        toggleExpanded() {
+            this.expanded = !this.expanded;
+            if (this.expanded) {
+                this.$nextTick(function() {
+                    var current = document.getElementById('gv-active');
+                    if (undefined!=current && undefined!=document.getElementById('gv-container')) {
+                        document.getElementById('gv-container').scrollTop = current.offsetTop;
+                    }
+                }.bind(this));
+            }
         }
     },
     watch: {
+        'expanded': function(val) {
+            setLocalStorageVal('groupVolExpanded', val);
+        },
         'show': function(val) {
             this.$store.commit('dialogOpen', {name:'groupvolume', shown:val});
             this.$store.commit('menuVisible', {name:'groupvolume', shown:val});
@@ -360,6 +380,38 @@ Vue.component('lms-groupvolume', {
     computed: {
         currentPlayer () {
             return this.$store.state.player
+        },
+        groupRowPlayer() {
+            for (var i=0, len=this.players.length; i<len; ++i) {
+                if (GRP_PLAYER_ID==this.players[i].id || this.players[i].isgroup) {
+                    return this.players[i];
+                }
+            }
+            return this.players.length>0 ? this.players[0] : null;
+        },
+        endpointPlayers() {
+            var grp = this.groupRowPlayer;
+            if (null==grp) {
+                return [];
+            }
+            var endpoints = [];
+            for (var i=0, len=this.players.length; i<len; ++i) {
+                if (this.players[i].id!=grp.id) {
+                    endpoints.push(this.players[i]);
+                }
+            }
+            return endpoints;
+        },
+        hasEndpoints() {
+            return this.endpointPlayers.length>0;
+        },
+        endpointCountLabel() {
+            var n = this.endpointPlayers.length;
+            return n==1 ? i18n('1 player') : i18n('%1 players').replace('%1', n);
+        },
+        groupTitle() {
+            var grp = this.groupRowPlayer;
+            return grp && grp.name ? grp.name : i18n('Group Volume');
         }
     }
 })

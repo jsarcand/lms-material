@@ -27,6 +27,17 @@ const IS_ANDROID = checkPlatform('Android');
 const IS_IOS     = !IS_ANDROID && !window.MSStream && (checkPlatform('iPhone|iPad') || (checkPlatform('MacIntel') && navigator.maxTouchPoints > 1));
 const IS_IPHONE  = !IS_ANDROID && !window.MSStream && checkPlatform('iPhone');
 const IS_APPLE   = !IS_ANDROID && checkPlatform('Mac|iPhone|iPad');
+/* Stemless chevron on Apple platforms; stemmed arrow elsewhere */
+const BACK_ICON = IS_APPLE ? 'arrow_back_ios' : 'arrow_back';
+
+try {
+    if (IS_APPLE && typeof document !== "undefined" && document.documentElement) {
+        document.documentElement.classList.add("msk-is-apple");
+        if (IS_IOS) {
+            document.documentElement.classList.add("msk-is-ios");
+        }
+    }
+} catch (e) {}
 const IS_HIGH_DPI = matchMedia( "(-webkit-min-device-pixel-ratio: 2), (min-device-pixel-ratio: 2), (min-resolution: 192dpi)").matches;
 const IS_WINDOWS  = !IS_ANDROID && !IS_APPLE && checkPlatform('Win');
 const IS_LINUX    = !IS_ANDROID && !IS_APPLE && !IS_WINDOWS && checkPlatform('Linux');
@@ -40,9 +51,10 @@ const LMS_DEFAULT_THEME = 'dark';
 const LMS_DEFAULT_COLOR = 'blue';
 const LMS_BATCH_SIZE = 25000;
 const LMS_QUEUE_BATCH_SIZE = 5000;
-const LMS_MAX_NON_SCROLLER_ITEMS = 100;
-const LMS_SCROLLER_LIST_BUFFER = 500; // px
-const LMS_SCROLLER_GRID_BUFFER = 750; // px
+/* Virtualize lists sooner — full v-for of 50–100 rows was a major lag source */
+const LMS_MAX_NON_SCROLLER_ITEMS = 40;
+const LMS_SCROLLER_LIST_BUFFER = 400; // px (tighter = fewer offscreen nodes)
+const LMS_SCROLLER_GRID_BUFFER = 600; // px
 const LMS_MAX_PLAYERS = 100;
 const LMS_IMAGE_SZ = IS_HIGH_DPI ? 600 : 300;
 const LMS_LIST_IMAGE_SZ = IS_HIGH_DPI ? 300 : 150;
@@ -73,6 +85,7 @@ const DEFAULT_WORKS_COVER = "/material/html/images/nowork.png";
 const RANDOMPLAY_COVER = "/material/html/images/randomplay.png";
 const LMS_DOUBLE_CLICK_TIMEOUT = 300;
 const LMS_VOLUME_DEBOUNCE = 250;
+const LMS_KEYBOARD_VOLUME_STEP = 5;
 const LMS_DARK_SVG = "edece7";
 const LMS_LIGHT_SVG = "333";
 const LMS_UPDATE_SVG = "74bf43";
@@ -80,7 +93,25 @@ const LMS_SEARCH_LIMIT = 500;
 const LMS_INITIAL_SEARCH_RESULTS = 10;
 const LMS_MIN_DESKTOP_WIDTH = 600;
 const LMS_MIN_DESKTOP_HEIGHT = 425;
+const LMS_MIN_MOBILE_DESKTOP_WIDTH = 800; /* wide landscape tablet / phone */
 const LMS_MIN_NP_LARGE_INFO_HEIGHT = 250;
+
+/* True when auto layout should use desktop.css (not forced mobile/desktop). */
+function shouldUseDesktopLayout() {
+    let w = window.innerWidth || 0;
+    let h = window.innerHeight || 1;
+    if (w < LMS_MIN_DESKTOP_WIDTH || h < LMS_MIN_DESKTOP_HEIGHT) {
+        return false;
+    }
+    if (IS_MOBILE) {
+        /* Portrait phones/tablets always stay on mobile layout */
+        if (w <= h) {
+            return false;
+        }
+        return w >= LMS_MIN_MOBILE_DESKTOP_WIDTH;
+    }
+    return true;
+}
 const LMS_AUTO_SHOW_HOME_BUTTON_MIN_WIDTH = 600;
 
 const LMS_SAVE_QUEUE_KEYBOARD = "S";
@@ -102,6 +133,7 @@ const LMS_APPEND_KEYBOARD = "A"; // + shift
 const LMS_ADD_ITEM_ACTION_KEYBOARD = "C"; // + shift
 const LMS_CREATE_FAV_FOLDER_KEYBOARD = "M"; // +shift
 const LMS_TOGGLE_QUEUE_KEYBOARD = "Q"; // +shift
+const LMS_NAV_DRAWER_KEYBOARD = "B"; // ⌘B (macOS) / Ctrl+B (Windows/Linux) — main menu / sidebar / shortcuts
 
 const SEARCH_OTHER_ID = "search.other";
 
@@ -287,6 +319,10 @@ const SEARCH_WORKS_CAT = 3;
 const SEARCH_TRACKS_CAT = 4;
 const SEARCH_PLAYLISTS_CAT = 5;
 const SEARCH_OTHER_CAT = 6;
+const SEARCH_RADIOS_CAT = 7;
+const SEARCH_PODCASTS_CAT = 8;
 
 const HOME_SHORTCUT = "-h";
 const SEARCH_SHORTCUT = "-s";
+/** Mobile shortcut bar: open player options (presets / input / DSP) drawer */
+const PLAYER_PREFS_SHORTCUT = "-pp";

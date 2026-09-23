@@ -83,6 +83,13 @@ var lmsFileDialog = Vue.component("lms-file-dialog", {
                     bus.$emit(this.elem, this.selected);
                 } else {
                     this.elem.value=this.selected;
+                    try {
+                        this.elem.dispatchEvent(new Event('input', {bubbles:true}));
+                        this.elem.dispatchEvent(new Event('change', {bubbles:true}));
+                    } catch (e) {}
+                    if (typeof iframeCommitPathField === 'function') {
+                        iframeCommitPathField(this.elem);
+                    }
                 }
                 this.close();
             }

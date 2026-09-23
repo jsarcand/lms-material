@@ -166,16 +166,157 @@ function isInFavorites(item) {
     return lmsFavorites.has(item.presetParams && item.presetParams.favorites_url ? item.presetParams.favorites_url : item.favUrl);
 }
 
+/** Mobile (non-desktop layout): context menus open as a bottom sheet/drawer. */
+function contextMenuUseSheet(vm) {
+    try {
+        if (vm && vm.$store && undefined!=vm.$store.state.desktopLayout) {
+            return !vm.$store.state.desktopLayout;
+        }
+    } catch (e) {}
+    return !!IS_MOBILE;
+}
+
+/**
+ * Meta for context-menu item header (mobile sheet).
+ * Returns { title, lines:[artist?, album?], image, icon, svg }
+ */
+function contextMenuItemMeta(item) {
+    let empty = { title: '', lines: [], image: undefined, icon: undefined, svg: undefined };
+    if (!item) {
+        return empty;
+    }
+    let title = stripTags(stripLinkTags(item.title || item.name || item.tooltip || ''));
+    let lines = [];
+    let pushLine = function(s) {
+        if (undefined==s || null==s) {
+            return;
+        }
+        if (Array.isArray(s)) {
+            for (let i=0, len=s.length; i<len && lines.length<2; ++i) {
+                pushLine(s[i]);
+            }
+            return;
+        }
+        let t = stripTags(stripLinkTags(''+s)).replace(/\s+/g, ' ').trim();
+        if (!t) {
+            return;
+        }
+        // Avoid repeating the title
+        if (title && t.toLowerCase()==title.toLowerCase()) {
+            return;
+        }
+        if (lines.indexOf(t)<0) {
+            lines.push(t);
+        }
+    };
+
+    // Explicit fields first (tracks / queue)
+    if (item.artist || item.trackartist || item.albumartist) {
+        pushLine(item.artist || item.trackartist || item.albumartist);
+    }
+    if (item.album) {
+        pushLine(item.album);
+    }
+
+    // Queue non-album style: artistAlbum is [artistHtml, albumHtml, ...]
+    if (lines.length<2 && Array.isArray(item.artistAlbum)) {
+        pushLine(item.artistAlbum[0]);
+        pushLine(item.artistAlbum[1]);
+    } else if (lines.length<2 && item.artistAlbum && !Array.isArray(item.artistAlbum)) {
+        // Album-style queue header / combined HTML
+        let plain = stripTags(''+item.artistAlbum).replace(/\s+/g, ' ').trim();
+        if (plain) {
+            let parts = plain.split(/\s*[·•|]\s*|\s+-\s+/);
+            if (parts.length>=2) {
+                pushLine(parts[0]);
+                pushLine(parts.slice(1).join(' - '));
+            } else {
+                pushLine(plain);
+            }
+        }
+    }
+
+    // Browse items often use subtitle (may be "Artist" or "Artist · Album" HTML)
+    if (lines.length<2 && item.subtitle) {
+        let sub = stripTags(''+item.subtitle).replace(/\s+/g, ' ').trim();
+        if (sub) {
+            let parts = sub.split(/\s*[·•|]\s*|\s+-\s+/);
+            if (parts.length>=2 && lines.length==0) {
+                pushLine(parts[0]);
+                pushLine(parts.slice(1).join(' - '));
+            } else {
+                pushLine(sub);
+            }
+        }
+    }
+
+    return {
+        title: title,
+        lines: lines.slice(0, 2),
+        image: item.image || (item.images && item.images[0]) || undefined,
+        icon: item.icon,
+        svg: item.svg
+    };
+}
+
 function showMenu(obj, newMenu) {
+    // Pin to bottom on mobile so CSS can restyle as a drawer
+    let sheet = contextMenuUseSheet(obj);
+    if (sheet) {
+        newMenu.sheet = true;
+        newMenu.x = 0;
+        newMenu.y = (window.innerHeight || document.documentElement.clientHeight || 0);
+    } else {
+        newMenu.sheet = false;
+        // Desktop popover: drop any residual mobile-sheet height so the menu
+        // sizes to its content (cstats / browse right-click menus).
+        if (obj && typeof obj.ctxSheetResetStyles === 'function') {
+            try { obj.ctxSheetResetStyles(); } catch (e) {}
+        }
+    }
     if (obj.menu.show) {
         setTimeout(function () {
             obj.menu = newMenu;
+            // Ensure show stays true after delayed assign
+            if (obj.menu && !obj.menu.show) {
+                obj.menu.show = true;
+            }
+            // prepareOpen is triggered by menu.show watcher (single open path)
+            if (!sheet) {
+                setTimeout(function() {
+                    try {
+                        document.querySelectorAll('.v-menu__content.menuable__content__active:not(.msk-context-sheet)').forEach(function(el) {
+                            el.style.removeProperty('height');
+                            el.style.removeProperty('max-height');
+                            el.style.removeProperty('transform');
+                            el.classList.remove('msk-context-sheet-sized', 'msk-context-sheet-enter',
+                                'msk-context-sheet-expanded', 'msk-context-sheet-dragging');
+                        });
+                    } catch (e) {}
+                }, 0);
+            }
         }.bind(this), 100);
     } else {
         obj.menu = newMenu;
         obj.menu.show = true;
+        if (!sheet) {
+            // After Vuetify mounts the content, clear sheet sizing leftovers
+            setTimeout(function() {
+                try {
+                    document.querySelectorAll('.v-menu__content.menuable__content__active:not(.msk-context-sheet)').forEach(function(el) {
+                        el.style.removeProperty('height');
+                        el.style.removeProperty('max-height');
+                        el.style.removeProperty('transform');
+                        el.classList.remove('msk-context-sheet-sized', 'msk-context-sheet-enter',
+                            'msk-context-sheet-expanded', 'msk-context-sheet-dragging');
+                    });
+                } catch (e) {}
+            }, 0);
+        }
     }
 }
+
+/* contextSheetMethods lives in utils.js (early load) so browse/queue can merge it. */
 
 function handleClickOnHref(event) {
     if (IS_MOBILE) {
@@ -363,10 +504,21 @@ function removeDuplicates(playistId, items) {
     }
 }
 
-function openServerSettings(serverName, showHome, path) {
+function openServerSettings(serverName, showHome, path, initialSection) {
     if (lmsOptions.useDefaultForSettings==2 && window.innerWidth>=MIN_DEF_SETTINGS_WIDTH) {
         openWindow("/"+(LMS_DARK_LOGIC==1 && bus.$store.state.darkUi ? "DarkLogic" : "Default")+"/settings/index.html" + (bus.$store.state.player ? "?player=" + bus.$store.state.player.id : ""));
         return;
+    }
+    // Native PM is embedded in the settings shell — only close if leaving plugins
+    if (initialSection && initialSection!='SETUP_PLUGINS') {
+        bus.$emit('iframe-native-plugins', false);
+        bus.$emit('closeDialog', 'manageplugins');
+    }
+    if (undefined!=initialSection && typeof iframeInfo !== 'undefined') {
+        iframeInfo.pendingSettingsSection = initialSection;
+        if (initialSection=='SETUP_PLUGINS' && lmsOptions.nativeManagePlugins) {
+            iframeInfo.pendingNativePlugins = true;
+        }
     }
     let pathToUse = undefined==path
                     ? '/material/settings/server/basic.html'
@@ -377,7 +529,27 @@ function openServerSettings(serverName, showHome, path) {
         actions.push(DIVIDER);
         actions.push({title:i18n("Configuration"), text:i18n("Configuration")+(serverName ? SEPARATOR+serverName : ""), icon:'build', link:"http://"+location.hostname});
     }
-    bus.$emit('dlg.open', 'iframe', pathToUse, TB_SERVER_SETTINGS.title+(serverName ? SEPARATOR+serverName : ""), actions, showHome);
+    let title = TB_SERVER_SETTINGS.title+(serverName ? SEPARATOR+serverName : "");
+    // a=path, b=title, c=actions, d=showHome, e=playerId, f=isLmsPage, g=initialSection
+    function emitOpen() {
+        bus.$emit('dlg.open', 'iframe', pathToUse, title, actions, showHome, undefined, undefined, initialSection);
+    }
+    // Warm Material section rail before first paint when cache is cold
+    if (typeof iframeLoadCachedServerSettingsNav === 'function' && typeof iframeBootstrapServerSettingsNav === 'function') {
+        let cached = iframeLoadCachedServerSettingsNav();
+        if (!cached || cached.length<1) {
+            let opened = false;
+            function emitOnce() {
+                if (opened) { return; }
+                opened = true;
+                emitOpen();
+            }
+            iframeBootstrapServerSettingsNav(function() { emitOnce(); });
+            setTimeout(emitOnce, 450);
+            return;
+        }
+    }
+    emitOpen();
 }
 
 function getYear(text) {
@@ -958,3 +1130,5 @@ function stringToColor(str) {
     hash = ((hash % TEXT_COLORS.length) + TEXT_COLORS.length) % TEXT_COLORS.length;
     return TEXT_COLORS[hash];
 }
+
+const DEFERRED_LOADED = true;

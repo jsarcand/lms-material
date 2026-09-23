@@ -93,6 +93,11 @@ const PQ_REMOVE_ARTIST_ACTION = 72;
 const USE_ALT_GRID_ACTION     = 73;
 
 const PQ_REMOVE_WORK_ACTION   = 74;
+/* Music Artist Info plugin — biography / album review from context menu */
+const ARTIST_INFO_ACTION      = 75;
+const ALBUM_INFO_ACTION       = 76;
+/** Soft preview on the device operating the menu (Mac squeezelite / LyrPlay) — not the selected room */
+const PREVIEW_ACTION          = 77;
 
 const HIDE_FOR_PARTY = new Set([
     DIVIDER, PLAY_ACTION, PLAY_ALBUM_ACTION, PLAY_ALL_ACTION, INSERT_ACTION, MORE_ACTION, MORE_LIB_ACTION, RENAME_ACTION, REMOVE_ACTION,
@@ -100,7 +105,8 @@ const HIDE_FOR_PARTY = new Set([
     ADD_FAV_FOLDER_ACTION, DELETE_FAV_FOLDER_ACTION, MOVE_FAV_TO_PARENT_ACTION, UNSUB_PODCAST_ACTION, MOVE_HERE_ACTION, INSERT_ALL_ACTION,
     ADD_TO_PLAYLIST_ACTION, REMOVE_DUPES_ACTION, ADV_SEARCH_ACTION, SAVE_VLIB_ACTION, DOWNLOAD_ACTION, PLAY_DISC_ACTION,
     PLAY_PLAYLIST_ACTION, PQ_SORT_ACTION, PLAYLIST_SORT_ACTION, PQ_SAVE_ACTION, PLAY_SHUFFLE_ACTION, PLAY_SHUFFLE_ALL_ACTION,
-    PQ_REMOVE_ALBUM_ACTION, PQ_REMOVE_DISC_ACTION, PQ_REMOVE_TRACK_ACTION, PQ_REMOVE_ARTIST_ACTION, PQ_REMOVE_WORK_ACTION]);
+    PQ_REMOVE_ALBUM_ACTION, PQ_REMOVE_DISC_ACTION, PQ_REMOVE_TRACK_ACTION, PQ_REMOVE_ARTIST_ACTION, PQ_REMOVE_WORK_ACTION,
+    ARTIST_INFO_ACTION, ALBUM_INFO_ACTION, PREVIEW_ACTION]);
 
 var ACTIONS=[
     {cmd:"play",         icon:"play_circle_outline"},
@@ -185,7 +191,10 @@ var ACTIONS=[
     {cmd:"pq-rmt",       icon:"music_note"},
     {cmd:"pq-rmar",      svg:"artist"},
     {cmd:"use-sl",       svg:"grid-plus"},
-    {cmd:"rm-wrk",       svg:"classical-work"}
+    {cmd:"rm-wrk",       svg:"classical-work"},
+    {cmd:"artist-info",  svg:"artist"},
+    {cmd:"album-info",   icon:"album"},
+    {cmd:"preview",      icon:"hearing"}
 
 ];
 
@@ -203,6 +212,8 @@ function updateActionStrings() {
     ACTIONS[PLAY_ACTION].title=ACTIONS[PLAY_ALL_ACTION].title=i18n("Play now");
     ACTIONS[PLAY_ACTION].short=ACTIONS[PLAY_ALL_ACTION].short=i18n("Play");
     ACTIONS[PLAY_ACTION].skey=ACTIONS[PLAY_ALL_ACTION].key=LMS_PLAY_KEYBOARD;
+    ACTIONS[PREVIEW_ACTION].title=i18n("Preview");
+    ACTIONS[PREVIEW_ACTION].short=i18n("Preview");
     ACTIONS[PLAY_ALBUM_ACTION].title=lmsOptions.supportReleaseTypes ? i18n("Play release starting at track") : i18n("Play album starting at track");
     ACTIONS[PLAY_SHUFFLE_ACTION].title=ACTIONS[PLAY_SHUFFLE_ALL_ACTION].title=i18n("Play shuffled");
     ACTIONS[PLAY_SHUFFLE_ACTION].short=ACTIONS[PLAY_SHUFFLE_ALL_ACTION].short=i18n("Shuffle");
@@ -223,6 +234,7 @@ function updateActionStrings() {
     ACTIONS[ADD_TO_FAV_ACTION].title=i18n("Add to favorites");
     ACTIONS[REMOVE_FROM_FAV_ACTION].title=i18n("Remove from favorites");
     ACTIONS[REMOVE_ACTION].title=i18n("Remove");
+    // Default labels; header ⋮ menu overrides with sidebar (desktop) / shortcuts (mobile)
     ACTIONS[PIN_ACTION].title=i18n("Pin to home screen");
     ACTIONS[UNPIN_ACTION].title=i18n("Un-pin from home screen");
     ACTIONS[SELECT_ACTION].title=i18n("Select");
@@ -231,6 +243,7 @@ function updateActionStrings() {
     ACTIONS[SEARCH_LIB_ACTION].title=i18n("Search library");
     ACTIONS[SEARCH_LIB_ACTION].key=LMS_SEARCH_KEYBOARD;
     ACTIONS[USE_GRID_ACTION].title=ACTIONS[USE_LIST_ACTION].title=ACTIONS[USE_ALT_GRID_ACTION].title=i18n("Toggle view");
+    /* My Music cycles list → grid → panel; grid-plus icon cues the panel step */
     ACTIONS[ALBUM_SORTS_ACTION].title=ACTIONS[TRACK_SORTS_ACTION].title=i18n("Sort by");
     ACTIONS[ADD_FAV_FOLDER_ACTION].title=i18n("Create folder");
     ACTIONS[ADD_FAV_FOLDER_ACTION].skey=LMS_CREATE_FAV_FOLDER_KEYBOARD;
@@ -257,6 +270,8 @@ function updateActionStrings() {
 
     ACTIONS[GOTO_ARTIST_ACTION].title=i18n("Go to artist");
     ACTIONS[GOTO_ALBUM_ACTION].title=lmsOptions.supportReleaseTypes ? i18n("Go to release") : i18n("Go to album");
+    ACTIONS[ARTIST_INFO_ACTION].title=i18n("Artist information");
+    ACTIONS[ALBUM_INFO_ACTION].title=lmsOptions.supportReleaseTypes ? i18n("Release information") : i18n("Album information");
     ACTIONS[ADD_TO_PLAYLIST_ACTION].title=i18n("Add to playlist");
     ACTIONS[REMOVE_DUPES_ACTION].title=i18n("Remove duplicates");
     ACTIONS[FOLLOW_LINK_ACTION].title=i18n("Follow link");

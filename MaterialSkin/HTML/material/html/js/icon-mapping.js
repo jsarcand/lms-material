@@ -212,7 +212,11 @@ function mapIcon(item, app, fallback) {
     if (mapIconType(item, app, "menuIcon")) {
         return true;
     }
-    if (item.image && item.image.startsWith("html/images/") && mapIconType(item, app, "image")) {
+    /* Map LMS/plugin chrome brand images (Spotty, Qobuz, …) to mono Material SVGs.
+     * Previously only html/images/* was mapped — plugin paths like
+     * plugins/Spotty/html/images/icon.png kept full-color logos on home/sidebar.
+     * Cover art via imageproxy is skipped inside mapIconType. */
+    if (item.image && mapIconType(item, app, "image")) {
         return true;
     }
     if (app=='lms-extras' && mapIconType(item, app, "id")) {

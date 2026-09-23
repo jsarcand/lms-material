@@ -482,6 +482,7 @@ var lmsServer = Vue.component('lms-server', {
                     var i = data.players_loop[idx];
                     if (1==parseInt(i.connected) && // Only list/use connected players...
                         !lmsOptions.hidePlayers.has(i.playerid) &&
+                        !lmsOptions.hidePlayers.has((''+i.playerid).toLowerCase()) &&
                         (undefined==checkPlayer || (checkPlayer==i.playerid || checkPlayer==i.name))) {
                         let weight = lmsOptions.playerWeightMap[i.playerid];
                         players.push({ id: i.playerid,
@@ -491,6 +492,7 @@ var lmsServer = Vue.component('lms-server', {
                                        isplaying: undefined!=i.isplaying && 1==parseInt(i.isplaying),
                                        isgroup: 'group'===i.model,
                                        model: i.modelname,
+                                       modelType: i.model,
                                        ip: i.ip,
                                        icon: mapPlayerIcon(i),
                                        color: mapPlayerColor(i),
@@ -607,6 +609,8 @@ var lmsServer = Vue.component('lms-server', {
                 player.current.isClassical = undefined!=player.current.isClassical && 1==parseInt(player.current.isClassical);
                 player.current.time = undefined==data.time ? undefined : "stop"==data.mode ? 0 : parseFloat(data.time);
                 player.current.live_edge = data.remoteMeta && data.remoteMeta.live_edge ? parseFloat(data.remoteMeta.live_edge) : undefined;
+                player.current.live = data.remoteMeta && (1==parseInt(data.remoteMeta.live) || true===data.remoteMeta.live) ? 1 : 0;
+                player.current.repeating_stream = undefined!=data.repeating_stream ? (1==parseInt(data.repeating_stream) ? 1 : 0) : 0;
                 player.current.canseek = parseInt(data.can_seek);
                 player.current.remote_title = checkRemoteTitle(player.current);
                 player.current.replay_gain = data.replay_gain;
@@ -628,7 +632,14 @@ var lmsServer = Vue.component('lms-server', {
             }
 
             if (player.isgroup && data.members) {
-                player.members=data.members.split(',');
+                // Drop null/placeholder MAC slots that the Group Players plugin sometimes inserts.
+                player.members = String(data.members).split(',').map(function(m) {
+                    return (m || '').trim();
+                }).filter(function(m) {
+                    if (!m) { return false; }
+                    let hex = m.toLowerCase().replace(/[^0-9a-f]/g, '');
+                    return hex.length > 0 && !/^0+$/.test(hex);
+                });
             }
             bus.$emit(isCurrent ? 'playerStatus' : 'otherPlayerStatus', player);
             this.$store.commit('updatePlayer', player);
@@ -644,23 +655,24 @@ var lmsServer = Vue.component('lms-server', {
                 this.scheduleNextPlayerStatusUpdate(data.mode === "play"
                                                         // Playing a track
                                                         ? data.waitingToPlay
-                                                            // Just starting to play?
-                                                            ? 2000 // Poll every 2 seconds
+                                                            // Decoder/buffer still starting — poll quickly so np-bar
+                                                            // track metadata does not lag ~1–2s behind real audio
+                                                            ? 300
                                                             // Playback has started
                                                             : (undefined!=player.current.duration && player.current.duration>0)
                                                                 // Have duration
                                                                 ? undefined!=player.current.time
                                                                     ? (player.current.duration-player.current.time)<=3
-                                                                        ? 1000 // Near end, every second
-                                                                        : (player.current.duration-player.current.time)<=5 || player.current.time<=6
-                                                                            ? 2000 // Every 2 seconds (5 seconds to end, or 6 from start)
+                                                                        ? 400 // Near end — catch track advance promptly
+                                                                        : (player.current.duration-player.current.time)<=5 || player.current.time<=4
+                                                                            ? 700 // Early in track / last few seconds
                                                                             : (player.current.duration-player.current.time)<=10
                                                                                 ? 5000 // Every 5 seconds
                                                                                 : 10000 // Every 10 seconds...
                                                                     : undefined
                                                                 // No duration, stream?
                                                                 : (undefined!=player.current.time && player.current.time<=5)
-                                                                    ? 2000       // For streams, poll for the first 5 seconds
+                                                                    ? 700        // For streams, poll for the first 5 seconds
                                                                     : undefined  // Stream playing for longer than 5 seconds
                                                         // Not playing
                                                         : undefined);
@@ -722,6 +734,23 @@ var lmsServer = Vue.component('lms-server', {
                     lmsOptions[data[2]] = 1==parseInt(data[3]);
                 } else if (data[2]=="variousArtistsString") {
                     lmsOptions[data[2]] = data[3];
+                } else if (data[2]=="ignoredarticles") {
+                    // Ma musique sort prefixes — keep fusion / list sort in sync
+                    var arts = String(data[3] || '').trim().split(/\s+/).filter(Boolean);
+                    lmsOptions.ignoredArticles = arts.length ? arts : ['The', 'A', 'An', 'El', 'La', 'Los', 'Las', 'Le', 'Les'];
+                    try {
+                        var esc = lmsOptions.ignoredArticles.slice().sort(function(a, b) {
+                            return String(b).length - String(a).length;
+                        }).map(function(a) {
+                            return String(a).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        });
+                        lmsOptions.ignoredArticlesRe = esc.length
+                            ? new RegExp('^(' + esc.join('|') + ')\\s+', 'i')
+                            : null;
+                    } catch (eArt) {
+                        lmsOptions.ignoredArticlesRe = null;
+                    }
+                    bus.$emit('ignoredArticlesChanged');
                 } else if (data[2]=="myClassicalGenres") {
                     parseMyClassicalGenres(data[3]);
                 }
@@ -886,13 +915,33 @@ var lmsServer = Vue.component('lms-server', {
             }).catch(err => {
             });
         },
-        updatePlayer(id) {
+        updatePlayer(id, force) {
             let now = new Date().getTime();
-            if (this.playerStatusMessages.has(id) && (now-this.playerStatusMessages.get(id))<STATUS_UPDATE_MAX_TIME) {
-                logJsonMessage("NOT UPDATING ("+id+")");
+            // Coalesce in-flight status requests — but never drop a forced refresh
+            // (track skip / play / etc.). Queue it to run as soon as the current
+            // request finishes so the np-bar is not stuck on the previous track.
+            if (!force && this.playerStatusMessages.has(id) && (now-this.playerStatusMessages.get(id))<STATUS_UPDATE_MAX_TIME) {
+                logJsonMessage("NOT UPDATING ("+id+") — queued");
+                if (!this.playerStatusPending) {
+                    this.playerStatusPending = new Set();
+                }
+                this.playerStatusPending.add(id);
                 return;
             }
-            logJsonMessage("UPDATING ("+id+")");
+            if (force && this.playerStatusMessages.has(id)) {
+                // In flight: mark pending forced refresh for when it completes
+                if (!this.playerStatusPending) {
+                    this.playerStatusPending = new Set();
+                }
+                this.playerStatusPending.add(id);
+                // If the in-flight call is already old, still allow a parallel fetch
+                // after a short wait so we do not stall ~STATUS_UPDATE_MAX_TIME.
+                if ((now-this.playerStatusMessages.get(id)) < 80) {
+                    logJsonMessage("FORCE UPDATE QUEUED ("+id+")");
+                    return;
+                }
+            }
+            logJsonMessage("UPDATING ("+id+")"+(force?" FORCE":""));
             this.playerStatusMessages.set(id, now);
             let tags = PLAYER_STATUS_TAGS +
                          (this.$store.state.showRating ? "R" : "") +
@@ -902,14 +951,22 @@ var lmsServer = Vue.component('lms-server', {
                 if (data && data.result) {
                     this.handlePlayerStatus(id, data.result, true);
                 }
+                if (this.playerStatusPending && this.playerStatusPending.has(id)) {
+                    this.playerStatusPending.delete(id);
+                    this.updatePlayer(id, true);
+                }
             }).catch(err => {
                 this.playerStatusMessages.delete(id);
                 logJsonMessage("STATUS TIMEOUT  ("+id+")");
+                if (this.playerStatusPending && this.playerStatusPending.has(id)) {
+                    this.playerStatusPending.delete(id);
+                    this.updatePlayer(id, true);
+                }
             });
         },
-        updateCurrentPlayer() {
+        updateCurrentPlayer(force) {
             if (this.$store.state.player) {
-                this.updatePlayer(this.$store.state.player.id);
+                this.updatePlayer(this.$store.state.player.id, force);
             }
         },
         subscribe(id) {
@@ -1051,9 +1108,10 @@ var lmsServer = Vue.component('lms-server', {
                 lmsCommand("", ["material-skin", "check-for-updates", "delay:"+(isStartup ? 30 : 2)]);
             }
         },
-        adjustVolume(inc) {
+        adjustVolume(inc, step) {
             if (this.$store.state.player) {
-                lmsCommand(this.$store.state.player.id, ["mixer", "volume", (inc ? "+" : "-")+lmsOptions.volumeStep]).then(({data}) => {
+                var volStep = undefined!=step ? step : lmsOptions.volumeStep;
+                lmsCommand(this.$store.state.player.id, ["mixer", "volume", (inc ? "+" : "-")+volStep]).then(({data}) => {
                     this.updateCurrentPlayer();
                 });
             }
@@ -1067,6 +1125,7 @@ var lmsServer = Vue.component('lms-server', {
     mounted: function() {
         // Hold map of <player id> -> <time of last status message>
         this.playerStatusMessages = new Map();
+        this.playerStatusPending = new Set();
         this.moving=[];
         bus.$on('networkStatus', function(connected) {
             this.playerStatusMessages.clear();
@@ -1095,7 +1154,8 @@ var lmsServer = Vue.component('lms-server', {
         bus.$on('refreshStatus', function(id) {
             var player = id ? id : (this.$store.state.player ? this.$store.state.player.id : undefined);
             if (player) {
-                this.updatePlayer(player);
+                // Forced: never drop a user-visible refresh behind the in-flight throttle
+                this.updatePlayer(player, true);
             }
         }.bind(this));
         bus.$on('refreshServerStatus', function(delay) {
@@ -1114,16 +1174,38 @@ var lmsServer = Vue.component('lms-server', {
         }.bind(this));
         bus.$on('playerCommand', function(command) {
             if (this.$store.state.player) {
-                lmsCommand(this.$store.state.player.id, command).then(({data}) => {
+                let pid = this.$store.state.player.id;
+                let isTrackChange = command && (
+                    (command[0]=='playlist' && (command[1]=='index' || command[1]=='jump' || command[1]=='play' || command[1]=='playalbum')) ||
+                    (command[0]=='button' && (command[1]=='jump_rew' || command[1]=='jump_fwd')) ||
+                    command[0]=='play' || command[0]=='pause' || command[0]=='stop' ||
+                    (command[0]=='playlistcontrol')
+                );
+                lmsCommand(pid, command).then(({data}) => {
                     if (command.length>2 && command[0]=='mixer' && command[1]=='muting') { // Muting can be slow? Check after 1/2 second
-                        setTimeout(function () { this.updateCurrentPlayer(); }.bind(this), 500);
+                        setTimeout(function () { this.updateCurrentPlayer(true); }.bind(this), 500);
                     }
-                    this.updateCurrentPlayer();
+                    // Immediate forced status so np-bar text/art update as soon as LMS switched
+                    this.updateCurrentPlayer(true);
+                    // Track changes often report the previous track for a brief moment
+                    // (waitingToPlay / buffer). Re-poll quickly until the new track sticks.
+                    if (isTrackChange) {
+                        if (this._trackChangeStatusTimer) {
+                            clearTimeout(this._trackChangeStatusTimer);
+                        }
+                        this._trackChangeStatusTimer = setTimeout(function() {
+                            this._trackChangeStatusTimer = undefined;
+                            this.updateCurrentPlayer(true);
+                        }.bind(this), 180);
+                        setTimeout(function() {
+                            this.updateCurrentPlayer(true);
+                        }.bind(this), 450);
+                    }
                 });
             }
         }.bind(this));
         bus.$on('updatePlayer', function(id) {
-            this.updatePlayer(id);
+            this.updatePlayer(id, true);
         }.bind(this));
         bus.$on('moveQueueItems', function(indexes, to) {
             if (this.$store.state.player) {
@@ -1231,15 +1313,16 @@ var lmsServer = Vue.component('lms-server', {
                 182: 'decvolfirefox',
                 183: 'incvolfirefox'
             })
-            bindKey('up', 'alt', true);
-            bindKey('down', 'alt', true);
+            // macOS: Command (mod); other platforms: Alt
+            bindKey('up', IS_APPLE ? 'mod' : 'alt', true);
+            bindKey('down', IS_APPLE ? 'mod' : 'alt', true);
             bindKey('space');
             bindKey('decvol', undefined, true);
             bindKey('incvol', undefined, true);
             bindKey('decvolfirefox', undefined, true);
             bindKey('incvolfirefox', undefined, true);
-            bindKey('left', 'alt', true);
-            bindKey('right', 'alt', true);
+            bindKey('left', IS_APPLE ? 'mod' : 'alt', true);
+            bindKey('right', IS_APPLE ? 'mod' : 'alt', true);
             bus.$on('keyboard', function(key, modifier) {
                 if (!this.$store.state.player || this.$store.state.visibleMenus.size>0 || (this.$store.state.openDialogs.length>0 && this.$store.state.openDialogs[0]!='info-dialog'))  {
                     return;
@@ -1253,17 +1336,29 @@ var lmsServer = Vue.component('lms-server', {
                             command=[this.isPlaying ? 'pause' : 'play']
                         }
                     } else if (key=='incvol' || key=='incvolfirefox') {
-                        this.adjustVolume(true);
+                        this.adjustVolume(true, lmsOptions.volumeStep || LMS_KEYBOARD_VOLUME_STEP);
                     } else if (key=='decvol' || key=='decvolfirefox') {
-                        this.adjustVolume(false);
+                        this.adjustVolume(false, lmsOptions.volumeStep || LMS_KEYBOARD_VOLUME_STEP);
                     }
-                } else if ('alt'==modifier) {
+                } else if ((IS_APPLE && 'mod'==modifier) || (!IS_APPLE && 'alt'==modifier)) {
+                    // ⌘+arrow (macOS) or Alt+arrow (others)
                     if (key=='up') {
-                        this.adjustVolume(true);
+                        this.adjustVolume(true, lmsOptions.volumeStep || LMS_KEYBOARD_VOLUME_STEP);
                     } else if (key=='down') {
-                        this.adjustVolume(false);
+                        this.adjustVolume(false, lmsOptions.volumeStep || LMS_KEYBOARD_VOLUME_STEP);
                     } else if (key=='left' && !queryParams.party) {
-                        command=['button', 'jump_rew'];
+                        // Prefer browse hierarchy back (⌘/Alt+←) when a level is open
+                        let didBrowseBack = false;
+                        try {
+                            bus.$emit('browseHierarchyBack', function(handled) {
+                                if (handled) {
+                                    didBrowseBack = true;
+                                }
+                            });
+                        } catch (e) {}
+                        if (!didBrowseBack) {
+                            command=['button', 'jump_rew'];
+                        }
                     } else if (key=='right' && !queryParams.party) {
                         command=['playlist', 'index', '+1'];
                     }

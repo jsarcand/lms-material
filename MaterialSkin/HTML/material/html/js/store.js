@@ -11,14 +11,23 @@ const FAKE_MENU = new Set(['volume', 'groupvolume'])
 var lmsNumVisibleMenus = 0;
 
 function copyPlayer(p) {
-    return {id:p.id, name:p.name, isgroup:p.isgroup, model:p.model, ip:p.ip, icon:p.icon, color:p.color,
+    return {id:p.id, name:p.name, isgroup:p.isgroup, model:p.model, modelType:p.modelType, ip:p.ip, icon:p.icon, color:p.color,
             enabled:p.enabled, weight:p.weight, link:p.link, ison:p.ison, isplaying:p.isplaying,
             iswaiting:p.iswaiting, isconnected:p.isconnected, canpoweroff:p.canpoweroff, islocal:p.islocal,
-            trkcount:p.trkcount};
+            local:p.local, trkcount:p.trkcount};
 }
 
 function setDesktopWideCoverPad(on) {
     document.documentElement.style.setProperty('--desktop-np-wide-pad', on ? getComputedStyle(document.documentElement).getPropertyValue('--sub-toolbar-height') : '0px');
+}
+
+/** Lexicon (A–Z jumplist) side: 'left' | 'right' — applies to browse, queue, fusion */
+function applyJumplistSide(side) {
+    try {
+        var right = side === 'right';
+        document.documentElement.classList.toggle('jl-side-right', right);
+        document.documentElement.classList.toggle('jl-side-left', !right);
+    } catch (e) {}
 }
 
 function updateUiSettings(state, val) {
@@ -29,7 +38,9 @@ function updateUiSettings(state, val) {
                     'browseTechInfo', 'techInfo', 'nowPlayingTrackNum', 'swipeVolume', 'swipeChangeTrack',
                     'keyboardControl', 'skipBSeconds', 'skipFSeconds', 'mediaControls', 'showRating', 'browseContext',
                     'nowPlayingContext', 'queueContext', 'moveDialogs', 'autoCloseQueue', 'nowPlayingFull', 'tinted',
-                    'ndShortcuts', 'gridPerView', 'browseSearch'];
+                    'ndShortcuts', 'autoCollapseShortcuts', 'gridPerView', 'browseSearch', 'browseHomeSplit', 'browseCatalogHeader',
+                    'browseCatalogTintToolbar', 'contextStatsHome',
+                    'contextStatsSessionEnhance', 'maiIntegrated', 'jumplistSide'];
     for (let i=0, len=stdItems.length; i<len; ++i) {
         let key=stdItems[i];
         if (undefined!=val[key] && state[key]!=val[key]) {
@@ -41,6 +52,10 @@ function updateUiSettings(state, val) {
                 setDesktopWideCoverPad(state.nowPlayingFull);
             } else if ('tinted'==key) {
                 themeChanged = true;
+            } else if ('browseHomeSplit'==key || 'contextStatsHome'==key) {
+                browseDisplayChanged = true;
+            } else if ('jumplistSide'==key) {
+                applyJumplistSide(state.jumplistSide);
             }
         }
     }
@@ -211,8 +226,9 @@ function updateUiSettings(state, val) {
 
 function autoTheme() {
     const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+    // Mojave is available on all platforms (including mobile)
     if (IS_IOS || IS_ANDROID) {
-        return prefersLight ? "light" : "dark";
+        return prefersLight ? "mac/light/Mojave" : "mac/dark/Mojave-Dark";
     } else if (navigator.platform.indexOf("Linux") != -1) {
         return window.location.href.indexOf('desktop=KDE') != -1
                     ? (prefersLight ? "linux/light/Breeze" : "linux/dark/Breeze-Dark")
@@ -222,7 +238,7 @@ function autoTheme() {
     } else if (navigator.platform.indexOf("Mac") != -1) {
         return prefersLight ? "mac/light/Mojave" : "mac/dark/Mojave-Dark";
     }
-    return prefersLight ? "light" : "dark";
+    return prefersLight ? "mac/light/Mojave" : "mac/dark/Mojave-Dark";
 }
 
 function storeCurrentPlayer(state) {
@@ -246,14 +262,36 @@ function storeCurrentPlayer(state) {
     }
 }
 
+function storePlayerHost(ip) {
+    if (!ip) {
+        return '';
+    }
+    let s = String(ip).trim();
+    if (!s) {
+        return '';
+    }
+    let low = s.toLowerCase();
+    if (low.indexOf('::ffff:')===0) {
+        s = s.substring(7);
+    }
+    // IPv4 host:port from LMS players_loop
+    let m = s.match(/^(\d{1,3}(?:\.\d{1,3}){3})/);
+    if (m) {
+        return m[1];
+    }
+    return s.split('%')[0];
+}
+
 function setHaveLocalPlayer(state) {
     let prev = state.haveLocalPlayer;
     state.haveLocalPlayer = false;
-    if (state.localIps.size>0 && undefined!=state.players) {
+    if (undefined!=state.players) {
         for (var i=0, len=state.players.length; i<len; ++i) {
-            if (undefined!=state.players[i].ip && state.localIps.has(state.players[i].ip.split(':')[0])) {
+            let host = storePlayerHost(state.players[i].ip);
+            let isLocal = state.localIps.size>0 && host && state.localIps.has(host);
+            state.players[i].local = !!isLocal;
+            if (isLocal) {
                 state.haveLocalPlayer = true;
-                state.players[i].local = true;
             }
         }
     }
@@ -332,6 +370,7 @@ const store = new Vuex.Store({
         mobileBar: MBAR_REP_NAV,
         showQueue: false,
         showQueueNp: false,
+        queueOverlayClosing: false,
         pinQueue: false,
         players: null, // List of players
         player: null, // Current player (from list)
@@ -366,6 +405,8 @@ const store = new Vuex.Store({
         showRating: false,
         page:'browse',
         prevPage: 'browse',
+        npSheetOpen: false,
+        npSheetReturnPage: 'browse',
         hidden: new Set(),
         visibleMenus: new Set(),
         disabledBrowseModes: new Set(),
@@ -395,9 +436,20 @@ const store = new Vuex.Store({
         moveDialogs: false,
         autoCloseQueue: false,
         ndShortcuts: false,
+        autoCollapseShortcuts: false,
         browseSearch: true,
+        browseHomeSplit: true,
+        browseCatalogHeader: true,
+        browseCatalogTintToolbar: false,
+        jumplistSide: getLocalStorageVal('jumplistSide', 'left') || 'left',
         cMixSupported: 1==parseInt(getComputedStyle(document.documentElement).getPropertyValue('--color-mix-supported')),
         detailedHomeItems: [DETAILED_HOME_STD_PREFIX+"new", DETAILED_HOME_STD_PREFIX+"radios", DETAILED_HOME_EXPLORE],
+        // Self-contained home cards (most-played playlists / continue albums); not gated on ContextStats plugin.
+        contextStatsHome: true,
+        // Opt-in server-side Material session log (playlists / radio / podcasts). Default off.
+        contextStatsSessionEnhance: getLocalStorageBool('contextStatsSessionEnhance', false),
+        // true: Music Artist Info lives in the now-playing swiper; false: independent MAI panel/button.
+        maiIntegrated: getLocalStorageBool('maiIntegrated', true),
         user: {id:-1, name:undefined, avatar:undefined}
     },
     mutations: {
@@ -640,12 +692,20 @@ const store = new Vuex.Store({
                              'infoBackdrop', 'useDefaultBackdrops', 'browseTechInfo', 'techInfo', 'queueShowTrackNum', 'nowPlayingTrackNum',
                              'nowPlayingClock', 'swipeVolume', 'swipeChangeTrack', 'keyboardControl', 'screensaverNp', 'mediaControls',
                              'queueAlbumStyle', 'queueThreeLines', 'browseContext', 'nowPlayingContext', 'queueContext', 'showRating',
-                             'moveDialogs', 'autoCloseQueue', 'nowPlayingFull', 'tinted', 'ndShortcuts', 'gridPerView',
-                             'browseSearch'];
+                             'moveDialogs', 'autoCloseQueue', 'nowPlayingFull', 'tinted', 'ndShortcuts', 'autoCollapseShortcuts', 'gridPerView',
+                             'browseSearch', 'browseHomeSplit', 'browseCatalogHeader', 'browseCatalogTintToolbar',
+                             'contextStatsHome', 'contextStatsSessionEnhance', 'maiIntegrated'];
             for (let i=0, len=boolItems.length; i<len; ++i) {
                 let key = boolItems[i];
                 state[key] = getLocalStorageBool(key, state[key]);
             }
+            // Mirror to lmsOptions for play-hint helpers
+            try { lmsOptions.contextStatsSessionEnhance = !!state.contextStatsSessionEnhance; } catch (e) {}
+            state.jumplistSide = getLocalStorageVal('jumplistSide', state.jumplistSide || 'left') || 'left';
+            if (state.jumplistSide!=='right') {
+                state.jumplistSide = 'left';
+            }
+            applyJumplistSide(state.jumplistSide);
             let intItems = ['skipBSeconds', 'skipFSeconds', 'mobileBar', 'maxRating', 'volumeStep', 'screensaver', 'homeButton'];
             for (let i=0, len=intItems.length; i<len; ++i) {
                 let key = intItems[i];
@@ -775,7 +835,15 @@ const store = new Vuex.Store({
             }
         },
         setLocalIpAddresses(state, ips) {
-            state.localIps = undefined==ips ? new Set() : new Set(Array.isArray(ips) ? ips : ips.split(","));
+            let list = undefined==ips ? [] : (Array.isArray(ips) ? ips : String(ips).split(","));
+            let norm = new Set();
+            for (let i=0; i<list.length; ++i) {
+                let h = typeof storePlayerHost==='function' ? storePlayerHost(list[i]) : String(list[i]||'').split(':')[0];
+                if (h) {
+                    norm.add(h);
+                }
+            }
+            state.localIps = norm;
             setHaveLocalPlayer(state);
         },
         setPage(state, val) {
@@ -787,12 +855,27 @@ const store = new Vuex.Store({
             }
             state.lastSetPage = now;
             if (val!=state.page) {
+                if (!state.desktopLayout && MBAR_NONE!=state.mobileBar && 'now-playing'==val) {
+                    bus.$emit('expandNpSheet');
+                    return;
+                }
                 state.prevPage = state.page;
                 state.page = val;
                 setLocalStorageVal('page', val);
                 setLocalStorageVal('prevPage', state.prevPage);
                 bus.$emit('pageChanged', val);
                 emitTextColor();
+            }
+        },
+        setNpSheetOpen(state, val) {
+            if (state.npSheetOpen!=val) {
+                state.npSheetOpen = val;
+                bus.$emit('npSheetChanged', val);
+            }
+        },
+        setNpSheetReturnPage(state, val) {
+            if (undefined!=val && ''!=val && 'now-playing'!=val) {
+                state.npSheetReturnPage = val;
             }
         },
         menuVisible(state, val) {
@@ -944,6 +1027,9 @@ const store = new Vuex.Store({
         },
         setShowQueueNp(state, val) {
             state.showQueueNp = val;
+        },
+        setQueueOverlayClosing(state, val) {
+            state.queueOverlayClosing = val;
         },
         setPinQueue(state, val) {
             setQueuePinned(state, val);

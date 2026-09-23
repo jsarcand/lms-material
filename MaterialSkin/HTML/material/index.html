@@ -10,10 +10,31 @@
  <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui, interactive-widget=resizes-content">
-  <link href="html/font/font.css?r=202512" rel="stylesheet">
+  <style>
+    html.msk-booting, html.msk-booting body { background: var(--msk-boot-bg, #212121) !important; }
+    html.msk-booting #app { opacity: 0 !important; }
+    html.msk-booting body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 2147483646;
+      background: var(--msk-boot-bg, #212121);
+      pointer-events: none;
+    }
+    html.msk-ready #app {
+      opacity: 1 !important;
+      transition: opacity 0.58s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    html.msk-ready.msk-booting body::after {
+      opacity: 0;
+      transition: opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+      pointer-events: none;
+    }
+  </style>
+  <script>document.documentElement.classList.add('msk-booting');</script>
+  <link href="html/font/font.css?r=20260821boot" rel="stylesheet">
   <!--CSS start-->
   <link href="html/lib/vuetify.min.css?r=1.5.24trim20241031" rel="stylesheet">
   <link href="html/lib/vue-virtual-scroller.css?r=1.0.10mod" rel="stylesheet">
+  <link href="html/lib/swiper.min.css?r=5.4.5" rel="stylesheet">
   <!--CSS end-->
   [% PERL %]
   my $version=Plugins::MaterialSkin::Plugin->getPluginVersion();
@@ -47,17 +68,96 @@
   print("  <link href=\"html/css/themes/${theme}.css?r=$version\" rel=\"stylesheet\" id=\"themecss\" onerror=\"setTheme('dark')\">\n");
   print("  <link href=\"html/css/colors/blue.css?r=$version\" rel=\"stylesheet\" id=\"colorcss\">\n");
   print("  <link href=\"html/css/style.css?r=$version\" rel=\"stylesheet\">\n");
-  print("  <link href=\"html/css/mobile.css?r=$version\" rel=\"stylesheet\" id=\"layoutcss\">\n");
+  print("  <link href=\"html/css/library-fusion.css?r=$version\" rel=\"stylesheet\">\n");
   if ($mobile == 1) {
+    print("  <link href=\"html/css/mobile.css?r=$version\" rel=\"stylesheet\" id=\"layoutcss\">\n");
     print("  <link href=\"html/css/other/mobile-scroll.css?r=$version\" rel=\"stylesheet\" id=\"scrollcss\">\n");
+  } else {
+    print("  <link href=\"html/css/desktop.css?r=$version\" rel=\"stylesheet\" id=\"layoutcss\">\n");
   }
   print("  <link href=\"html/css/covers/round.css?r=$version\" rel=\"stylesheet\" id=\"covercss\">\n");
   print("  <link href=\"html/css/variant/standard.css?r=$version\" rel=\"stylesheet\" id=\"variantcss\">\n");
+  print("  <link href=\"/material/customcss/".($mobile==1 ? "mobile" : "desktop")."\" rel=\"stylesheet\" id=\"customcss\">\n");
+  print("  <script>window.MSK_REV=\"".$version."\";</script>\n");
+  print <<'MSKBOOT';
+  <script>
+  (function(){
+    var P='lms-material::';
+    function ls(k){ try { return localStorage.getItem(P+k); } catch(e){ return null; } }
+    var rev = window.MSK_REV || '';
+    function setHref(id, href){
+      var el=document.getElementById(id);
+      if (el && href && el.getAttribute('href')!==href) { el.setAttribute('href', href); }
+    }
+    var q = location.search||'';
+    function qv(name){
+      var m = q.match(new RegExp('[?&]'+name+'=([^&]*)'));
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+    var chosen = qv('layout') || ls('layout');
+    var w = window.innerWidth||0, h = window.innerHeight||1;
+    var ua = navigator.userAgent||'';
+    var isMob = (navigator.userAgentData && navigator.userAgentData.mobile) ||
+                /Android|webOS|iPhone|iPad|BlackBerry|Windows Phone|Opera Mini|IEMobile|Mobile/i.test(ua) ||
+                (typeof window.orientation!=='undefined' && 'ontouchstart' in window) ||
+                (navigator.maxTouchPoints>1 && /MacIntel/i.test(navigator.platform||ua));
+    var desktop;
+    if (chosen==='desktop') {
+      desktop = !(isMob && (w<=h || w<800));
+    } else if (chosen==='mobile') {
+      desktop = false;
+    } else {
+      desktop = w>=600 && h>=425;
+      if (isMob) { desktop = (w>h && w>=800); }
+    }
+    setHref('layoutcss', 'html/css/'+(desktop?'desktop':'mobile')+'.css?r='+rev);
+    var custom = document.getElementById('customcss');
+    if (custom && !qv('css')) {
+      var want = '/material/customcss/'+(desktop?'desktop':'mobile');
+      if (custom.getAttribute('href')!==want) custom.setAttribute('href', want);
+    }
+    var chosenTheme = (qv('defaultTheme') || ls('theme') || 'dark').replace('darker','dark');
+    var colored = chosenTheme.indexOf('-colored')>=0;
+    var theme = chosenTheme;
+    if (theme.indexOf('auto')===0) {
+      var light = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+      var plat = navigator.platform||'';
+      if (/iPhone|iPad|Android/i.test(ua)) theme = light ? 'mac/light/Mojave' : 'mac/dark/Mojave-Dark';
+      else if (plat.indexOf('Linux')>=0) theme = light ? 'linux/light/Adwaita' : 'linux/dark/Adwaita-Dark';
+      else if (plat.indexOf('Win')>=0) theme = light ? 'windows/light/Windows-10' : 'windows/dark/Windows-10-Dark';
+      else theme = light ? 'mac/light/Mojave' : 'mac/dark/Mojave-Dark';
+      if (colored) theme += '-colored';
+    }
+    var parts = theme.split('-');
+    var variant = (parts.length>1 && (parts[parts.length-1]==='colored' || parts[parts.length-1]==='standard')) ? parts.pop() : 'standard';
+    var themeName = parts.join('-');
+    if (themeName.indexOf('user:')===0) {
+      setHref('themecss', '/material/usertheme/'+themeName.substring(5)+'?r='+rev);
+    } else {
+      setHref('themecss', 'html/css/themes/'+themeName+'.css?r='+rev);
+    }
+    setHref('variantcss', 'html/css/variant/'+variant+'.css?r='+rev);
+    var isLight = /light/i.test(themeName) && !/\/dark\//i.test(themeName) && !/Dark/i.test(themeName);
+    document.documentElement.style.setProperty('--msk-boot-bg', isLight ? '#f5f5f5' : '#212121');
+    var color = ls('color') || 'blue';
+    if (color.indexOf('user:')===0) setHref('colorcss', '/material/usercolor/'+color.substring(5)+'?r='+rev);
+    else if (color && color!=='from-cover') setHref('colorcss', 'html/css/colors/'+color+'.css?r='+rev);
+    if (ls('roundCovers')==='false') setHref('covercss', 'html/css/covers/square.css?r='+rev);
+    setTimeout(function(){
+      var html=document.documentElement;
+      if (!html.classList.contains('msk-ready')) {
+        html.classList.add('msk-ready');
+        setTimeout(function(){ html.classList.remove('msk-booting'); }, 700);
+      }
+    }, 1600);
+  })();
+  </script>
+MSKBOOT
+
   print("  <title>${windowTitle}</title>\n");
   print("  <meta name=\"apple-mobile-web-app-title\" content=\"${windowTitle}\">\n");
   print("  <meta name=\"application-name\" content=\"${windowTitle}\">\n");
   print("  <meta name=\"theme-color\" content=\"#${themeColor}\">\n");
-  print("  <link href=\"/material/customcss/mobile\" rel=\"stylesheet\" id=\"customcss\">\n");
   print("  <link href=\"/material/material.webmanifest?themeColor=${themeColor}\" rel=\"manifest\">\n");
   print("  <link href=\"html/images/icon.png\" rel=\"icon shortcut\" type=\"image/png\" sizes=\"512x512\">\n");
   if ($mobile == 0) {
@@ -84,29 +184,32 @@
   }
   [% END %]
   <div id="app" v-cloak>
-   <v-app class="lms-app" :dark="darkUi" v-touch:start="touchStart" v-touch:end="touchEnd" v-bind:class="{'no-navbar':!desktopLayout && MBAR_REP_NAV==mobileBar, 'np-full':nowPlayingFull, 'tinted':tinted, 'notracks':queueEmpty, 'lms-lyrion'
+   <v-app class="lms-app" :dark="darkUi" v-touch:start="touchStart" v-touch:end="touchEnd" v-bind:class="{'no-navbar':!desktopLayout && MBAR_REP_NAV==mobileBar, 'mbar-thick':!desktopLayout && MBAR_THICK==mobileBar, 'mbar-thin':!desktopLayout && MBAR_THIN==mobileBar, 'np-full':nowPlayingFull, 'np-sheet-open':npSheetOpen, 'info-open':infoOpen, 'info-open-expanded':infoOpen && infoExpanded && desktopLayout, 'tinted':tinted, 'notracks':queueEmpty, 'page-browse':!desktopLayout && page=='browse', 'page-queue':!desktopLayout && page=='queue', 'lms-lyrion'
    :lyrionColors}">
     <div id="stringLenCheckElem" style="display:hidden; position:fixed; top:0px;"></div>
     <v-snackbar style="z-index:3000" v-model="snackbar.show" :multi-line="true" :timeout="snackbar.timeout ? snackbar.timeout : 2500" :color="snackbar.color" top>{{ snackbar.msg }}</v-snackbar>
     <lms-currentcover></lms-currentcover>
     <lms-server></lms-server>
     <lms-toolbar></lms-toolbar>
-    <lms-splitter :margin="(desktopLayout && showQueue) ? 20 : 0" class="hide-for-mini" v-bind:class="{'hide-splitter':nowPlayingExpanded}">
-     <div slot="left-pane"><lms-browse v-show="desktopLayout || page=='browse'"></lms-browse></div>
-     <div slot="right-pane"><lms-queue v-show="(desktopLayout && showQueue) || page=='queue'"></lms-queue></div>
+    <lms-splitter :margin="(desktopLayout && showQueuePane) ? 20 : 0" class="hide-for-mini">
+     <div slot="left-pane"><lms-browse v-show="desktopLayout || page=='browse' || page=='queue'"></lms-browse></div>
+     <div slot="right-pane"><lms-queue v-show="desktopLayout ? showQueuePane : (page=='browse' || page=='queue')"></lms-queue></div>
     </lms-splitter>
     <lms-now-playing></lms-now-playing>
     <lms-navdrawer></lms-navdrawer>
-    <lms-bottomnav v-if="!desktopLayout && MBAR_REP_NAV!=mobileBar"></lms-bottomnav>
+    <lms-bottomnav v-if="!desktopLayout"></lms-bottomnav>
     <lms-ui-settings v-if="dialogs.uisettings"></lms-ui-settings>
+    <lms-app-settings v-if="dialogs.appsettings"></lms-app-settings>
     <lms-player-settings v-if="dialogs.playersettings"></lms-player-settings>
     <lms-player-settings-plugin v-if="dialogs.playersettingsplugin"></lms-player-settings-plugin>
+    <lms-presets-editor v-if="dialogs.presetseditor"></lms-presets-editor>
     <lms-information-dialog v-if="dialogs.info"></lms-information-dialog>
     <lms-sync-dialog v-if="dialogs.sync"></lms-sync-dialog>
     <lms-groupplayers-dialog v-if="dialogs.group"></lms-groupplayers-dialog>
     <lms-volume v-if="dialogs.volume"></lms-volume>
     <lms-groupvolume v-if="dialogs.groupvolume"></lms-groupvolume>
     <lms-manage-players v-if="dialogs.manage"></lms-manage-players>
+    <lms-manage-plugins v-if="dialogs.manageplugins"></lms-manage-plugins>
     <lms-playerlist-dialog v-if="dialogs.playerlist"></lms-playerlist-dialog>
     <lms-randommix v-if="dialogs.rndmix"></lms-randommix>
     <lms-favorite v-if="dialogs.favorite"></lms-favorite>
@@ -162,6 +265,7 @@
   my $artistPics=$mai && Plugins::MaterialSkin::Plugin->readIntPref('plugin.musicartistinfo', 'browseArtistPictures', 1);
   my $srvEmblem=Plugins::MaterialSkin::Plugin->readIntPref('plugin.onlinelibrary', 'enableServiceEmblem', 1);
   my $users=Slim::Utils::PluginManager->isEnabled('Plugins::Users::Plugin') ? 1 : 0;
+  my $contextStats=Slim::Utils::PluginManager->isEnabled('Plugins::ContextStats::Plugin') ? 1 : 0;
 
   my $supportReleaseTypes=Plugins::MaterialSkin::Plugin->readIntPref('server', 'ignoreReleaseTypes', 0) ? "false" : "true";
   my $groupArtistAlbumsByReleaseType=Plugins::MaterialSkin::Plugin->readIntPref('server', 'groupArtistAlbumsByReleaseType', 1);
@@ -212,6 +316,7 @@
   print("const LMS_DARK_LOGIC=$haveDarkLogic;");
   print("const LMS_OS_NAME=\"$osName\";");
   print("const LMS_3RDPARTY_HOME_EXTRA=$homeExtra;");
+  print("const LMS_P_CSTATS=$contextStats;");
   print("</script>\n");
   [% END %]
   <!--JS start-->
@@ -225,10 +330,13 @@
   <script src="html/lib/vue-virtual-scroller.min.js?r=1.0.10mod"></script>
   <script src="html/lib/vue-lazyload.js?r=1.3.3"></script>
   <script src="html/lib/vue-touch-events.min.js?r=2.2.1pre1502"></script>
+  <script src="html/lib/swiper.min.js?r=5.4.5"></script>
+  <script src="html/lib/vue-awesome-swiper.js?r=4.1.1"></script>
   <script src="html/lib/mousetrap.min.js?r=a4098"></script>
   <script src="html/lib/fast-average-color.min.js?r=9.3.0"></script>
   <script src="html/lib/vibrant.min.js?r=1.0"></script>
   <script src="html/lib/mobile-drag-drop.min.js?r=2.3.0-rc.2"></script>
+  <script src="html/lib/Sortable.min.js?r=1.15.3"></script>
   [% PERL %]
   my $version=Plugins::MaterialSkin::Plugin->getPluginVersion();
   print("  <script src=\"html/lib/clickoutside.min.js?r=$version\"></script>\n");
@@ -239,8 +347,10 @@
   print("  <script src=\"html/js/customactions.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/emblems.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/track-sources.js?r=$version\"></script>\n");
+  print("  <script src=\"html/js/color-morph.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/currentcover.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/utils.js?r=$version\"></script>\n");
+  print("  <script src=\"html/js/msk-sortable.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/lmsoptions.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/windowcontrols.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/toolbar.js?r=$version\"></script>\n");
@@ -250,7 +360,15 @@
   print("  <script src=\"html/js/itemlinks.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/resizer.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/splitter.js?r=$version\"></script>\n");
+  print("  <script src=\"html/js/list-swipe.js?r=$version\"></script>\n");
+  print("  <script src=\"html/js/browse-zoom.js?r=$version\"></script>\n");
+  print("  <script src=\"html/js/context-stats-home.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/browse-page.js?r=$version\"></script>\n");
+  print("  <script src=\"html/js/library-fusion.js?r=$version\"></script>\n");
+  print("  <script src=\"html/js/playpause-icon.js?r=$version\"></script>\n");
+  print("  <script src=\"html/js/np-parallax.js?r=$version\"></script>\n");
+  print("  <script src=\"html/js/player-prefs-menu.js?r=$version\"></script>\n");
+  print("  <script src=\"html/js/presets-editor-dialog.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/nowplaying-page.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/progressbar.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/queue-page.js?r=$version\"></script>\n");
@@ -259,6 +377,7 @@
   print("  <script src=\"html/js/search-field.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/search-list.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/switch.js?r=$version\"></script>\n");
+  print("  <script src=\"html/js/manage-plugins-dialog.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/text-field.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/volume-control.js?r=$version\"></script>\n");
   print("  <script src=\"html/js/volume-overlay.js?r=$version\"></script>\n");
@@ -295,7 +414,7 @@
      }
    }
    function loadOtherFiles() {
-     addJsToDocument("html/js/", ["browse-resp", "browse-functions", "nowplaying-functions", "prompt-dialog", "choice-dialog", "standarditems", "sync-dialog", "groupplayers-dialog", "ui-settings", "player-settings", "player-settings-plugin", "volume", "information", "randommix-dialog", "rating-dialog", "manage-players", "playerlist-dialog", "favorite-dialog", "sleep-dialog", "info-dialog", "iframe-dialog", "icon-dialog", "dstm-dialog", "savequeue-dialog", "addtoplaylist-dialog", "file-dialog", "groupvolume-dialog", "advancedsearch-dialog", "npshare-dialog", "download", "gallery", "utils-deferred"],
+     addJsToDocument("html/js/", ["browse-resp", "browse-functions", "nowplaying-functions", "prompt-dialog", "choice-dialog", "standarditems", "sync-dialog", "groupplayers-dialog", "ui-settings", "app-settings", "player-settings", "player-settings-plugin", "volume", "information", "randommix-dialog", "rating-dialog", "manage-players", "playerlist-dialog", "favorite-dialog", "sleep-dialog", "info-dialog", "iframe-dialog", "icon-dialog", "dstm-dialog", "savequeue-dialog", "addtoplaylist-dialog", "file-dialog", "groupvolume-dialog", "advancedsearch-dialog", "npshare-dialog", "download", "gallery", "utils-deferred"],
      [% PERL %]
      my $version=Plugins::MaterialSkin::Plugin->getPluginVersion();
      print("                \"$version\", )");
