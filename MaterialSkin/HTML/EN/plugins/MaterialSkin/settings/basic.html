@@ -4,6 +4,17 @@
     <div><i>[% "PLUGIN_MATERIAL_SKIN_RELOAD_NOTE" | string %]</i></div>
     <hr class="main-sep"/><br/>
 
+    [% WRAPPER setting title="PLUGIN_MATERIAL_SKIN_CONTEXT_STATS_HOME" desc="PLUGIN_MATERIAL_SKIN_CONTEXT_STATS_HOME_DESC" %]
+    <input type="checkbox" name="pref_contextStatsHome" id="contextStatsHome" [% IF prefs.contextStatsHome %] checked [% END %] value="1"/>
+    [% END %]
+
+    [% WRAPPER setting title="PLUGIN_MATERIAL_SKIN_SESSION_ENHANCE" desc="PLUGIN_MATERIAL_SKIN_SESSION_ENHANCE_DESC" %]
+    [%# value=1 required so LMS stores a real "on"; Settings.pm coerces unchecked → 0 %]
+    <input type="checkbox" name="pref_sessionEnhance" id="sessionEnhance" value="1" [% IF prefs.sessionEnhance %]checked="checked"[% END %]/>
+    [% END %]
+
+    <hr style="opacity:0.4" class="sub-sep"/><br/>
+
     [% WRAPPER setting title="PLUGIN_MATERIAL_SKIN_PASSWORD" desc="PLUGIN_MATERIAL_SKIN_PASSWORD_DESC" %]
     <input type="text"  class="stdedit" name="pref_password" id="password" size="20" value="[% prefs.password %]"></input>
     [% END %]

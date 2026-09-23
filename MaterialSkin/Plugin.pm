@@ -30,6 +30,7 @@ use File::Spec::Functions qw(catdir catfile);
 use File::Path qw(make_path);
 use Scalar::Util qw(looks_like_number);
 use URI::Escape qw(uri_unescape);
+use Digest::MD5 qw(md5_hex);
 
 if (!Slim::Web::Pages::Search->can('parseAdvancedSearchParams')) {
     require Plugins::MaterialSkin::Search;
@@ -64,6 +65,21 @@ use constant RANDOM_MIX_EXT => '.mix';
 use constant NUM_HOME_ITEMS => 10;
 use constant PLAYLIST_IMAGE_TRACKS => 20;
 use constant MAX_PLAYER_AGE => 14 * 24 * 60 * 60;
+# Home context-stats cards only consider listening activity in this window.
+# LMS has no monthly play log — lastPlayed within this window is the filter.
+use constant CONTEXT_STATS_USAGE_WINDOW => 14 * 24 * 3600; # two weeks (primary)
+use constant CONTEXT_STATS_USAGE_WINDOW_FALLBACK => 45 * 24 * 3600; # quiet libraries
+use constant CONTEXT_STATS_PODCAST_MAX_AGE => CONTEXT_STATS_USAGE_WINDOW;
+# Multi-track albums need this many distinct tracks with playCount>0 to appear.
+# One playlist-spillover track must not qualify as "continue listening".
+use constant CONTEXT_STATS_ALBUM_MIN_PLAYED_TRACKS => 2;
+# Fully-finished albums still surface when this many tracks were touched recently
+# (habitual re-listens like a work album that always plays through).
+use constant CONTEXT_STATS_ALBUM_MIN_RECENT_COMPLETE => 2;
+# Playlists: min distinct member tracks with recent plays (same spillover idea).
+# Higher than 1 so a single co-listed hit from an album play cannot invent a
+# "playlist you listen to" card.
+use constant CONTEXT_STATS_PLAYLIST_MIN_RECENT => 3;
 
 my $LASTFM_API_KEY = '5a854b839b10f8d46e630e8287c2299b';
 my $MAX_CACHE_AGE = 90*24*60*60; # 90 days
@@ -86,6 +102,7 @@ my $DOWNLOAD_PARSER_RE = qr{material/download/.+}i;
 my $BACKDROP_URL_PARSER_RE = qr{material/backdrops/.+}i;
 my $GENRE_URL_PARSER_RE = qr{material/genres/.+}i;
 my $PLAYLIST_URL_PARSER_RE = qr{material/playlists/.+}i;
+my $CLIENT_IP_PARSER_RE = qr{material/client-ip}i;
 
 my $DEFAULT_COMPOSER_GENRES = string('PLUGIN_MATERIAL_SKIN_DEFAULT_COMPOSER_GENRES');
 my $DEFAULT_CONDUCTOR_GENRES = string('PLUGIN_MATERIAL_SKIN_DEFAULT_CONDUCTOR_GENRES');
@@ -234,7 +251,10 @@ sub initPlugin {
             npSwitchTimeout => 5*60,
             useDefaultForSettings => 0,
             useGrouping => 1,
-            setPlayerLibrary => 0
+            setPlayerLibrary => 0,
+            # Context Stats home cards + local session history (server-wide, not per-client UI)
+            contextStatsHome => 1,
+            sessionEnhance => 0
         });
     } else {
         $prefs->init({
@@ -266,7 +286,9 @@ sub initPlugin {
             npSwitchTimeout => 5*60,
             useDefaultForSettings => 0,
             useGrouping => 1,
-            setPlayerLibrary => 0
+            setPlayerLibrary => 0,
+            contextStatsHome => 1,
+            sessionEnhance => 0
         });
     }
     $prefs->setChange(sub { $prefs->set($_[0], 0) unless defined $_[1]; }, 'maiComposer');
@@ -287,6 +309,13 @@ sub initPlugin {
     $prefs->setChange(sub { $prefs->set($_[0], 0) unless defined $_[1]; }, 'useDefaultForSettings');
     $prefs->setChange(sub { $prefs->set($_[0], 0) unless defined $_[1]; }, 'useGrouping');
     $prefs->setChange(sub { $prefs->set($_[0], 0) unless $_[1]; }, 'setPlayerLibrary');
+    # Coerce undef (LMS unchecked checkbox POST) to 0 — do not treat valid 0 as "missing"
+    $prefs->setChange(sub {
+        my ($pref, $new) = @_;
+        if (!defined $new) {
+            $prefs->set($pref, 0);
+        }
+    }, 'contextStatsHome', 'sessionEnhance');
 
 
     if (main::WEBUI) {
@@ -326,6 +355,7 @@ sub initPlugin {
         Slim::Web::Pages->addRawFunction($BACKDROP_URL_PARSER_RE, \&_backdropHandler);
         Slim::Web::Pages->addRawFunction($GENRE_URL_PARSER_RE, \&_genreHandler);
         Slim::Web::Pages->addRawFunction($PLAYLIST_URL_PARSER_RE, \&_playlistHandler);
+        Slim::Web::Pages->addRawFunction($CLIENT_IP_PARSER_RE, \&_clientIpHandler);
         # make sure scanner does pre-cache artwork in the size the skin is using in browse modesl
         Slim::Control::Request::executeRequest(undef, [ 'artworkspec', 'add', '300x300_f', 'Material Skin (Grid)' ]);
         Slim::Control::Request::executeRequest(undef, [ 'artworkspec', 'add', '150x150_f', 'Material Skin (List)' ]);
@@ -344,10 +374,26 @@ sub initPlugin {
         Slim::Utils::Timers::setTimer(undef, Time::HiRes::time() + 15, \&_checkUpdates);
     }
     Slim::Control::Request::subscribe(\&_playQueueCleared, [['playlist'], ['clear']]);
+    Slim::Control::Request::subscribe(\&_materialPresetButton, [['button']]);
+    # Hardware Boom / Squeezebox keys call playPreset via IR executeButton,
+    # not the CLI `button` command — wrap that function so shuffle/repeat apply.
+    Slim::Control::Request::subscribe(\&_materialPlaylistAfterPreset, [['playlist'], ['play', 'loadtracks', 'playtracks', 'addtracks']]);
+    _materialWrapPlayPreset();
+    # Local Context Stats session log (opt-in via sessionEnhance pref)
+    eval {
+        require Plugins::MaterialSkin::SessionLog;
+        Plugins::MaterialSkin::SessionLog::init();
+        1;
+    } or do {
+        $log->error("SessionLog init failed: $@");
+    };
 }
 
 sub shutdownPlugin {
     Slim::Control::Request::unsubscribe(\&_playQueueCleared);
+    Slim::Control::Request::unsubscribe(\&_materialPresetButton);
+    Slim::Control::Request::unsubscribe(\&_materialPlaylistAfterPreset);
+    eval { Plugins::MaterialSkin::SessionLog::shutdown(); };
 }
 
 sub getPluginVersion {
@@ -432,6 +478,17 @@ sub initCLI {
 
     # Notification
     Slim::Control::Request::addDispatch(['material-skin', 'notification', '_type', '_msg'], [0, 0, 0, undef]);
+
+    # SqueezeDSP ships setvalCommand but forgets to register it — needed for NP-bar presets.
+    # Safe no-op if SqueezeDSP is not installed.
+    eval {
+        require Plugins::SqueezeDSP::UI_Functions;
+        Slim::Control::Request::addDispatch(
+            ['squeezedsp.setval'],
+            [1, 1, 1, \&Plugins::SqueezeDSP::UI_Functions::setvalCommand]
+        );
+        1;
+    };
 }
 
 sub initTranslationList() {
@@ -615,6 +672,103 @@ sub _playQueueCleared {
     }
 }
 
+my $_origPlayPreset;
+my %presetPlayMode; # id => { shuffle, repeat, until } — Client is an ARRAY accessor, not a hash
+
+sub _materialPlayer {
+    my $c = shift || return;
+    if (!blessed($c) || !$c->can('id')) {
+        $c = eval { Slim::Player::Client::getClient($c) } || return;
+    }
+    return unless blessed($c) && $c->can('id');
+    return $c;
+}
+
+sub _materialWrapPlayPreset {
+    return if $_origPlayPreset;
+    $_origPlayPreset = $Slim::Buttons::Common::functions{'playPreset'};
+    return unless $_origPlayPreset && ref $_origPlayPreset eq 'CODE';
+    Slim::Buttons::Common::setFunction('playPreset', \&_materialPlayPreset);
+}
+
+sub _materialPlayPreset {
+    my ($client, $button, $digit) = @_;
+    my $p = _materialPlayer($client);
+    if ($p && defined $digit && $digit =~ /^\d+$/) {
+        my $num = 0 + $digit;
+        $num = 10 if $num == 0;
+        _materialApplyPresetPlayMode($p, $num);
+    }
+    return $_origPlayPreset->($client, $button, $digit);
+}
+
+sub _materialPresetButton {
+    my $request = shift;
+    my $client  = _materialPlayer($request && $request->can('client') ? $request->client() : undef) || return;
+    my $btn = $request->getParam('_buttoncode') || $request->getRequest(1) || '';
+    return unless $btn =~ /^(?:preset_|playPreset_)(\d+)/i;
+    _materialApplyPresetPlayMode($client, $1);
+}
+
+sub _materialPlaylistAfterPreset {
+    my $request = shift;
+    my $client  = _materialPlayer($request && $request->can('client') ? $request->client() : undef) || return;
+    my $id = $client->id() || return;
+    my $st = $presetPlayMode{$id} || return;
+    return unless $st->{until} && Time::HiRes::time() < $st->{until};
+    Slim::Utils::Timers::killTimers($client, \&_materialApplyPresetPlayModeTick);
+    Slim::Utils::Timers::setTimer($client, Time::HiRes::time() + 0.2, \&_materialApplyPresetPlayModeTick, $client);
+    Slim::Utils::Timers::setTimer($client, Time::HiRes::time() + 1.5, \&_materialApplyPresetPlayModeTick, $client);
+    Slim::Utils::Timers::setTimer($client, Time::HiRes::time() + 4.0, \&_materialApplyPresetPlayModeTick, $client);
+}
+
+sub _materialApplyPresetPlayMode {
+    my ($client, $num) = @_;
+    $client = _materialPlayer($client) || return;
+    return unless $num;
+    $num = 0 + $num;
+    return if $num < 1 || $num > 10;
+    my $presets = eval { $serverprefs->client($client)->get('presets') } || [];
+    $presets = [] unless ref $presets eq 'ARRAY';
+    my $p = $presets->[$num - 1] || {};
+    $p = {} unless ref $p eq 'HASH';
+    my $shuffle = 0 + ($p->{shuffle} // 0);
+    my $repeat  = 0 + ($p->{repeat}  // 0);
+    $shuffle = 0 if $shuffle !~ /^[012]$/;
+    $repeat  = 0 if $repeat  !~ /^[012]$/;
+    Slim::Utils::Timers::killTimers($client, \&_materialApplyPresetPlayModeTick);
+    $presetPlayMode{$client->id()} = {
+        shuffle => $shuffle,
+        repeat  => $repeat,
+        until   => Time::HiRes::time() + 15,
+    };
+    # Pref first so playlist play/XMLBrowser loads already in this mode.
+    # Delayed execute reshuffles the new queue (don't shuffle the old one now).
+    eval { $serverprefs->client($client)->set('shuffle', $shuffle) };
+    eval { $serverprefs->client($client)->set('repeat', $repeat) };
+    Slim::Utils::Timers::setTimer($client, Time::HiRes::time() + 0.8, \&_materialApplyPresetPlayModeTick, $client);
+    Slim::Utils::Timers::setTimer($client, Time::HiRes::time() + 2.2, \&_materialApplyPresetPlayModeTick, $client);
+    Slim::Utils::Timers::setTimer($client, Time::HiRes::time() + 5.0, \&_materialApplyPresetPlayModeTick, $client);
+    Slim::Utils::Timers::setTimer($client, Time::HiRes::time() + 9.0, \&_materialApplyPresetPlayModeTick, $client);
+}
+
+sub _materialApplyPresetPlayModeTick {
+    my $client = _materialPlayer($_[0]) || _materialPlayer($_[1]) || return;
+    my $id = $client->id() || return;
+    my $st = $presetPlayMode{$id} || return;
+    my $shuffle = $st->{shuffle};
+    my $repeat  = $st->{repeat};
+    my $target = $client;
+    eval {
+        if ($client->controller && $client->controller->can('master')) {
+            my $master = $client->controller->master();
+            $target = $master if $master;
+        }
+    };
+    eval { Slim::Control::Request::executeRequest($target, ['playlist', 'shuffle', $shuffle]) } if defined $shuffle;
+    eval { Slim::Control::Request::executeRequest($target, ['playlist', 'repeat', $repeat]) } if defined $repeat;
+}
+
 sub _getUrlQueryParam {
     my $uri = shift;
     my $key = shift;
@@ -748,12 +902,15 @@ sub _cliCommand {
     my $cmd = $request->getParam('_cmd');
     #main::DEBUGLOG && $log->debug("command: ${cmd}");
     if ($request->paramUndefinedOrNotOneOf($cmd, ['prefs', 'info', 'transferqueue', 'delete-favorite', 'map', 'resolve', 'delete-podcast',
-                                                  'plugins', 'plugins-status', 'plugins-update', 'extras', 'delete-vlib', 'pass-isset',
+                                                  'plugins', 'plugins-manage', 'plugins-catalog', 'plugins-settings', 'plugins-settings-set',
+                                                  'plugin-install', 'plugin-enabled', 'plugins-status', 'plugins-update', 'extras', 'delete-vlib', 'pass-isset',
                                                   'pass-check', 'browsemodes', 'geturl', 'command', 'scantypes', 'server', 'themes',
                                                   'playersettings', 'activeplayers', 'urls', 'adv-search', 'adv-search-params', 'protocols',
                                                   'players-extra-info', 'sort-playlist', 'mixer', 'release-types', 'check-for-updates',
                                                   'similar', 'apps', 'rndmix', 'scan-progress', 'send-notif', 'home-extra',
-                                                  'home-extra-3rdparty', 'player-list']) ) {
+                                                  'home-extra-3rdparty', 'context-stats-home', 'player-list',
+                                                  'sessions-prefs', 'sessions-clear', 'sessions-context',
+                                                  'player-presets', 'player-presets-set']) ) {
         $request->setStatusBadParams();
         return;
     }
@@ -790,6 +947,9 @@ sub _cliCommand {
         $request->addResult('useDefaultForSettings', $prefs->get('useDefaultForSettings'));
         $request->addResult('useGrouping', $prefs->get('useGrouping'));
         $request->addResult('setPlayerLibrary', $prefs->get('setPlayerLibrary'));
+        # Context Stats — server-wide (configured in Material Skin plugin settings, not client UI)
+        $request->addResult('contextStatsHome', $prefs->get('contextStatsHome') ? 1 : 0);
+        $request->addResult('sessionEnhance', $prefs->get('sessionEnhance') ? 1 : 0);
         $request->setStatusDone();
         return;
     }
@@ -1179,6 +1339,190 @@ sub _cliCommand {
         }
     }
 
+    if ($cmd eq 'plugins-manage') {
+        my $all = Slim::Utils::PluginManager->allPlugins();
+        my $states = preferences('plugin.state');
+        my $cnt = 0;
+        for my $name (sort keys %{$all}) {
+            my $entry = $all->{$name};
+            if ($entry->{'enforce'}) {
+                next;
+            }
+            if ($entry->{needsMySB} && $entry->{needsMySB} !~ /false|no/i) {
+                next;
+            }
+            my $state = $states->get($name) || 'disabled';
+            my $enabled = ($state =~ /^enabled/ || $state eq 'needs-enable') ? 1 : 0;
+            my $pending = ($state =~ /needs/) ? 1 : 0;
+            $request->addResultLoop('plugins_loop', $cnt, 'name', $name);
+            $request->addResultLoop('plugins_loop', $cnt, 'title', string($entry->{'name'}));
+            $request->addResultLoop('plugins_loop', $cnt, 'descr', string($entry->{'description'}));
+            $request->addResultLoop('plugins_loop', $cnt, 'creator', $entry->{'creator'} || '');
+            $request->addResultLoop('plugins_loop', $cnt, 'homepage', $entry->{'homepageURL'} || '');
+            $request->addResultLoop('plugins_loop', $cnt, 'email', $entry->{'email'} || '');
+            $request->addResultLoop('plugins_loop', $cnt, 'version', $entry->{'version'} || '');
+            $request->addResultLoop('plugins_loop', $cnt, 'category', $entry->{'category'} || 'misc');
+            $request->addResultLoop('plugins_loop', $cnt, 'enabled', $enabled);
+            $request->addResultLoop('plugins_loop', $cnt, 'pending', $pending);
+            $request->addResultLoop('plugins_loop', $cnt, 'error', Slim::Utils::PluginManager->getErrorString($name));
+            $request->addResultLoop('plugins_loop', $cnt, 'installType', $entry->{'basedir'} !~ /InstalledPlugins/ ? 'manual' : 'install');
+            my $settingsUrl = '';
+            if ($enabled && $entry->{'optionsURL'}) {
+                $settingsUrl = $entry->{'optionsURL'};
+            }
+            $request->addResultLoop('plugins_loop', $cnt, 'settings', $settingsUrl);
+            my $icon = $entry->{'icon'} || '';
+            if (!$icon) {
+                $icon = 'html/images/' . ($entry->{'category'} || 'misc') . '.svg';
+            }
+            $request->addResultLoop('plugins_loop', $cnt, 'icon', $icon);
+            $cnt++;
+        }
+        $request->addResult('needs_restart', Slim::Utils::PluginManager->needsRestart ? 1 : 0);
+        $request->setStatusDone();
+        return;
+    }
+
+    if ($cmd eq 'plugins-settings') {
+        my $extPrefs = preferences('plugin.extensions');
+        my $repos = $extPrefs->get('repos') || [];
+        $request->addResult('auto', $extPrefs->get('auto') ? 1 : 0);
+        $request->addResult('useUnsupported', $extPrefs->get('useUnsupported') ? 1 : 0);
+        $request->addResult('repos', to_json($repos));
+        $request->setStatusDone();
+        return;
+    }
+
+    if ($cmd eq 'plugins-settings-set') {
+        my $extPrefs = preferences('plugin.extensions');
+        if (defined $request->getParam('auto')) {
+            Slim::Utils::ExtensionsManager->autoUpdate(int($request->getParam('auto')) ? 1 : 0);
+        }
+        if (defined $request->getParam('useUnsupported')) {
+            Slim::Utils::ExtensionsManager->useUnsupported(int($request->getParam('useUnsupported')) ? 1 : 0);
+        }
+        if (my $json = $request->getParam('repos')) {
+            my $repos = eval { from_json($json) };
+            if (ref $repos eq 'ARRAY') {
+                my @clean = grep { $_ && $_ =~ /\S/ } @$repos;
+                my $old = $extPrefs->get('repos') || [];
+                my %newSet = map { $_ => 1 } @clean;
+                my %oldSet = map { $_ => 1 } @$old;
+                for my $repo (@$old) {
+                    if (!$newSet{$repo}) {
+                        Slim::Utils::ExtensionsManager->removeRepo({ repo => $repo });
+                    }
+                }
+                for my $repo (@clean) {
+                    if (!$oldSet{$repo}) {
+                        Slim::Utils::ExtensionsManager->addRepo({ repo => $repo });
+                    }
+                }
+                $extPrefs->set('repos', \@clean);
+            }
+        }
+        $request->setStatusDone();
+        return;
+    }
+
+    if ($cmd eq 'plugins-catalog') {
+        $request->setStatusProcessing();
+        my ($current, $active, $inactive, $hide) = getCurrentPlugins();
+        my %sections = ();
+        my %repoTitles = ();
+        Slim::Utils::ExtensionsManager::getAllPluginRepos({
+            type    => 'plugin',
+            details => 1,
+            stepCb  => sub {
+                my ($res, $info, $weight) = @_;
+                return if !$info || !$res;
+                my $repo = $info->{'name'};
+                $repoTitles{$repo} = $info->{'title'} || $repo;
+                push @{$sections{$repo}}, @$res;
+            },
+            cb => sub {
+                my ($allPlugins, $err) = @_;
+                $log->error($err) if $err;
+                my $cnt = 0;
+                for my $repo (sort { ($repoTitles{$a} || $a) cmp ($repoTitles{$b} || $b) } keys %sections) {
+                    my @plugins = sort {
+                        lc(($a->{'title'} || $a->{'name'}) || '') cmp lc(($b->{'title'} || $b->{'name'}) || '')
+                    } @{$sections{$repo} || []};
+                    my %seen = ();
+                    my $pCnt = 0;
+                    for my $plugin (@plugins) {
+                        my $name = $plugin->{'name'};
+                        next if !$name || $hide->{$name} || $seen{$name}++;
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'name', $name);
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'title', $plugin->{'title'} || $name);
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'descr', $plugin->{'desc'} || '');
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'creator', $plugin->{'creator'} || '');
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'homepage', $plugin->{'link'} || '');
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'email', $plugin->{'email'} || '');
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'version', $plugin->{'version'} || '');
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'category', $plugin->{'category'} || 'misc');
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'url', $plugin->{'url'} || '');
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'sha', $plugin->{'sha'} || '');
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'installations',
+                            defined $plugin->{'installations'} ? int($plugin->{'installations'}) : 0);
+                        my $catIcon = $plugin->{'icon'} || '';
+                        if (!$catIcon) {
+                            $catIcon = 'html/images/' . ($plugin->{'category'} || 'misc') . '.svg';
+                        }
+                        # Relative plugin package icons for not-yet-installed catalog entries
+                        # often only exist after install; leave as-is for client / LMS static path.
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'icon', $catIcon);
+                        $request->addResultLoop("catalog_${cnt}_plugins_loop", $pCnt, 'unsupported',
+                            (($plugin->{'title'} && $plugin->{'title'} =~ /unsupported/i)
+                                || ($plugin->{'desc'} && $plugin->{'desc'} =~ /unsupported/i)
+                                || $repo =~ /unsupported\.xml/) ? 1 : 0);
+                        $pCnt++;
+                    }
+                    next if $pCnt < 1;
+                    $request->addResultLoop('catalog_sections_loop', $cnt, 'repo', $repo);
+                    $request->addResultLoop('catalog_sections_loop', $cnt, 'title', $repoTitles{$repo} || $repo);
+                    $cnt++;
+                }
+                $request->setStatusDone();
+            },
+        });
+        return;
+    }
+
+    if ($cmd eq 'plugin-install') {
+        my $name = $request->getParam('name');
+        my $url = $request->getParam('url');
+        my $sha = $request->getParam('sha');
+        if (!$name) {
+            $request->setStatusBadParams();
+            return;
+        }
+        Slim::Utils::ExtensionsManager->enablePlugin($name);
+        if ($url) {
+            Slim::Utils::PluginDownloader->install({ name => $name, url => $url, sha => $sha || '' });
+            $request->addResult('downloading', 1);
+        }
+        $request->setStatusDone();
+        return;
+    }
+
+    if ($cmd eq 'plugin-enabled') {
+        my $name = $request->getParam('name');
+        if (!$name) {
+            $request->setStatusBadParams();
+            return;
+        }
+        my $enabled = $request->getParam('enabled');
+        if (defined $enabled && int($enabled)) {
+            Slim::Utils::PluginManager->enablePlugin($name);
+        } else {
+            Slim::Utils::PluginManager->disablePlugin($name);
+        }
+        $request->addResult('needs_restart', Slim::Utils::PluginManager->needsRestart ? 1 : 0);
+        $request->setStatusDone();
+        return;
+    }
+
     if ($cmd eq 'extras') {
         my $cnt = 0;
         my $icons;
@@ -1194,7 +1538,10 @@ sub _cliCommand {
                 foreach my $key (keys %$menuItems) {
                     if ((not exists($EXCLUDE_EXTRAS{$key})) && (not exists($hideExtras{$key}))) {
                         $request->addResultLoop("extras_loop", $cnt, "id", $key);
-                        $request->addResultLoop("extras_loop", $cnt, "url", $menuItems->{$key});
+                        # Absolute LMS-root path so mobile Material (/material/) does not resolve under /material/plugins/…
+                        my $url = $menuItems->{$key} // '';
+                        $url = '/' . $url if length($url) && $url !~ m{^/} && $url !~ m{^https?://}i;
+                        $request->addResultLoop("extras_loop", $cnt, "url", $url);
                         $request->addResultLoop("extras_loop", $cnt, "title", string($key));
                         if ($icons and $icons->{$key}) {
                             $request->addResultLoop("extras_loop", $cnt, "icon", $icons->{$key});
@@ -1206,7 +1553,9 @@ sub _cliCommand {
                 foreach my $key (keys %$menuItems) {
                     if ((not exists($EXCLUDE_EXTRAS{$key})) && (not exists($hideExtras{$key}))) {
                         $request->addResultLoop("extras_loop", $cnt, "id", $key);
-                        $request->addResultLoop("extras_loop", $cnt, "url", $menuItems->{$key});
+                        my $url = $menuItems->{$key} // '';
+                        $url = '/' . $url if length($url) && $url !~ m{^/} && $url !~ m{^https?://}i;
+                        $request->addResultLoop("extras_loop", $cnt, "url", $url);
                         $request->addResultLoop("extras_loop", $cnt, "title", string($key));
                         if ($icons and $icons->{$key}) {
                             $request->addResultLoop("extras_loop", $cnt, "icon", $icons->{$key});
@@ -1216,6 +1565,8 @@ sub _cliCommand {
                 }
             }
         }
+        # Clients that use list paging expect a count
+        $request->addResult('count', $cnt);
         $request->setStatusDone();
         return;
     }
@@ -2051,6 +2402,246 @@ sub _cliCommand {
         return;
     }
 
+    if ($cmd eq 'context-stats-home') {
+        _handleContextStatsHomeCmd($request);
+        return;
+    }
+
+    if ($cmd eq 'sessions-prefs') {
+        eval { require Plugins::MaterialSkin::SessionLog; };
+        if ($@) {
+            $request->addResult('enhance', 0);
+            $request->addResult('error', 'SessionLog unavailable');
+            $request->setStatusDone();
+            return;
+        }
+        my $set = $request->getParam('enhance');
+        if (defined $set && $set ne '') {
+            Plugins::MaterialSkin::SessionLog::setEnhanceEnabled($set);
+        }
+        my $info = Plugins::MaterialSkin::SessionLog::storeInfo();
+        $request->addResult('enhance', $info->{enhance} ? 1 : 0);
+        $request->addResult('backend', $info->{backend} // 'none');
+        $request->addResult('path', $info->{path} // '');
+        $request->setStatusDone();
+        return;
+    }
+
+    if ($cmd eq 'sessions-clear') {
+        eval { require Plugins::MaterialSkin::SessionLog; };
+        my $ok = 0;
+        eval { $ok = Plugins::MaterialSkin::SessionLog::clearAll() ? 1 : 0; };
+        $request->addResult('cleared', $ok);
+        $request->setStatusDone();
+        return;
+    }
+
+    if ($cmd eq 'player-presets') {
+        # Native Material UI for LMS Presets Editor (Squeezebox hardware buttons).
+        # part:slots  — 10 slots only (fast; editor placeholders hydrate on this)
+        # part:options — picker sources (favorites / playlists / …)
+        # default / part:all — both (compat)
+        my $playerId = $request->getParam('player') || $request->getParam('player_id') || '';
+        my $client = $playerId ? Slim::Player::Client::getClient($playerId) : undef;
+        unless ($client) {
+            $request->addResult('error', 'no_player');
+            $request->setStatusDone();
+            return;
+        }
+        my $part = lc($request->getParam('part') // '');
+        $part = 'all' unless $part eq 'slots' || $part eq 'options';
+        my $want_slots   = $part ne 'options';
+        my $want_options = $part ne 'slots';
+
+        my $cprefs = preferences('server')->client($client);
+        my $presets = $cprefs->get('presets') || [];
+        for my $i (0 .. 9) {
+            $presets->[$i] ||= { URL => '', text => '', type => 'audio' };
+            $presets->[$i]{URL}  //= '';
+            $presets->[$i]{text} //= '';
+            $presets->[$i]{type} //= 'audio';
+        }
+
+        my $isWiim = 0;
+        eval {
+            if (Slim::Utils::PluginManager->isEnabled('Plugins::WiimIntegration::Plugin')) {
+                $isWiim = Plugins::WiimIntegration::Plugin::isWiimPlayer($client) ? 1 : 0;
+            }
+        };
+        $request->addResult('player_id', $client->id());
+        $request->addResult('player_name', $client->name() // '');
+        $request->addResult('is_wiim', $isWiim);
+
+        if ($want_slots) {
+            my $cnt = 0;
+            for my $i (0 .. 9) {
+                my $p = $presets->[$i];
+                my $url = $p->{URL} // $p->{url} // '';
+                my $text = $p->{text} // '';
+                $request->addResultLoop('presets_loop', $cnt, 'index', $i + 1);
+                $request->addResultLoop('presets_loop', $cnt, 'text', $text);
+                $request->addResultLoop('presets_loop', $cnt, 'url', $url);
+                $request->addResultLoop('presets_loop', $cnt, 'type', $p->{type} // 'audio');
+                $request->addResultLoop('presets_loop', $cnt, 'shuffle', 0 + ($p->{shuffle} // 0));
+                $request->addResultLoop('presets_loop', $cnt, 'repeat', 0 + ($p->{repeat} // 0));
+                if (length $url) {
+                    my $meta = _materialEnrichItemMeta($text, $url, $p);
+                    my $icon = _materialPickBestIcon(
+                        $meta->{icon},
+                        _materialResolveUrlIcon($url),
+                        _materialSpottyCover($url),
+                    );
+                    $request->addResultLoop('presets_loop', $cnt, 'icon', $icon) if $icon;
+                    if ($meta->{title} && $meta->{title} ne $text) {
+                        $request->addResultLoop('presets_loop', $cnt, 'text', $meta->{title});
+                    }
+                    $request->addResultLoop('presets_loop', $cnt, 'source', $meta->{source}) if $meta->{source};
+                    $request->addResultLoop('presets_loop', $cnt, 'type', $meta->{type}) if $meta->{type};
+                    $request->addResultLoop('presets_loop', $cnt, 'artist', $meta->{artist}) if $meta->{artist};
+                    $request->addResultLoop('presets_loop', $cnt, 'album', $meta->{album}) if $meta->{album};
+                }
+                $cnt++;
+            }
+            $request->addResult('count', $cnt);
+        }
+
+        if ($want_options) {
+            my $playlistOptions = [];
+            eval {
+                require Slim::Utils::Alarm;
+                $playlistOptions = Slim::Utils::Alarm->getPlaylists($client) || [];
+            };
+            my $iconByUrl = _materialPresetIconMap($client);
+            my $ocnt = 0;
+            my @optionsBuf;
+            foreach my $cat (@$playlistOptions) {
+                next unless $cat && ref $cat eq 'HASH';
+                my $items = $cat->{items} || [];
+                next unless @$items;
+                my $typeLabel = $cat->{type} // '';
+                my @catBuf;
+                foreach my $it (@$items) {
+                    next unless $it;
+                    my $url = $it->{url} // $it->{URL} // '';
+                    my $rawTitle = $it->{title} // $it->{name} // $it->{text} // '';
+                    next unless length $rawTitle;
+                    my $meta = _materialEnrichItemMeta($rawTitle, $url, $it);
+                    my $icon = _materialPickBestIcon(
+                        $it->{icon}, $it->{image}, $it->{cover}, $it->{artwork_url},
+                        $meta->{icon},
+                        (length $url ? $iconByUrl->{$url} : undef),
+                        (length $url ? _materialResolveUrlIcon($url) : undef),
+                        (length $url ? _materialSpottyCover($url) : undef),
+                    );
+                    my $title = $meta->{title} // $rawTitle;
+                    push @catBuf, {
+                        category => $typeLabel,
+                        title    => $title,
+                        url      => $url // '',
+                        icon     => $icon,
+                        source   => $meta->{source} || '',
+                        type     => $meta->{type} || '',
+                        artist   => $meta->{artist} || '',
+                        album    => $meta->{album} || '',
+                        _sort    => lc($title),
+                    };
+                }
+                @catBuf = sort { $a->{_sort} cmp $b->{_sort} } @catBuf;
+                push @optionsBuf, @catBuf;
+            }
+            foreach my $o (@optionsBuf) {
+                $request->addResultLoop('options_loop', $ocnt, 'category', $o->{category});
+                $request->addResultLoop('options_loop', $ocnt, 'title', $o->{title});
+                $request->addResultLoop('options_loop', $ocnt, 'url', $o->{url});
+                if ($o->{icon}) {
+                    $request->addResultLoop('options_loop', $ocnt, 'icon', $o->{icon});
+                }
+                if ($o->{source}) {
+                    $request->addResultLoop('options_loop', $ocnt, 'source', $o->{source});
+                }
+                if ($o->{type}) {
+                    $request->addResultLoop('options_loop', $ocnt, 'type', $o->{type});
+                }
+                if ($o->{artist}) {
+                    $request->addResultLoop('options_loop', $ocnt, 'artist', $o->{artist});
+                }
+                if ($o->{album}) {
+                    $request->addResultLoop('options_loop', $ocnt, 'album', $o->{album});
+                }
+                $ocnt++;
+            }
+            $request->addResult('options', $ocnt);
+        }
+
+        $request->setStatusDone();
+        return;
+    }
+
+    if ($cmd eq 'player-presets-set') {
+        my $playerId = $request->getParam('player') || $request->getParam('player_id') || '';
+        my $client = $playerId ? Slim::Player::Client::getClient($playerId) : undef;
+        unless ($client) {
+            $request->addResult('ok', 0);
+            $request->addResult('error', 'no_player');
+            $request->setStatusDone();
+            return;
+        }
+        my $raw = $request->getParam('presets') // $request->getParam('json') // '';
+        my $list;
+        eval {
+            require JSON::XS::VersionOneAndTwo;
+            $list = decode_json($raw) if length $raw;
+        };
+        if ($@ || ref $list ne 'ARRAY') {
+            $request->addResult('ok', 0);
+            $request->addResult('error', 'bad_json');
+            $request->setStatusDone();
+            return;
+        }
+        my $out = [];
+        for my $i (0 .. 9) {
+            my $p = $list->[$i] || {};
+            my $url = $p->{url} // $p->{URL} // '';
+            my $text = $p->{text} // $p->{title} // '';
+            $text = '' if !length $url;
+            my $shuffle = $p->{shuffle} // 0;
+            my $repeat  = $p->{repeat} // 0;
+            $shuffle = 0 if $shuffle !~ /^[012]$/;
+            $repeat  = 0 if $repeat  !~ /^[012]$/;
+            $out->[$i] = {
+                URL     => $url,
+                text    => $text,
+                type    => $p->{type} // 'audio',
+                shuffle => 0 + $shuffle,
+                repeat  => 0 + $repeat,
+            };
+        }
+        preferences('server')->client($client)->set('presets', $out);
+        $request->addResult('ok', 1);
+        $request->setStatusDone();
+        return;
+    }
+
+    if ($cmd eq 'sessions-context') {
+        # Controller context hint (playlist / radio / podcast / random) for a player
+        eval { require Plugins::MaterialSkin::SessionLog; };
+        if ($@ || !Plugins::MaterialSkin::SessionLog::isEnhanceEnabled()) {
+            $request->addResult('ok', 0);
+            $request->setStatusDone();
+            return;
+        }
+        my $playerId = $request->getParam('player') || $request->getParam('player_id') || '';
+        my $type = $request->getParam('type') || '';
+        my $id = $request->getParam('id') || '';
+        my $title = $request->getParam('title') || '';
+        my $url = $request->getParam('url') || '';
+        my $image = $request->getParam('image') || '';
+        my $ok = Plugins::MaterialSkin::SessionLog::setContext($playerId, $type, $id, $title, $url, $image);
+        $request->addResult('ok', $ok ? 1 : 0);
+        $request->setStatusDone();
+        return;
+    }
+
     if ($cmd eq 'player-list') {
         main::DEBUGLOG && $log->debug("Get player list");
         my $now = time();
@@ -2299,6 +2890,963 @@ sub _handleHomeExtraCmd {
     $request->setStatusDone();
 }
 
+sub _contextStatsHomeEnabled {
+    return Slim::Utils::PluginManager->isEnabled('Plugins::ContextStats::Plugin') ? 1 : 0;
+}
+
+# Prefer Alternative Play Count (more accurate "true listen" stats) when available.
+# Table: alternativeplaycount (playCount, lastPlayed, skipCount, dynPSval, urlmd5, url)
+# Fall back to LMS tracks_persistent when APC is not installed / table missing.
+sub _contextStatsHomeApcEnabled {
+    return Slim::Utils::PluginManager->isEnabled('Plugins::AlternativePlayCount::Plugin') ? 1 : 0;
+}
+
+# APC lives in the attached persist DB — not listed in main.sqlite_master.
+# Probe with a real SELECT (empty table still succeeds; missing table throws).
+sub _contextStatsHomeApcTableUsable {
+    return 0 unless _contextStatsHomeApcEnabled();
+    my $ok = 0;
+    eval {
+        my $dbh = Slim::Schema->dbh;
+        $dbh->do("SELECT url FROM alternativeplaycount LIMIT 1");
+        $ok = 1;
+    };
+    return $ok ? 1 : 0;
+}
+
+sub _contextStatsHomeStatsTable {
+    return _contextStatsHomeApcTableUsable() ? 'alternativeplaycount' : 'tracks_persistent';
+}
+
+sub _contextStatsHomeUsingApc {
+    return _contextStatsHomeStatsTable() eq 'alternativeplaycount' ? 1 : 0;
+}
+
+sub _contextStatsHomeAddCard {
+    my ($request, $cnt, $card) = @_;
+    foreach my $key (keys %{$card}) {
+        $request->addResultLoop('cards_loop', $cnt, $key, $card->{$key});
+    }
+}
+
+# Extract Spotify playlist id from card fields (session URL or Spotty library URL).
+sub _contextStatsHomeSpotifyPlaylistId {
+    my ($card) = @_;
+    return '' unless $card && ref $card eq 'HASH';
+    for my $s (
+        $card->{play_param2},
+        $card->{play_param3},
+        $card->{id},
+        $card->{title},
+        $card->{image},
+    ) {
+        next unless defined $s && length $s;
+        return lc($1) if $s =~ m{spotify:playlist:([A-Za-z0-9]+)}i;
+        return lc($1) if $s =~ m{spotify://playlist[:/]([A-Za-z0-9]+)}i;
+        return lc($1) if $s =~ m{open\.spotify\.com/playlist/([A-Za-z0-9]+)}i;
+    }
+    return '';
+}
+
+# Normalised title for playlist dedupe (strip Spotify prefix / punctuation).
+sub _contextStatsHomePlaylistTitleKey {
+    my ($title) = @_;
+    $title = '' unless defined $title;
+    $title = lc($title);
+    $title =~ s/^\s*spotify\s*:\s*//i;
+    $title =~ s/[^a-z0-9]+//g;
+    return $title;
+}
+
+sub _contextStatsHomePlaylistImage {
+    my ($playlistName, $cover) = @_;
+    # Spotty stores playlist artwork as a remote URL on the playlist track row.
+    if (defined $cover && $cover ne '') {
+        if ($cover =~ m{^https?://}i) {
+            return '/imageproxy/' . URI::Escape::uri_escape_utf8($cover) . '/image_150x150_f';
+        }
+        return $cover if $cover =~ m{^/};
+    }
+    return '/material/playlists/' . URI::Escape::uri_escape_utf8($playlistName // '') . '/image_150x150_f';
+}
+
+sub _contextStatsHomePlaylistDisplayTitle {
+    my ($title) = @_;
+    $title = '' unless defined $title;
+    # Spotty importer prefixes titles with "Spotify : ".
+    $title =~ s/^\s*Spotify\s*:\s*//i;
+    # Normalise fancy dashes that sometimes mojibake in older clients.
+    $title =~ s/\x{2013}|\x{2014}|–|—/-/g;
+    $title =~ s/^\s+|\s+$//g;
+    return $title;
+}
+
+sub _contextStatsHomeAlbumImage {
+    my ($coverid) = @_;
+    $coverid = 0 if !defined $coverid || $coverid eq '';
+    return "/music/${coverid}/cover_150x150_f";
+}
+
+sub _contextStatsHomeResumeTrack {
+    my ($dbh, $albumId) = @_;
+    # Match album ranking: tracks_persistent only (stable, full LMS history).
+    my $sql = $dbh->prepare(qq{
+        SELECT t.url FROM tracks t
+        LEFT JOIN tracks_persistent tp ON tp.urlmd5 = t.urlmd5
+        WHERE t.album = ? AND COALESCE(tp.playCount, 0) = 0
+        ORDER BY t.disc, t.tracknum
+        LIMIT 1
+    });
+    $sql->execute($albumId);
+    if (my $result = $sql->fetchall_arrayref({})) {
+        return $result->[0]->{url} if ref $result && scalar @$result;
+    }
+    return undef;
+}
+
+sub _contextStatsHomePlaylistCard {
+    my ($row) = @_;
+    my $rawTitle = $row->{title} // '';
+    my $url = $row->{url} // '';
+    my $title = _contextStatsHomePlaylistDisplayTitle($rawTitle);
+    my $isSpotify = ($url =~ m{^spotify:playlist:}i) ? 1 : 0;
+    # Spotty sometimes imports "Spotify : " with an empty name — keep a usable label.
+    if (!length $title) {
+        if ($isSpotify && $url =~ m{spotify:playlist:([A-Za-z0-9]+)}i) {
+            $title = 'Spotify playlist';
+        }
+        else {
+            return;
+        }
+    }
+
+    my $plays = int($row->{playcount} || 0);
+    # playcount = distinct member tracks with recent plays (see CONTEXT_STATS_USAGE_WINDOW).
+    # Keep subtitle ASCII-safe for JSONRPC clients with mixed encodings.
+    my $subtitle = $isSpotify
+        ? ("Spotify - $plays recent")
+        : ("$plays recent");
+
+    return {
+        id       => 'cstats.playlist.' . $row->{id},
+        type     => 'playlist',
+        title    => $title,
+        subtitle => $subtitle,
+        image    => _contextStatsHomePlaylistImage($rawTitle, $row->{cover}),
+        progress => 0,
+        play_cmd => 'playlistcontrol',
+        play_param1 => 'cmd:load',
+        play_param2 => 'playlist_id:' . $row->{id},
+        is_spotify  => $isSpotify,
+        playcount   => $plays,
+        last_played => int($row->{last_played} || 0),
+    };
+}
+
+# Rank playlists by how many distinct member tracks were played recently.
+# Important details:
+#  - Exclude Bookmark/. hidden playlists in SQL (they used to fill LIMIT and
+#    starve real/Spotify playlists after post-filtering).
+#  - Always include tracks_persistent for ranking; APC under-reports Spotify
+#    listens (often 0–1 recent spotify tracks) so APC-only ranking looked empty.
+#  - Spotty may store playlist_track as spotify://track:… vs spotify:track:…
+sub _contextStatsHomePlaylistRows {
+    my ($dbh, $limit, $scope) = @_;
+    $scope = 'all' unless defined $scope;
+    $limit = int($limit || 0);
+    $limit = 8 if $limit < 1;
+    $limit = 24 if $limit > 24;
+
+    my $useApc = _contextStatsHomeApcTableUsable() ? 1 : 0;
+    my $window = CONTEXT_STATS_USAGE_WINDOW;
+    my @ranked = ();
+
+    # Retry with a wider window if the primary window has no usable playlists.
+    for my $attempt (0, 1) {
+        my $cutoff = int(time() - $window);
+        my $rankSql;
+        if ($useApc) {
+            # Hybrid: match on LMS persistent counts OR APC true-listens.
+            # Alias must NOT be "playcount" — that collides with tp/apc.playCount
+            # under SQLite's case-insensitive HAVING resolution (ambiguous column).
+            $rankSql = qq{
+                SELECT pt.playlist,
+                       COUNT(DISTINCT pt.track) AS member_plays,
+                       MAX(CASE
+                            WHEN COALESCE(tp.lastPlayed, 0) >= COALESCE(apc.lastPlayed, 0)
+                                THEN COALESCE(tp.lastPlayed, 0)
+                            ELSE COALESCE(apc.lastPlayed, 0)
+                       END) AS last_played
+                FROM playlist_track pt
+                JOIN tracks pl ON pl.id = pt.playlist
+                    AND pl.content_type = 'ssp'
+                    AND COALESCE(pl.title, '') NOT LIKE 'Bookmark%'
+                    AND COALESCE(pl.title, '') NOT LIKE '.%'
+                LEFT JOIN tracks_persistent tp ON (
+                       tp.url = pt.track
+                    OR tp.url = REPLACE(pt.track, 'spotify://', 'spotify:')
+                )
+                LEFT JOIN alternativeplaycount apc ON (
+                       apc.url = pt.track
+                    OR apc.url = REPLACE(pt.track, 'spotify://', 'spotify:')
+                )
+                WHERE COALESCE(tp.lastPlayed, 0) >= $cutoff
+                   OR COALESCE(apc.lastPlayed, 0) >= $cutoff
+                GROUP BY pt.playlist
+                HAVING COUNT(DISTINCT pt.track) >= ${\CONTEXT_STATS_PLAYLIST_MIN_RECENT}
+                -- Recency first: "what you listened to lately", not "largest playlist
+                -- that happens to share tracks with albums you played".
+                ORDER BY last_played DESC, member_plays DESC
+                LIMIT 80
+            };
+        }
+        else {
+            $rankSql = qq{
+                SELECT pt.playlist,
+                       COUNT(DISTINCT pt.track) AS member_plays,
+                       MAX(tp.lastPlayed) AS last_played
+                FROM playlist_track pt
+                JOIN tracks pl ON pl.id = pt.playlist
+                    AND pl.content_type = 'ssp'
+                    AND COALESCE(pl.title, '') NOT LIKE 'Bookmark%'
+                    AND COALESCE(pl.title, '') NOT LIKE '.%'
+                JOIN tracks_persistent tp ON (
+                       tp.url = pt.track
+                    OR tp.url = REPLACE(pt.track, 'spotify://', 'spotify:')
+                )
+                WHERE COALESCE(tp.lastPlayed, 0) >= $cutoff
+                GROUP BY pt.playlist
+                HAVING COUNT(DISTINCT pt.track) >= ${\CONTEXT_STATS_PLAYLIST_MIN_RECENT}
+                ORDER BY last_played DESC, member_plays DESC
+                LIMIT 80
+            };
+        }
+
+        @ranked = ();
+        eval {
+            my $sth = $dbh->prepare($rankSql);
+            $sth->execute();
+            while (my $r = $sth->fetchrow_arrayref) {
+                push @ranked, {
+                    id          => $r->[0],
+                    playcount   => int($r->[1] || 0),
+                    last_played => int($r->[2] || 0),
+                };
+            }
+            $sth->finish;
+        };
+        if ($@) {
+            $log->error("context-stats-home playlist rank SQL: $@");
+            # Fall back once without the APC side of the hybrid join.
+            if ($useApc) {
+                $useApc = 0;
+                redo;
+            }
+            return [];
+        }
+        last if @ranked;
+        # Second pass: wider window when the primary window is quiet.
+        $window = CONTEXT_STATS_USAGE_WINDOW_FALLBACK if $attempt == 0;
+    }
+    return [] unless @ranked;
+
+    # Step 2: load ssp playlist metadata and apply scope filters.
+    my $metaSth;
+    eval {
+        $metaSth = $dbh->prepare(q{
+            SELECT id, title, url, cover, content_type
+            FROM tracks WHERE id = ?
+        });
+    };
+    if ($@ || !$metaSth) {
+        $log->error("context-stats-home playlist meta prepare: $@");
+        return [];
+    }
+
+    my @rows = ();
+    foreach my $rank (@ranked) {
+        last if scalar @rows >= $limit;
+        my $id = $rank->{id};
+        next unless $id;
+
+        my ($pid, $title, $url, $cover, $ctype);
+        eval {
+            $metaSth->execute($id);
+            ($pid, $title, $url, $cover, $ctype) = $metaSth->fetchrow_array;
+        };
+        next if $@ || !defined $pid;
+        next unless defined $ctype && $ctype eq 'ssp';
+        # Allow empty display title for Spotify (card builder supplies a fallback).
+        next unless defined $title;
+        next if $title =~ /^\./;
+        next if $title =~ /^Bookmark/i;
+
+        if ($scope eq 'spotify') {
+            next unless defined $url && $url =~ m{^spotify:playlist:}i;
+        }
+        elsif ($scope eq 'local') {
+            next if defined $url && $url =~ m{^spotify:playlist:}i;
+        }
+
+        push @rows, {
+            id          => $pid,
+            title       => $title,
+            url         => $url // '',
+            cover       => $cover,
+            playcount   => $rank->{playcount},
+            last_played => $rank->{last_played},
+        };
+    }
+    eval { $metaSth->finish; };
+
+    return \@rows;
+}
+
+sub _contextStatsHomeTopPlaylists {
+    my ($dbh, $limit) = @_;
+    $limit = int($limit || 0);
+    $limit = 4 if $limit < 1;
+
+    my $spottyEnabled = Slim::Utils::PluginManager->isEnabled('Plugins::Spotty::Plugin') ? 1 : 0;
+
+    # Fetch extras so Spotty/local balancing still has candidates after filters.
+    my $fetchN = $limit + 12;
+    my @all = ();
+    eval {
+        foreach my $row (@{ _contextStatsHomePlaylistRows($dbh, $fetchN, 'all') }) {
+            my $card = _contextStatsHomePlaylistCard($row);
+            push @all, $card if $card;
+        }
+    };
+    if ($@) {
+        $log->error("context-stats-home playlists: $@");
+        return ();
+    }
+
+    # If the mixed pass returned nothing, try Spotify-only then local-only.
+    if (!@all && $spottyEnabled) {
+        eval {
+            foreach my $row (@{ _contextStatsHomePlaylistRows($dbh, $fetchN, 'spotify') }) {
+                my $card = _contextStatsHomePlaylistCard($row);
+                push @all, $card if $card;
+            }
+        };
+    }
+    if (!@all) {
+        eval {
+            foreach my $row (@{ _contextStatsHomePlaylistRows($dbh, $fetchN, 'local') }) {
+                my $card = _contextStatsHomePlaylistCard($row);
+                push @all, $card if $card;
+            }
+        };
+    }
+
+    # Keep reality order: most recently touched playlists first (not forced Spotify half).
+    @all = sort {
+        ($b->{last_played} || 0) <=> ($a->{last_played} || 0)
+            || ($b->{playcount} || 0) <=> ($a->{playcount} || 0)
+    } @all;
+
+    my @cards = splice(@all, 0, $limit);
+
+    foreach my $card (@cards) {
+        delete $card->{is_spotify};
+        delete $card->{playcount};
+        # last_played kept for final recency merge
+    }
+    return @cards;
+}
+
+sub _contextStatsHomeContinueAlbums {
+    my ($dbh, $limit) = @_;
+    my @cards = ();
+    my $minPlayed = CONTEXT_STATS_ALBUM_MIN_PLAYED_TRACKS;
+    my $minRecentComplete = CONTEXT_STATS_ALBUM_MIN_RECENT_COMPLETE;
+
+    # Always rank albums on tracks_persistent (LMS play history). APC alone
+    # under-reports "true listens" and made most real albums disappear.
+    # Try primary window, then a longer fallback.
+    for my $window (CONTEXT_STATS_USAGE_WINDOW, CONTEXT_STATS_USAGE_WINDOW_FALLBACK) {
+        my $cutoff = time() - $window;
+        my $softRecent = time() - (3 * 24 * 3600);
+        my $sql = $dbh->prepare(qq{
+            SELECT a.id, a.title,
+                   COALESCE(a.artwork, (
+                       SELECT t2.coverid FROM tracks t2
+                       WHERE t2.album = a.id AND t2.coverid IS NOT NULL AND t2.coverid != ''
+                       LIMIT 1
+                   )) AS coverid,
+                   c.name AS artist,
+                   COUNT(DISTINCT t.id) AS trackcount,
+                   COUNT(DISTINCT CASE WHEN COALESCE(tp.playCount, 0) > 0 THEN t.id END) AS playedcount,
+                   COUNT(DISTINCT CASE WHEN COALESCE(tp.lastPlayed, 0) >= ? THEN t.id END) AS recentcount,
+                   MAX(COALESCE(tp.lastPlayed, 0)) AS album_lastplayed,
+                   SUM(COALESCE(tp.playCount, 0)) AS totalplays
+            FROM albums a
+            JOIN contributors c ON c.id = a.contributor
+            JOIN tracks t ON t.album = a.id AND COALESCE(t.audio, 1) = 1
+            LEFT JOIN tracks_persistent tp ON tp.urlmd5 = t.urlmd5
+            GROUP BY a.id
+            HAVING album_lastplayed >= ?
+               AND recentcount >= 1
+               AND (
+                    (trackcount >= 2
+                        AND playedcount >= ?
+                        AND playedcount < trackcount)
+                    OR (trackcount = 1 AND recentcount >= 1)
+                    OR (playedcount >= trackcount
+                        AND trackcount >= 2
+                        AND (recentcount >= ?
+                             OR recentcount * 2 >= trackcount))
+                    OR (trackcount >= 2
+                        AND recentcount >= 1
+                        AND album_lastplayed >= ?)
+               )
+            ORDER BY album_lastplayed DESC, recentcount DESC
+            LIMIT ?
+        });
+        eval {
+            $sql->execute($cutoff, $cutoff, $minPlayed, $minRecentComplete, $softRecent, $limit);
+        };
+        if ($@) {
+            $log->error("context-stats-home albums SQL: $@");
+            next;
+        }
+        my $rows = $sql->fetchall_arrayref({});
+        next unless $rows && @{$rows};
+
+        foreach my $row (@{$rows}) {
+            my $trackcount = $row->{trackcount} || 1;
+            my $playedcount = $row->{playedcount} || 0;
+            my $recentcount = int($row->{recentcount} || 0);
+            my $totalplays = int($row->{totalplays} || 0);
+            my $complete = $playedcount >= $trackcount;
+            my $progress = $complete ? 1 : ($playedcount / $trackcount);
+            my $isSpillover = (!$complete && $playedcount < $minPlayed && $trackcount >= 2);
+            if ($isSpillover) {
+                $progress = 0;
+            }
+            my $resumeUrl;
+            if (!($complete || $isSpillover)) {
+                eval {
+                    $resumeUrl = _contextStatsHomeResumeTrack($dbh, $row->{id});
+                };
+                if ($@) {
+                    $log->error("context-stats-home resume track: $@");
+                    $resumeUrl = undef;
+                }
+            }
+            my $artist = $row->{artist} || '';
+            my $subtitle = $artist;
+            if ($complete) {
+                if ($totalplays > 0) {
+                    $subtitle = length($artist)
+                        ? "$artist - $totalplays plays"
+                        : "$totalplays plays";
+                }
+                else {
+                    $subtitle = length($artist)
+                        ? "$artist - recent"
+                        : "recent";
+                }
+            }
+            elsif ($playedcount > 0 && !$isSpillover) {
+                $subtitle = length($artist)
+                    ? "$artist - $playedcount/$trackcount"
+                    : "$playedcount/$trackcount";
+            }
+            my %card = (
+                id          => 'cstats.album.' . $row->{id},
+                type        => 'album',
+                title       => $row->{title} // '',
+                subtitle    => $subtitle // '',
+                image       => _contextStatsHomeAlbumImage($row->{coverid}),
+                progress    => $progress,
+                last_played => int($row->{album_lastplayed} || 0),
+            );
+            # Always use album load — more reliable than resume URL schemes.
+            # (Resume-from-first-unplayed can be re-enabled later if desired.)
+            $card{play_cmd}    = 'playlistcontrol';
+            $card{play_param1} = 'cmd:load';
+            $card{play_param2} = 'album_id:' . $row->{id};
+            push @cards, \%card;
+        }
+        last if @cards;
+    }
+    main::INFOLOG && $log->info("context-stats-home albums: " . scalar(@cards) . " cards");
+    return @cards;
+}
+
+sub _contextStatsHomePodcastLastActivity {
+    my ($url) = @_;
+    return 0 unless $url;
+
+    my $bare = $url;
+    $bare =~ s{^podcast://}{}i;
+    my $wrapped = ($url =~ m{^podcast://}i) ? $url : ('podcast://' . $url);
+
+    my $last = 0;
+    my $stats = _contextStatsHomeStatsTable();
+    eval {
+        my $dbh = Slim::Schema->dbh;
+        my $sth = $dbh->prepare_cached(qq{
+            SELECT MAX(COALESCE(tp.lastPlayed, 0)) AS lastplayed
+            FROM $stats tp
+            WHERE tp.url IN (?, ?, ?)
+        });
+        $sth->execute($url, $bare, $wrapped);
+        if (my $row = $sth->fetchrow_hashref) {
+            $last = int($row->{lastplayed} || 0);
+        }
+    };
+    return $last;
+}
+
+sub _contextStatsHomeContinuePodcasts {
+    my ($limit) = @_;
+    my @cards = ();
+    return @cards unless $limit && $limit > 0;
+    return @cards unless Slim::Utils::PluginManager->isEnabled('Slim::Plugin::Podcast::Plugin');
+
+    my $podPrefs = preferences('plugin.podcast');
+    my $recent = $podPrefs->get('recent') || [];
+    my $cache = Slim::Utils::Cache->new();
+    my $cutoff = time() - CONTEXT_STATS_PODCAST_MAX_AGE;
+    # reverse() is most-recent-first (LRU). Cap how deep we walk so stale
+    # entries without lastPlayed cannot crowd out fresher playlists.
+    my $maxScan = 30;
+    my $scanned = 0;
+    my %seen = ();
+
+    # 1) Unfinished episodes (resume) — preferred
+    foreach my $item (reverse @{$recent}) {
+        last if scalar @cards >= $limit;
+        last if ++$scanned > $maxScan;
+        next unless $item->{url} && $item->{title};
+        next if $seen{$item->{url}}++;
+        my $from = $cache->get('podcast-' . $item->{url});
+        my $duration = $item->{duration} || 0;
+        my $unfinished = $from && $duration > 0 && $from < $duration - 15;
+
+        # Window filter when play history exists
+        my $last = _contextStatsHomePodcastLastActivity($item->{url});
+        next if $last > 0 && $last < $cutoff;
+        # Finished episodes need recent play history; unfinished keep even without it
+        # if they sit near the head of the podcast recent list.
+        if (!$unfinished) {
+            next unless $last >= $cutoff;
+        }
+
+        my $image = $item->{cover};
+        if ($image && ($image !~ m{^/} && $image !~ m{^https?://})) {
+            $image = '/' . $image;
+        }
+        $image ||= '/html/images/podcast.png';
+
+        my %card = (
+            id          => 'cstats.podcast.' . md5_hex($item->{url}),
+            type        => 'podcast',
+            title       => $item->{title},
+            image       => $image,
+            play_cmd    => 'playlist',
+            play_param1 => 'play',
+            last_played => $last || 0,
+        );
+        if ($unfinished) {
+            my $pct = int(($from / $duration) * 100 + 0.5);
+            $pct = 1 if $pct < 1;
+            $pct = 99 if $pct > 99;
+            $card{subtitle} = $pct . '% - Podcast';
+            $card{progress} = $from / $duration;
+            $card{play_param2} = 'podcast://' . $item->{url} . '{from=' . int($from) . '}';
+        }
+        else {
+            $card{subtitle} = 'Podcast';
+            $card{progress} = 0;
+            $card{play_param2} = 'podcast://' . $item->{url};
+        }
+        push @cards, \%card;
+    }
+
+    # 2) Also surface episodes that only show up in play history (not in recent cache)
+    if (scalar @cards < $limit) {
+        eval {
+            my $dbh = Slim::Schema->dbh;
+            my $stats = _contextStatsHomeStatsTable();
+            my $sth = $dbh->prepare(qq{
+                SELECT tp.url AS url,
+                       MAX(COALESCE(tp.lastPlayed, 0)) AS lastplayed,
+                       SUM(COALESCE(tp.playCount, 0)) AS plays
+                FROM $stats tp
+                WHERE COALESCE(tp.lastPlayed, 0) >= ?
+                  AND (
+                       tp.url LIKE 'podcast:%'
+                    OR tp.url LIKE 'podcast://%'
+                  )
+                GROUP BY tp.url
+                ORDER BY lastplayed DESC
+                LIMIT 16
+            });
+            $sth->execute($cutoff);
+            while (my $row = $sth->fetchrow_hashref) {
+                last if scalar @cards >= $limit;
+                my $url = $row->{url} // '';
+                next unless length $url;
+                my $bare = $url;
+                $bare =~ s{^podcast://}{}i;
+                next if $seen{$bare}++ || $seen{$url}++;
+                my $title = $bare;
+                $title =~ s{^.*/}{};
+                $title = URI::Escape::uri_unescape($title) if $title =~ /%/;
+                $title = 'Podcast' unless length $title;
+                push @cards, {
+                    id          => 'cstats.podcast.' . md5_hex($bare),
+                    type        => 'podcast',
+                    title       => $title,
+                    subtitle    => 'Podcast',
+                    image       => '/html/images/podcast.png',
+                    progress    => 0,
+                    play_cmd    => 'playlist',
+                    play_param1 => 'play',
+                    play_param2 => ($url =~ m{^podcast://}i) ? $url : ('podcast://' . $bare),
+                    last_played => int($row->{lastplayed} || 0),
+                };
+            }
+            $sth->finish;
+        };
+        if ($@) {
+            $log->error("context-stats-home podcast history: $@");
+        }
+    }
+
+    # Prefer unfinished (progress>0), then recency.
+    # Keep last_played for the home-strip merge (was deleted too early before).
+    @cards = sort {
+        my $ap = ($a->{progress} || 0) > 0 ? 0 : 1;
+        my $bp = ($b->{progress} || 0) > 0 ? 0 : 1;
+        return $ap <=> $bp if $ap != $bp;
+        return ($b->{last_played} || 0) <=> ($a->{last_played} || 0);
+    } @cards;
+
+    return @cards[0 .. ($limit - 1 > $#cards ? $#cards : $limit - 1)];
+}
+
+# Recently played web radios / remote streams from play history (+ favorites metadata).
+sub _contextStatsHomeRecentRadios {
+    my ($dbh, $limit) = @_;
+    my @cards = ();
+    return @cards unless $limit && $limit > 0 && $dbh;
+
+    my $cutoff = time() - CONTEXT_STATS_USAGE_WINDOW;
+    my $stats = _contextStatsHomeStatsTable();
+    my %meta = (); # url => { title, image }
+
+    # Favorites OPML: nice titles/icons for saved stations
+    eval {
+        if (Slim::Utils::PluginManager->isEnabled('Slim::Plugin::Favorites::Plugin')
+            || eval { require Slim::Plugin::Favorites::OpmlFavorites; 1 }) {
+            my $feed = Slim::Plugin::Favorites::OpmlFavorites->new(undef)->xmlbrowser(0);
+            my @stack = ($feed);
+            while (@stack) {
+                my $node = shift @stack;
+                next unless $node;
+                if (ref $node eq 'ARRAY') {
+                    push @stack, @{$node};
+                    next;
+                }
+                next unless ref $node eq 'HASH';
+                if ($node->{items} && ref $node->{items} eq 'ARRAY') {
+                    push @stack, @{$node->{items}};
+                }
+                my $url = $node->{URL} || $node->{url} || $node->{play} || '';
+                next unless length $url && _isRadio($url);
+                my $title = $node->{name} || $node->{title} || '';
+                my $image = $node->{image} || $node->{icon} || $node->{cover} || '';
+                $meta{$url} = { title => $title, image => $image } if length $title || length $image;
+            }
+        }
+    };
+
+    my @rows = ();
+    eval {
+        # Hybrid LMS persistent + optional APC for stream URLs
+        my $sql;
+        if (_contextStatsHomeApcTableUsable()) {
+            $sql = qq{
+                SELECT url, MAX(lastplayed) AS lastplayed, SUM(plays) AS plays FROM (
+                    SELECT tp.url AS url,
+                           COALESCE(tp.lastPlayed, 0) AS lastplayed,
+                           COALESCE(tp.playCount, 0) AS plays
+                    FROM tracks_persistent tp
+                    WHERE COALESCE(tp.lastPlayed, 0) >= ?
+                    UNION ALL
+                    SELECT apc.url AS url,
+                           COALESCE(apc.lastPlayed, 0) AS lastplayed,
+                           COALESCE(apc.playCount, 0) AS plays
+                    FROM alternativeplaycount apc
+                    WHERE COALESCE(apc.lastPlayed, 0) >= ?
+                )
+                GROUP BY url
+                ORDER BY lastplayed DESC
+                LIMIT 80
+            };
+            my $sth = $dbh->prepare($sql);
+            $sth->execute($cutoff, $cutoff);
+            while (my $r = $sth->fetchrow_hashref) {
+                push @rows, $r;
+            }
+            $sth->finish;
+        }
+        else {
+            my $sth = $dbh->prepare(qq{
+                SELECT tp.url AS url,
+                       COALESCE(tp.lastPlayed, 0) AS lastplayed,
+                       COALESCE(tp.playCount, 0) AS plays
+                FROM $stats tp
+                WHERE COALESCE(tp.lastPlayed, 0) >= ?
+                ORDER BY lastplayed DESC
+                LIMIT 80
+            });
+            $sth->execute($cutoff);
+            while (my $r = $sth->fetchrow_hashref) {
+                push @rows, $r;
+            }
+            $sth->finish;
+        }
+    };
+    if ($@) {
+        $log->error("context-stats-home radios: $@");
+        return @cards;
+    }
+
+    my %seen = ();
+    foreach my $row (@rows) {
+        last if scalar @cards >= $limit;
+        my $url = $row->{url} // '';
+        next unless length $url;
+        next if $seen{$url}++;
+        # Skip library / podcast / app music schemes
+        next if $url =~ m{^(file|db|spotify|qobuz|tidal|deezer|wimp|youtube|podcast):}i;
+        next unless _isRadio($url) || $url =~ m{^(http|https|mms|rtsp):}i;
+        # http(s) music file downloads sometimes land in persistent — skip common audio file URLs
+        next if $url =~ m{\.(mp3|flac|m4a|ogg|opus|wav|aiff?)(\?|$)}i
+            && $url !~ m{(pls|m3u|xspf|stream|listen|tune|radio|icy)}i
+            && !_isRadio($url);
+
+        my $title = '';
+        my $image = '';
+        if (my $m = $meta{$url}) {
+            $title = $m->{title} || '';
+            $image = $m->{image} || '';
+        }
+        # tracks table may hold remote stream titles — but RP etc. often store segment
+        # filenames like "4-1.flac"; never surface those as the card title.
+        if (!length $title || !length $image || _isAudioFilenameTitle($title)) {
+            eval {
+                my $urlmd5 = md5_hex($url);
+                my $sth = $dbh->prepare_cached(qq{
+                    SELECT title, cover, coverid FROM tracks
+                    WHERE url = ? OR urlmd5 = ?
+                    LIMIT 1
+                });
+                $sth->execute($url, $urlmd5);
+                if (my $tr = $sth->fetchrow_hashref) {
+                    if (!length $title || _isAudioFilenameTitle($title)) {
+                        my $tt = $tr->{title} || '';
+                        $title = $tt if length $tt && !_isAudioFilenameTitle($tt);
+                    }
+                    if (!length $image) {
+                        if ($tr->{cover} && $tr->{cover} =~ m{^https?://}i) {
+                            $image = '/imageproxy/' . URI::Escape::uri_escape_utf8($tr->{cover}) . '/image_150x150_f';
+                        }
+                        elsif ($tr->{coverid}) {
+                            $image = "/music/$tr->{coverid}/cover_150x150_f";
+                        }
+                    }
+                }
+            };
+        }
+        my ($rpTitle, $rpSub, $rpImg) = _radioParadiseChannel($url, $title);
+        if (defined $rpTitle) {
+            $title = $rpTitle;
+            $image = $rpImg if $rpImg;
+        } else {
+            $title = _niceRadioTitle($url, $title);
+        }
+        if ($image && $image !~ m{^/} && $image !~ m{^https?://}) {
+            $image = '/' . $image;
+        }
+        if ($image && $image =~ m{^https?://}i) {
+            $image = '/imageproxy/' . URI::Escape::uri_escape_utf8($image) . '/image_150x150_f';
+        }
+        $image ||= '/html/images/radio.png';
+
+        my $plays = int($row->{plays} || 0);
+        # ASCII separator only (UTF-8 middle-dot can mojibake as "Â·")
+        my $subtitle = $rpSub
+            ? ($plays > 1 ? "$rpSub - $plays plays" : $rpSub)
+            : ($plays > 1 ? "Radio - $plays plays" : 'Radio');
+
+        push @cards, {
+            id          => 'cstats.radio.' . md5_hex($url),
+            type        => 'radio',
+            title       => $title,
+            subtitle    => $subtitle,
+            image       => $image,
+            progress    => 0,
+            play_cmd    => 'playlist',
+            play_param1 => 'play',
+            play_param2 => $url,
+            play_param3 => $title,
+            last_played => int($row->{lastplayed} || 0),
+        };
+    }
+    return @cards;
+}
+
+sub _handleContextStatsHomeCmd {
+    my $request = shift;
+    # Home swiper requests a buffer pool (paginated 2x2 / 3x2 / 4x2; dismiss pulls from reserve).
+    my $count = $request->getParam('count') || 12;
+    $count = int($count);
+    $count = 32 if $count > 32;
+    $count = 4 if $count < 4;
+    my $playerId = $request->getParam('player') || $request->getParam('player_id') || '';
+
+    $request->addResult('context_stats', _contextStatsHomeEnabled());
+    # Surface whether Alternative Play Count backs ranking / progress / play counts
+    $request->addResult('apc_enabled', _contextStatsHomeApcEnabled());
+    $request->addResult('stats_source', _contextStatsHomeUsingApc() ? 'apc' : 'lms');
+    my $sessionEnhance = 0;
+    eval {
+        require Plugins::MaterialSkin::SessionLog;
+        $sessionEnhance = Plugins::MaterialSkin::SessionLog::isEnhanceEnabled() ? 1 : 0;
+    };
+    $request->addResult('session_enhance', $sessionEnhance);
+    # Master enable is server Material Skin plugin setting (not client Interface menu)
+    unless ($prefs->get('contextStatsHome')) {
+        $request->addResult('home_enabled', 0);
+        $request->addResult('count', 0);
+        $request->addResult('items', []);
+        $request->setStatusDone();
+        return;
+    }
+    $request->addResult('home_enabled', 1);
+    $request->addResult('count', 0);
+
+    my $dbh = Slim::Schema->dbh;
+    my @playlists = ();
+    my @podcasts = ();
+    my @radios = ();
+    my @albums = ();
+    my @sessions = ();
+    my $plErr = '';
+
+    # Fetch generous pools of each type; final order is by real last_played.
+    eval { @playlists = _contextStatsHomeTopPlaylists($dbh, $count); };
+    if ($@) {
+        $plErr = "$@";
+        $log->error("context-stats-home playlists: $plErr");
+    }
+    my $plFound = scalar @playlists;
+    eval { @podcasts = _contextStatsHomeContinuePodcasts($count); };
+    if ($@) { $log->error("context-stats-home podcasts: $@"); }
+    eval { @radios = _contextStatsHomeRecentRadios($dbh, $count); };
+    if ($@) { $log->error("context-stats-home radios: $@"); }
+    eval { @albums = _contextStatsHomeContinueAlbums($dbh, $count); };
+    if ($@) { $log->error("context-stats-home albums: $@"); }
+
+    # Opt-in Material session log: playlist / radio / podcast / random with duration
+    if ($sessionEnhance) {
+        eval {
+            @sessions = Plugins::MaterialSkin::SessionLog::sessionCards(
+                $playerId, $count, CONTEXT_STATS_USAGE_WINDOW
+            );
+            # Fallback wider window if quiet
+            if (!@sessions) {
+                @sessions = Plugins::MaterialSkin::SessionLog::sessionCards(
+                    $playerId, $count, CONTEXT_STATS_USAGE_WINDOW_FALLBACK
+                );
+            }
+        };
+        if ($@) { $log->error("context-stats-home sessions: $@"); }
+    }
+
+    # --- Reality-first merge ---
+    # Session cards fill gaps LMS/APC miss (radio, RP, podcast, playlist duration).
+    # Sort everything by last_played, with a soft per-type cap so one type
+    # cannot fill the whole strip unless nothing else exists.
+    # Prefer session card when same id (sessions listed first).
+    # Also collapse Spotty duplicates: same playlist often appears twice —
+    # once as session "Spotify" (spotify:playlist:…) and once as LMS-imported
+    # library playlist "Playlist" (playlist_id:N) with the same title.
+    my %seenId;
+    my %seenSpotifyPl;
+    my %seenPlaylistTitle;
+    my @pool = ();
+    foreach my $c (@sessions, @playlists, @podcasts, @radios, @albums) {
+        next unless $c && $c->{id};
+        next if $seenId{$c->{id}}++;
+        if (($c->{type} || '') eq 'playlist') {
+            my $spId = _contextStatsHomeSpotifyPlaylistId($c);
+            if ($spId ne '' && $seenSpotifyPl{$spId}++) {
+                next;
+            }
+            my $tKey = _contextStatsHomePlaylistTitleKey($c->{title});
+            # Length floor avoids collapsing short generic names ("mix", "favs")
+            if ($tKey ne '' && length($tKey) >= 8 && $seenPlaylistTitle{$tKey}++) {
+                next;
+            }
+        }
+        push @pool, $c;
+    }
+    @pool = sort {
+        ($b->{last_played} || 0) <=> ($a->{last_played} || 0)
+    } @pool;
+
+    my $maxPerType = int(($count + 1) / 2); # soft: ≤ half the strip per type
+    $maxPerType = 2 if $maxPerType < 2;
+    my %typeCount = ();
+    my @cards = ();
+    my @deferred = ();
+
+    foreach my $c (@pool) {
+        my $t = $c->{type} || 'other';
+        if (($typeCount{$t} || 0) < $maxPerType) {
+            push @cards, $c;
+            $typeCount{$t}++;
+        }
+        else {
+            push @deferred, $c;
+        }
+        last if scalar @cards >= $count;
+    }
+    while (scalar @cards < $count && @deferred) {
+        push @cards, shift @deferred;
+    }
+    @cards = splice(@cards, 0, $count);
+
+    my $cnt = 0;
+    foreach my $card (@cards) {
+        # Internal ranking fields only
+        delete $card->{last_played};
+        delete $card->{is_spotify};
+        delete $card->{playcount};
+        delete $card->{from_session};
+        _contextStatsHomeAddCard($request, $cnt, $card);
+        $cnt++;
+    }
+    $request->addResult('count', $cnt);
+    if ($plErr) {
+        $log->error("context-stats-home playlists: $plErr");
+    }
+    if ($plFound < 1) {
+        $log->info("context-stats-home: no playlist cards (albums/podcasts/radios may still fill the strip)");
+    }
+
+    $request->setStatusDone();
+}
+
 sub _addExtraHomeItem {
     my ($request, $id, $item, $cnt, $idmod) = @_;
     my $loop_name = "material_home_${id}_loop";
@@ -2324,6 +3872,97 @@ sub _isRadio {
         }
     }
     return 0;
+}
+
+# Stream segment / file-like titles (e.g. Radio Paradise "4-1.flac") are not station names.
+sub _isAudioFilenameTitle {
+    my ($title) = @_;
+    return 0 unless defined $title && length $title;
+    my $t = $title;
+    $t =~ s/^\s+|\s+$//g;
+    return 1 if $t =~ m{\.(flac|mp3|m4a|aac|ogg|opus|wav|aiff?)(\?.*)?$}i;
+    return 1 if $t =~ m{^\d+[-_.]\d+\.(flac|mp3|m4a)$}i;
+    return 0;
+}
+
+# Returns (channelTitle, brandSubtitle, icon) for Radio Paradise URLs, else empty list.
+sub _radioParadiseChannel {
+    my ($url, $title) = @_;
+    $url   //= '';
+    $title //= '';
+    my $blob = lc("$url $title");
+    return unless $blob =~ m{radioparadise|radio\.paradise}i;
+
+    my $slug = '';
+    if ($url =~ m{radioparadise\.com/([a-z0-9_-]+)}i) {
+        $slug = lc($1);
+    } elsif ($url =~ m{radioparadise:/?/?([a-z0-9_-]+)}i) {
+        $slug = lc($1);
+    } elsif ($url =~ m{[?&#](?:channel|mix|stream)=([a-z0-9_-]+)}i) {
+        $slug = lc($1);
+    }
+    $slug =~ s/[-_]?(flac|aac|mp3|ogg|opus|320|128|64|32|4k|hd)$//i;
+    $slug =~ s/^(?:rp|radio[-_]?paradise)[-_]?//i;
+
+    my %map = (
+        mellow   => 'Mellow Mix',
+        rock     => 'Rock Mix',
+        global   => 'Global Mix',
+        world    => 'Global Mix',
+        eclectic => 'Eclectic Mix',
+        main     => 'Main Mix',
+        flac     => 'Main Mix',
+        aac      => 'Main Mix',
+        ''       => 'Main Mix',
+    );
+    my $channel = $map{$slug};
+    if (!$channel && length $slug) {
+        if ($slug =~ m{^mellow})   { $channel = 'Mellow Mix'; }
+        elsif ($slug =~ m{^rock})  { $channel = 'Rock Mix'; }
+        elsif ($slug =~ m{^(?:global|world)}) { $channel = 'Global Mix'; }
+        elsif ($slug =~ m{^eclectic}) { $channel = 'Eclectic Mix'; }
+        else {
+            $channel = join(' ', map { ucfirst($_) } split(/[-_\s]+/, $slug));
+            $channel .= ' Mix' if $channel !~ m{mix}i;
+        }
+    }
+    $channel ||= 'Main Mix';
+    if (length $title && !_isAudioFilenameTitle($title)
+        && $title =~ m{mellow|rock|global|eclectic|main\s*mix|mix}i
+        && $title !~ m{^radio\s*paradise$}i) {
+        my $t = $title;
+        $t =~ s{^\s*radio\s*paradise\s*[:\-–—]?\s*}{}i;
+        $channel = $t if length $t;
+    }
+    return ($channel, 'Radio Paradise', '/material/html/images/radioparadise.svg');
+}
+
+sub _niceRadioTitle {
+    my ($url, $title) = @_;
+    $url   //= '';
+    $title //= '';
+    $title =~ s/^\s+|\s+$//g if length $title;
+    my ($rpTitle) = _radioParadiseChannel($url, $title);
+    return $rpTitle if defined $rpTitle;
+    if (length $title && !_isAudioFilenameTitle($title) && $title !~ m{^https?://}i) {
+        return $title;
+    }
+    if ($url =~ m{somafm}i) {
+        return 'SomaFM';
+    }
+    if ($url =~ m{^([a-z0-9+.-]+):}i) {
+        my $proto = lc($1);
+        if ($proto ne 'http' && $proto ne 'https' && $proto ne 'mms' && $proto ne 'rtsp' && $proto ne 'rtmp') {
+            $proto =~ s/[-_]/ /g;
+            return join(' ', map { ucfirst($_) } split(/\s+/, $proto));
+        }
+    }
+    if ($url =~ m{^https?://([^/:]+)}i) {
+        my $host = $1;
+        $host =~ s{^www\.}{}i;
+        return $host if length $host;
+    }
+    return length $title ? $title : 'Radio';
 }
 
 sub _cliCommandQuery {
@@ -2844,6 +4483,27 @@ sub _deleteFile {
         return 0;
     }
     return 1;
+}
+
+# HTTP client IP of the device operating Material — used to pick a local
+# preview player (Mac squeezelite / LyrPlay) instead of the selected room.
+sub _clientIpHandler {
+    my ( $httpClient, $response ) = @_;
+    return unless $httpClient && $httpClient->connected;
+
+    my $ip = $Slim::Web::HTTP::peeraddr{$httpClient} || '';
+    $ip =~ s/^::ffff://i;
+    $ip =~ s/[^0-9a-fA-F\.:]//g;
+
+    my $body = '{"ip":"' . $ip . '"}';
+    $response->code(RC_OK);
+    $response->content_type('application/json; charset=utf-8');
+    $response->header('Cache-Control' => 'no-store');
+    $response->header('Connection' => 'close');
+    $response->content_length(length($body));
+    $response->content($body);
+    $httpClient->send_response($response);
+    Slim::Web::HTTP::closeHTTPSocket($httpClient);
 }
 
 sub _svgHandler {
@@ -3427,6 +5087,359 @@ sub _playlistHandler {
         }
         _sendFallbackImage($httpClient, $response, "playlists", undef, "noplaylist");
     }
+}
+
+# ── Presets picker artwork + title helpers ──────────────────────────────────
+# Favorites->all() strips icons; rebuild url→icon from OPML + favorites CLI + Spotty cache.
+# Prefer real Spotify CDN / imageproxy covers over generic Spotty plugin icons.
+
+sub _materialCleanPresetTitle {
+    my ($title, $url) = @_;
+    $title = '' unless defined $title;
+    my $source = '';
+    # "Spotify : Title" / "spotify: Title" / "Spotify:Title"
+    if ($title =~ s/^\s*spotify\s*:\s*//i) {
+        $source = 'spotify';
+    }
+    elsif ($url && $url =~ /^spotify:/i) {
+        $source = 'spotify';
+    }
+    elsif ($url && $url =~ /^qobuz:/i) {
+        $source = 'qobuz';
+    }
+    $title =~ s/^\s+|\s+$//g;
+    return ($title, $source);
+}
+
+# Parse LMS/Spotify French-style titles and Spotty cache into structured meta.
+# Returns: { title, artist, album, type, source, icon }
+# $light=1: skip Schema objectForUrl (used for bulk options_loop — can be hundreds of rows)
+sub _materialEnrichItemMeta {
+    my ($rawTitle, $url, $it, $light) = @_;
+    $rawTitle = '' unless defined $rawTitle;
+    $url = '' unless defined $url;
+    $it ||= {};
+    $light = 0 unless defined $light;
+
+    my ($title, $source) = _materialCleanPresetTitle($rawTitle, $url);
+    my $type   = $it->{type} // '';
+    my $artist = $it->{artist} // $it->{artist_name} // '';
+    my $album  = $it->{album} // $it->{album_name} // '';
+    my $icon   = '';
+
+    # URI kind from Spotify (and similar) schemes
+    if ($url =~ m{^spotify:(album|artist|track|playlist|episode|show):}i) {
+        $type ||= lc($1);
+        $source ||= 'spotify';
+    }
+    elsif ($url =~ m{^spotify://(album|artist|track|playlist)/}i) {
+        $type ||= lc($1);
+        $source ||= 'spotify';
+    }
+    elsif ($url =~ m{^db:album\.}) {
+        $type ||= 'album';
+    }
+    elsif ($url =~ m{^db:contributor\.|^db:artist\.}) {
+        $type ||= 'artist';
+    }
+
+    # Spotty metadata cache (best for album/artist/track) — in-memory, OK for bulk
+    if ($url =~ /^spotify:/i) {
+        my $cached;
+        eval {
+            require Plugins::Spotty::API::Cache;
+            my $c = Plugins::Spotty::API::Cache->new();
+            $cached = $c->get($url);
+            if (!$cached) {
+                my $alt = $url;
+                $alt =~ s{^spotify://}{spotify:};
+                $cached = $c->get($alt);
+            }
+        };
+        if ($cached && ref $cached eq 'HASH') {
+            $icon = $cached->{image} || ($cached->{album} && $cached->{album}->{image}) || $icon;
+            if ($cached->{name} && length $cached->{name}) {
+                # Prefer structured name over long concatenated LMS title
+                if ($type eq 'album' || $type eq 'artist' || $type eq 'track' || $type eq 'playlist'
+                    || !$title || $title =~ /\bpar\b|\bby\b|\bde\b/i) {
+                    $title = $cached->{name} if $cached->{name};
+                }
+            }
+            if (!$artist) {
+                if ($cached->{artist}) {
+                    $artist = $cached->{artist};
+                }
+                elsif ($cached->{artists} && ref $cached->{artists} eq 'ARRAY' && @{$cached->{artists}}) {
+                    $artist = join(', ', map { $_->{name} || () } @{$cached->{artists}});
+                }
+            }
+            if (!$album && $cached->{album}) {
+                if (ref $cached->{album} eq 'HASH') {
+                    $album = $cached->{album}->{name} || '';
+                    $icon ||= $cached->{album}->{image} || '';
+                    if (!$artist && $cached->{album}->{artists} && ref $cached->{album}->{artists} eq 'ARRAY') {
+                        $artist = join(', ', map { $_->{name} || () } @{$cached->{album}->{artists}});
+                    }
+                }
+                else {
+                    $album = $cached->{album};
+                }
+            }
+            $type ||= $cached->{type} if $cached->{type};
+        }
+    }
+
+    # Local library objects — expensive; skip for bulk options
+    if (!$light && (!$artist || !$album || !$icon) && $url) {
+        eval {
+            my $obj = Slim::Schema->objectForUrl({ url => $url, create => 0, readTags => 0 });
+            if ($obj) {
+                if ($obj->can('artistName') && !$artist) {
+                    $artist = $obj->artistName || '';
+                }
+                if ($obj->can('albumname') && !$album) {
+                    $album = $obj->albumname || '';
+                }
+                elsif ($obj->can('album') && $obj->album && !$album) {
+                    my $al = $obj->album;
+                    $album = blessed($al) && $al->can('title') ? ($al->title || '') : '';
+                }
+                if ($obj->can('title') && $obj->title && ($type eq 'track' || $type eq 'album')) {
+                    $title = $obj->title if $title =~ /\bpar\b|\bby\b/i || !length $title;
+                }
+                if ($obj->can('coverid') && $obj->coverid && !$icon) {
+                    $icon = '/music/' . $obj->coverid . '/cover';
+                }
+            }
+        };
+    }
+
+    # Parse French/English concatenated titles when meta still missing
+    # "Title par Artist de Album" / "Title by Artist from Album" / "Title par Artist"
+    if ((!$artist || !$album) && $title) {
+        my ($t2, $ar, $al) = _materialParseTitleArtistAlbum($title);
+        $title  = $t2 if $t2;
+        $artist = $ar if $ar && !$artist;
+        $album  = $al if $al && !$album;
+    }
+
+    $title =~ s/^\s+|\s+$//g if $title;
+    $artist =~ s/^\s+|\s+$//g if $artist;
+    $album =~ s/^\s+|\s+$//g if $album;
+
+    return {
+        title  => $title,
+        artist => $artist || '',
+        album  => $album || '',
+        type   => $type || '',
+        source => $source || '',
+        icon   => $icon || '',
+    };
+}
+
+# "Track par Artist de Album" | "Track by Artist from Album" | "Album par Artist"
+sub _materialParseTitleArtistAlbum {
+    my ($title) = @_;
+    return ($title, '', '') unless defined $title && length $title;
+
+    # par X de Y  (FR favorites style)
+    if ($title =~ /^(.*?)\s+par\s+(.+?)\s+de\s+(.+)$/i) {
+        return ($1, $2, $3);
+    }
+    # by X from Y
+    if ($title =~ /^(.*?)\s+by\s+(.+?)\s+from\s+(.+)$/i) {
+        return ($1, $2, $3);
+    }
+    # par X only
+    if ($title =~ /^(.*?)\s+par\s+(.+)$/i) {
+        return ($1, $2, '');
+    }
+    # by X only
+    if ($title =~ /^(.*?)\s+by\s+(.+)$/i) {
+        return ($1, $2, '');
+    }
+    return ($title, '', '');
+}
+
+sub _materialIconQuality {
+    my ($icon) = @_;
+    return 0 unless defined $icon && length $icon;
+    return 100 if $icon =~ m{imageproxy|/i\.scdn\.co|scdn\.co}i;
+    return 90  if $icon =~ m{^https?://}i;
+    return 70  if $icon =~ m{/music/.+/cover};
+    return 15  if $icon =~ m{Spotty|spotty}i;           # often wrong / stale hash
+    return 5   if $icon =~ m{favorites\.png|cover\.png|html/images}i;
+    return 40;
+}
+
+sub _materialPickBestIcon {
+    my $best = '';
+    my $bestQ = 0;
+    for my $raw (@_) {
+        next unless defined $raw && length $raw;
+        my $n = _materialNormalizeIconPath($raw);
+        next unless $n;
+        my $q = _materialIconQuality($n);
+        if ($q > $bestQ) {
+            $bestQ = $q;
+            $best = $n;
+        }
+    }
+    return $best;
+}
+
+sub _materialNormalizeIconPath {
+    my ($icon) = @_;
+    return '' unless defined $icon && length $icon;
+    if ($icon =~ m{^https?://}i) {
+        require URI::Escape;
+        return '/imageproxy/' . URI::Escape::uri_escape($icon) . '/image.png';
+    }
+    if ($icon =~ m{^/(?:imageproxy|plugins|music|html)/}) {
+        return $icon;
+    }
+    if ($icon =~ m{^(?:html|plugins|music)/}) {
+        return '/' . $icon;
+    }
+    if ($icon =~ m{^[0-9a-fA-F]{8,}$}) {
+        return '/music/' . $icon . '/cover';
+    }
+    return $icon;
+}
+
+sub _materialSpottyCover {
+    my ($url) = @_;
+    return '' unless $url && $url =~ /^spotify:/i;
+    my $img = '';
+    # Spotty metadata cache (uri → { image => 'https://i.scdn.co/...' })
+    eval {
+        require Plugins::Spotty::API::Cache;
+        my $c = Plugins::Spotty::API::Cache->new();
+        my $cached = $c->get($url);
+        if (!$cached && $url =~ s{^spotify://}{spotify:}) {
+            $cached = $c->get($url);
+        }
+        if ($cached && ref $cached eq 'HASH') {
+            $img = $cached->{image} || ($cached->{album} && $cached->{album}->{image}) || '';
+        }
+    };
+    if (!$img) {
+        eval {
+            my $cache = Slim::Utils::Cache->new();
+            my $cached = $cache->get($url);
+            if ($cached && ref $cached eq 'HASH') {
+                $img = $cached->{image} || ($cached->{album} && $cached->{album}->{image}) || '';
+            }
+        };
+    }
+    return $img ? _materialNormalizeIconPath($img) : '';
+}
+
+sub _materialResolveUrlIcon {
+    my ($url) = @_;
+    return '' unless defined $url && length $url;
+
+    # Prefer Spotty CDN cover before generic protocol icon
+    my $spotty = _materialSpottyCover($url);
+    return $spotty if $spotty && _materialIconQuality($spotty) >= 90;
+
+    my $icon = '';
+    eval {
+        $icon = Slim::Player::ProtocolHandlers->iconForURL($url) || '';
+    };
+    $icon = _materialNormalizeIconPath($icon);
+    # Drop weak generic icons if we have nothing better
+    if ($icon && _materialIconQuality($icon) < 20) {
+        $icon = '';
+    }
+
+    eval {
+        my $obj = Slim::Schema->objectForUrl({ url => $url, create => 0, readTags => 0 });
+        if ($obj && $obj->can('coverid') && $obj->coverid) {
+            return '/music/' . $obj->coverid . '/cover';
+        }
+        if ($obj && $obj->can('artwork_url') && $obj->artwork_url) {
+            return _materialNormalizeIconPath($obj->artwork_url);
+        }
+    };
+
+    return $icon;
+}
+
+sub _materialSetIconMap {
+    my ($map, $url, $icon) = @_;
+    return unless $url && $icon;
+    my $n = _materialNormalizeIconPath($icon);
+    return unless $n;
+    my $prev = $map->{$url};
+    if (!$prev || _materialIconQuality($n) > _materialIconQuality($prev)) {
+        $map->{$url} = $n;
+    }
+}
+
+sub _materialWalkFavIcons {
+    my ($level, $map) = @_;
+    return unless $level && ref $level eq 'ARRAY';
+    for my $entry (@$level) {
+        next unless $entry && ref $entry eq 'HASH';
+        my $url = $entry->{URL} // $entry->{url} // '';
+        my $icon = $entry->{icon} // $entry->{image} // $entry->{cover} // '';
+        if (length $url) {
+            if (!$icon || ($url =~ /^(?:db:album|file:)/ && $icon !~ /^https?:/i && $icon !~ /imageproxy|scdn/i)) {
+                eval {
+                    require Slim::Plugin::Favorites::OpmlFavorites;
+                    my $i2 = Slim::Plugin::Favorites::OpmlFavorites->icon($url) || '';
+                    $icon = $i2 if $i2 && _materialIconQuality($i2) >= _materialIconQuality($icon);
+                };
+            }
+            my $spotty = _materialSpottyCover($url);
+            _materialSetIconMap($map, $url, $spotty) if $spotty;
+            _materialSetIconMap($map, $url, $icon) if $icon;
+        }
+        if ($entry->{outline} && ref $entry->{outline} eq 'ARRAY') {
+            _materialWalkFavIcons($entry->{outline}, $map);
+        }
+    }
+}
+
+sub _materialPresetIconMap {
+    my ($client) = @_;
+    my %map;
+
+    eval {
+        require Slim::Utils::Favorites;
+        my $favs = Slim::Utils::Favorites->new($client);
+        eval { $favs->_urlindex if $favs->can('_urlindex'); };
+        my $top;
+        if ($favs->can('toplevel')) {
+            $top = $favs->toplevel;
+        }
+        elsif (ref $favs eq 'HASH' || blessed($favs)) {
+            $top = eval { $favs->toplevel } || eval { $favs->{'toplevel'} };
+        }
+        _materialWalkFavIcons($top, \%map) if $top;
+    };
+
+    # favorites items CLI — best source for Spotify CDN covers
+    eval {
+        my $req = Slim::Control::Request::executeRequest(
+            $client,
+            ['favorites', 'items', 0, 500, 'want_url:1']
+        );
+        return unless $req && $req->can('getResultLoopCount');
+        my $n = $req->getResultLoopCount('loop_loop') || 0;
+        for (my $i = 0; $i < $n; $i++) {
+            my $url = $req->getResultLoop('loop_loop', $i, 'url') // '';
+            my $img = $req->getResultLoop('loop_loop', $i, 'image')
+                   // $req->getResultLoop('loop_loop', $i, 'icon')
+                   // $req->getResultLoop('loop_loop', $i, 'artwork_url')
+                   // '';
+            next unless length $url && length $img;
+            _materialSetIconMap(\%map, $url, $img);
+        }
+    };
+
+    return \%map;
 }
 
 1;

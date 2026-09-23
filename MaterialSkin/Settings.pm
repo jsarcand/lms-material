@@ -24,11 +24,28 @@ sub page {
 }
 
 sub prefs {
-    return ($prefs, qw(composergenres conductorgenres bandgenres maiComposer showComposer showConductor showBand showArtistWorks password respectFixedVol showAllArtists artistFirst allowDownload commentAsDiscTitle showComment pagedBatchSize noArtistFilter releaseTypeOrder genreImages playlistImages touchLinks yearInSub playShuffle combineAppsAndRadio hidePlayers screensaverTimeout npSwitchTimeout useDefaultForSettings useGrouping setPlayerLibrary));
+    return ($prefs, qw(composergenres conductorgenres bandgenres maiComposer showComposer showConductor showBand showArtistWorks password respectFixedVol showAllArtists artistFirst allowDownload commentAsDiscTitle showComment pagedBatchSize noArtistFilter releaseTypeOrder genreImages playlistImages touchLinks yearInSub playShuffle combineAppsAndRadio hidePlayers screensaverTimeout npSwitchTimeout useDefaultForSettings useGrouping setPlayerLibrary contextStatsHome sessionEnhance));
 }
+
+# Context Stats booleans (checkboxes in basic.html) — must never stay undef after save
+my @BOOL_PREFS = qw(contextStatsHome sessionEnhance);
 
 sub handler {
     my ($class, $client, $params) = @_;
+
+    if ($params->{'saveSettings'}) {
+        #
+        # LMS Slim::Web::Settings calls set(pref, undef) when a checkbox is absent
+        # from the POST body (unchecked). That leaves the pref as undef so the next
+        # page load / init() treats it as missing and it looks like it "didn't stick".
+        # Force real 0/1 integers before SUPER::handler runs.
+        #
+        for my $b (@BOOL_PREFS) {
+            my $k = 'pref_' . $b;
+            my $v = $params->{$k};
+            $params->{$k} = (defined $v && $v ne '' && $v ne '0') ? 1 : 0;
+        }
+    }
 
     if ($params->{'load_def_genres'}) {
 		$params->{'pref_composergenres'} = string('PLUGIN_MATERIAL_SKIN_DEFAULT_COMPOSER_GENRES');

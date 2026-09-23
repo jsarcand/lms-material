@@ -1041,3 +1041,31 @@ PLUGIN_MATERIAL_SKIN_SET_PLAYER_LIB_DESC
 	FR	Lors de l'ajout de morceaux à une liste de lecture vide d'une platine, configurer d'abord la bibliothèque de la platine pour qu'elle corresponde à celle actuellement consultée. Lors de la suppression de la liste de lecture, rétablir la bibliothèque de la platine à sa configuration précédente.
 	NL	Wanneer je nummers toevoegt aan een lege wachtrij, stel dan eerst de muziekbibliotheek van de muziekspeler in op de bibliotheek waarmee hij momenteel aan het browsen is. Wanneer je de wachtrij leegt, wordt de muziekbibliotheek van de muziekspeler teruggezet naar de vorige instellingen.
 
+
+PLUGIN_MATERIAL_SKIN_CONTEXT_STATS_HOME
+	EN	Context Stats home cards
+	DE	Context Stats Startkarten
+	FR	Cartes d'accueil Context Stats
+	NL	Context Stats startkaarten
+	SV	Context Stats startsidskort
+
+PLUGIN_MATERIAL_SKIN_CONTEXT_STATS_HOME_DESC
+	EN	Show frequently played playlists and continue-listening cards at the top of the Material home screen. This is a server-wide setting for all Material clients.
+	DE	Häufig abgespielte Wiedergabelisten und „Weiterhören“-Karten oben auf dem Material-Startbildschirm anzeigen. Serverseitige Einstellung für alle Material-Clients.
+	FR	Afficher les listes de lecture fréquentes et les cartes « continuer l'écoute » en haut de l'accueil Material. Paramètre serveur pour tous les clients Material.
+	NL	Toon vaak afgespeelde afspeellijsten en doorgaan-met-luisteren-kaarten bovenaan het Material-startscherm. Serverinstelling voor alle Material-clients.
+	SV	Visa ofta spelade spellistor och fortsätt-lyssna-kort högst upp på Material-hemskärmen. Serverinställning för alla Material-klienter.
+
+PLUGIN_MATERIAL_SKIN_SESSION_ENHANCE
+	EN	Local session history (Context Stats)
+	DE	Lokale Sitzungshistorie (Context Stats)
+	FR	Historique de session local (Context Stats)
+	NL	Lokale sessiegeschiedenis (Context Stats)
+	SV	Lokal sessionshistorik (Context Stats)
+
+PLUGIN_MATERIAL_SKIN_SESSION_ENHANCE_DESC
+	EN	Opt-in: store short-lived playback context (playlists, radio, podcasts) on this Lyrion server so Continue listening is more accurate. Data stays on the server only — never sent off-site. Follows the player that is playing. Requires Context Stats home cards (or similar home use).
+	DE	Optional: kurze Wiedergabekontexte (Wiedergabelisten, Radio, Podcasts) auf diesem Lyrion-Server speichern, damit „Weiterhören“ genauer wird. Daten bleiben nur auf dem Server. Folgt dem spielenden Player.
+	FR	Optionnel : enregistrer un contexte de lecture temporaire (listes, radio, podcasts) sur ce serveur Lyrion pour améliorer « continuer l'écoute ». Les données restent sur le serveur uniquement. Suit la platine en lecture.
+	NL	Optioneel: bewaar tijdelijke afspeelcontext (afspeellijsten, radio, podcasts) op deze Lyrion-server voor betere doorgaan-met-luisteren-kaarten. Gegevens blijven alleen op de server. Volgt de spelende speler.
+	SV	Valfritt: lagra kortvarig uppspelningskontext (spellistor, radio, poddar) på denna Lyrion-server så att fortsätt-lyssna blir mer träffsäkert. Data stannar endast på servern. Följer spelaren som spelar.
