@@ -1,0 +1,2387 @@
+/**
+ * Library Fusion — extends under My Music glass header; padding compensates.
+ */
+
+.lib-fusion-tbar-on {
+ color:var(--primary-color, #1976d2) !important;
+}
+
+#browse-view .lms-list.bgnd-cover {
+ position:relative;
+}
+
+/* Host must fill the browse pane so fusion (absolute fill) is truly 100% height */
+#browse-view .lms-list.bgnd-cover.lib-fusion-host {
+ position:fixed !important;
+ top:calc(var(--main-toolbar-height) + var(--sub-toolbar-height)) !important;
+ bottom:var(--desktop-npbar-height, var(--bottom-toolbar-height, 0px)) !important;
+ left:0 !important;
+ right:0 !important;
+ width:100% !important;
+ height:auto !important;
+ max-height:none !important;
+ min-height:0 !important;
+ z-index:1 !important;
+ box-sizing:border-box !important;
+ overflow:hidden !important;
+}
+/* Desktop home-split: host is inside main pane, not the full viewport */
+#browse-view.browse-home-split .browse-main-pane .lms-list.bgnd-cover.lib-fusion-host {
+ position:absolute !important;
+ top:0 !important;
+ bottom:0 !important;
+ left:0 !important;
+ right:0 !important;
+ width:100% !important;
+ height:100% !important;
+ max-height:none !important;
+}
+/* Non-split desktop: pin full available height between toolbars */
+@media (min-width: 800px) {
+ #browse-view:not(.browse-home-split) .lms-list.bgnd-cover.lib-fusion-host {
+  position:fixed !important;
+  top:calc(var(--main-toolbar-height) + var(--sub-toolbar-height)) !important;
+  bottom:var(--desktop-npbar-height, 0px) !important;
+  height:auto !important;
+  max-height:none !important;
+ }
+}
+@media (max-width: 1024px) {
+ #browse-view .lms-list.bgnd-cover.lib-fusion-host {
+  bottom:var(--mobile-bottom-chrome-height, var(--bottom-toolbar-height, 0px)) !important;
+ }
+}
+/* Fusion chrome must receive clicks above the My Music glass subheader */
+#browse-view .lib-fusion {
+ z-index:8 !important;
+}
+#browse-view .lib-fusion .lib-fusion-tabs {
+ pointer-events:auto !important;
+ z-index:50 !important;
+}
+
+/*
+ * Glass subheader above fusion for back/actions; empty area must not steal tab clicks.
+ */
+#browse-view .browse-main-pane.lib-fusion-main > .browse-subheader-wrap {
+ z-index:6 !important;
+ pointer-events:none !important;
+ /* One row only — no growth when home-split / queue sidebar toggles width */
+ min-height:var(--sub-toolbar-height, 48px) !important;
+ height:var(--sub-toolbar-height, 48px) !important;
+ max-height:var(--sub-toolbar-height, 48px) !important;
+ overflow:hidden !important;
+}
+#browse-view .browse-main-pane.lib-fusion-main > .browse-subheader-wrap .browse-subheader {
+ pointer-events:none !important;
+ min-height:var(--sub-toolbar-height, 48px) !important;
+ height:var(--sub-toolbar-height, 48px) !important;
+ max-height:var(--sub-toolbar-height, 48px) !important;
+ overflow:hidden !important;
+}
+#browse-view .browse-main-pane.lib-fusion-main > .browse-subheader-wrap .v-btn,
+#browse-view .browse-main-pane.lib-fusion-main > .browse-subheader-wrap .toolbar-button,
+#browse-view .browse-main-pane.lib-fusion-main > .browse-subheader-wrap .context-button,
+#browse-view .browse-main-pane.lib-fusion-main > .browse-subheader-wrap .sub-cover,
+#browse-view .browse-main-pane.lib-fusion-main > .browse-subheader-wrap .sub-cover-fade {
+ pointer-events:auto !important;
+}
+/* Single-line title in Fusion — subtitle row made the bar grow */
+#browse-view .browse-main-pane.lib-fusion-main .browse-title .subtoolbar-subtitle {
+ display:none !important;
+}
+#browse-view .browse-main-pane.lib-fusion-main .browse-title {
+ flex-wrap:nowrap !important;
+ min-width:0;
+}
+#browse-view .browse-main-pane.lib-fusion-main .browse-title .subtoolbar-title {
+ white-space:nowrap;
+ overflow:hidden;
+ text-overflow:ellipsis;
+}
+#browse-view .browse-main-pane.lib-fusion-main .browse-commands {
+ max-height:var(--sub-toolbar-height, 48px);
+ overflow:hidden;
+}
+#browse-view .browse-main-pane.lib-fusion-main .browse-commands .context-button obj {
+ display:none !important; /* no text labels that force wrap/height */
+}
+
+/*
+ * Fusion fills the whole host (under My Music header).
+ * padding-top clears the glass subheader so first content is readable.
+ */
+#browse-view .lib-fusion {
+ position:absolute !important;
+ top:0 !important;
+ left:0 !important;
+ right:0 !important;
+ bottom:0 !important;
+ width:100% !important;
+ height:100% !important;
+ max-height:100% !important;
+ z-index:8 !important;
+ display:flex !important;
+ flex-direction:column;
+ min-height:0;
+ box-sizing:border-box;
+ /* Match single-row My Music bar only */
+ padding-top:calc(var(--sub-toolbar-height, 48px) - var(--browse-subheader-offset, 0px) + 4px) !important;
+ background:var(--background-color, #121212);
+ color:var(--text-color, #eee);
+ overflow:hidden;
+ pointer-events:auto !important;
+}
+
+/*
+ * Host is already pinned above the NP / bottom chrome (top+bottom).
+ * Scrollers only need breathing room so the last row (and ⋮) is not flush
+ * against the edge — do NOT re-add full np-bar height (that left a false gap).
+ */
+#browse-view .lib-fusion {
+ --lib-fusion-np-clearance:16px;
+ --lib-fusion-np-bar-h:0px;
+}
+#browse-view .lib-fusion .lib-fusion-scroller,
+#browse-view .lib-fusion .lib-fusion-col-scroll,
+#browse-view .lib-fusion .lib-fusion-album-grid,
+#browse-view .lib-fusion .vue-recycle-scroller {
+ padding-bottom:var(--lib-fusion-np-clearance) !important;
+ box-sizing:border-box;
+}
+/* Mobile: extra end pad so last-row ⋮ clears miniplayer glass / overlay */
+@media (max-width: 1024px) {
+ #browse-view .lib-fusion {
+  --lib-fusion-np-clearance:12px;
+  --lib-fusion-mobile-menu-clear:64px;
+ }
+ #browse-view .lib-fusion .lib-fusion-scroller,
+ #browse-view .lib-fusion .lib-fusion-col-scroll,
+ #browse-view .lib-fusion .lib-fusion-album-grid,
+ #browse-view .lib-fusion .vue-recycle-scroller {
+  padding-bottom:calc(var(--lib-fusion-mobile-menu-clear) + var(--lib-fusion-np-clearance) + env(safe-area-inset-bottom, 0px)) !important;
+  scroll-padding-bottom:calc(var(--lib-fusion-mobile-menu-clear) + env(safe-area-inset-bottom, 0px)) !important;
+ }
+ /* Keep row ⋮ menus tappable above miniplayer glass */
+ .lib-fusion-item-menu {
+  position:relative;
+  z-index:8;
+  opacity:0.95 !important;
+ }
+ .lib-fusion-artist-row,
+ .lib-fusion-album-head,
+ .lib-fusion-track-row,
+ .lib-fusion-song-row,
+ .lib-fusion-grid-item {
+  position:relative;
+  z-index:1;
+ }
+}
+
+.lib-fusion-status {
+ display:block;
+ font-size:0.8rem;
+ opacity:0.7;
+ margin-top:6px;
+}
+
+.lib-fusion {
+ position:absolute;
+ top:0;
+ left:0;
+ right:0;
+ bottom:0;
+ display:flex;
+ flex-direction:column;
+ min-height:0;
+ background:var(--background-color, #121212);
+ color:var(--text-color, #eee);
+ overflow:hidden;
+ /* Room for A–Z lexicon on the right border */
+ padding-right:0;
+}
+
+/* A–Z lexicon — side follows settings (jl-side-*) / explicit class */
+.lib-fusion-jumplist {
+ position:absolute;
+ top:calc(var(--sub-toolbar-height, 48px) + 52px);
+ /* Host already clears NP chrome; sit above scroller end-pad */
+ bottom:calc(var(--lib-fusion-np-clearance, 16px) + 4px);
+ width:22px;
+ z-index:8;
+ display:flex;
+ align-items:stretch;
+ justify-content:center;
+ pointer-events:auto;
+ touch-action:none;
+ user-select:none;
+}
+.lib-fusion-jumplist.lib-fusion-jl-right,
+html.jl-side-right .lib-fusion-jumplist:not(.lib-fusion-jl-left) {
+ right:0;
+ left:auto;
+}
+.lib-fusion-jumplist.lib-fusion-jl-left,
+html.jl-side-left .lib-fusion-jumplist:not(.lib-fusion-jl-right) {
+ left:0;
+ right:auto;
+}
+html.jl-side-left .lib-fusion-body {
+ padding-right:8px;
+ padding-left:18px;
+}
+html.jl-side-right .lib-fusion-body {
+ padding-left:8px;
+ padding-right:18px;
+}
+
+/* Stable host so absolute enter/leave never collapses flex height (no header drop) */
+.lib-fusion-slide-host {
+ position:relative;
+ flex:1 1 auto;
+ min-height:0;
+ width:100%;
+ overflow:hidden;
+}
+/* Tab content always fills the host — no reflow when transition ends */
+.lib-fusion-slide-root {
+ position:absolute !important;
+ left:0; right:0; top:0; bottom:0;
+ width:100%;
+ height:100%;
+ min-height:0;
+ display:flex;
+ flex-direction:column;
+}
+.fusion-push-enter-active,
+.fusion-push-leave-active,
+.fusion-push-back-enter-active,
+.fusion-push-back-leave-active {
+ transition:transform 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.28s ease;
+ position:absolute !important;
+ left:0; right:0; top:0; bottom:0;
+ width:100%;
+ height:100%;
+}
+.fusion-push-enter {
+ transform:translateX(28%);
+ opacity:0.4;
+}
+.fusion-push-enter-to {
+ transform:translateX(0);
+ opacity:1;
+}
+.fusion-push-leave {
+ transform:translateX(0);
+ opacity:1;
+}
+.fusion-push-leave-to {
+ transform:translateX(-18%);
+ opacity:0.2;
+}
+.fusion-push-back-enter {
+ transform:translateX(-28%);
+ opacity:0.4;
+}
+.fusion-push-back-enter-to {
+ transform:translateX(0);
+ opacity:1;
+}
+.fusion-push-back-leave {
+ transform:translateX(0);
+ opacity:1;
+}
+.fusion-push-back-leave-to {
+ transform:translateX(18%);
+ opacity:0.2;
+}
+
+/* Header must sit above subheader chrome and receive clicks */
+.lib-fusion-tabs {
+ z-index:50 !important;
+ pointer-events:auto !important;
+ /* Never clip sort/column dropdowns */
+ overflow:visible !important;
+ transition:max-height 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+  opacity 0.22s ease, margin 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+  padding 0.28s cubic-bezier(0.32, 0.72, 0, 1), transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/*
+ * Scroll-down: gently hide section heads only (Songs / Title row).
+ * Keep Artists|Albums|Songs tabs + My Music subheader always visible.
+ */
+.lib-fusion-col-head,
+.lib-fusion-tab-head,
+.lib-fusion-song-header {
+ transition:max-height 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+  opacity 0.24s ease, padding 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+  margin 0.32s cubic-bezier(0.32, 0.72, 0, 1), border-width 0.2s ease,
+  transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.lib-fusion-chrome-collapsed .lib-fusion-col-head,
+.lib-fusion-chrome-collapsed .lib-fusion-tab-head,
+.lib-fusion-chrome-collapsed .lib-fusion-song-header {
+ max-height:0 !important;
+ min-height:0 !important;
+ opacity:0 !important;
+ padding-top:0 !important;
+ padding-bottom:0 !important;
+ margin:0 !important;
+ border-bottom-width:0 !important;
+ overflow:hidden !important;
+ pointer-events:none !important;
+ transform:translateY(-6px);
+}
+/* Tabs strip always stays — do not collapse with chrome */
+.lib-fusion-chrome-collapsed .lib-fusion-tabs {
+ /* no-op: keep full size */
+ max-height:none;
+ opacity:1;
+ pointer-events:auto;
+ transform:none;
+}
+.lib-fusion-jl-inner {
+ display:flex;
+ flex-direction:column;
+ justify-content:space-evenly;
+ align-items:center;
+ height:100%;
+ width:100%;
+ padding:4px 0;
+ box-sizing:border-box;
+}
+.lib-fusion-jl-key {
+ font-size:0.62rem;
+ font-weight:var(--bold-weight, 600);
+ line-height:1;
+ opacity:0.55;
+ padding:1px 0;
+ width:100%;
+ text-align:center;
+ cursor:pointer;
+}
+.lib-fusion-jl-key:hover,
+.lib-fusion-jl-active {
+ opacity:1;
+ color:var(--primary-color, #1976d2);
+}
+/* Leave scroll content clear of the lexicon strip */
+.lib-fusion-body {
+ padding-right:18px;
+ box-sizing:border-box;
+}
+
+/* 3-dot item menus — always available; reserved column so play overlay never covers them */
+.lib-fusion-item-menu {
+ flex:0 0 28px;
+ width:28px;
+ min-width:28px;
+ opacity:0.55;
+ margin-left:2px;
+ position:relative;
+ z-index:6;
+ pointer-events:auto;
+}
+.lib-fusion-artist-row:hover .lib-fusion-item-menu,
+.lib-fusion-album-head:hover .lib-fusion-item-menu,
+.lib-fusion-track-row:hover .lib-fusion-item-menu,
+.lib-fusion-song-row:hover .lib-fusion-item-menu,
+.lib-fusion-grid-item:hover .lib-fusion-item-menu,
+.msk-is-touch .lib-fusion-item-menu {
+ opacity:0.9;
+ pointer-events:auto;
+}
+.lib-fusion-grid-menu {
+ position:absolute !important;
+ bottom:6px !important;
+ right:4px !important;
+ top:auto !important;
+ left:auto !important;
+ z-index:4;
+}
+
+/* While fusion is open: only the title text ignores clicks (not the whole toolbar) */
+#browse-view .browse-main-pane.lib-fusion-main .browse-title {
+ pointer-events:none !important;
+ cursor:default !important;
+}
+
+/* Shared frosted glass for fusion chrome (tabs + column headers) */
+.lib-fusion-frost {
+ backdrop-filter:var(--toolbar-filter, blur(16px) saturate(1.3));
+ -webkit-backdrop-filter:var(--toolbar-filter, blur(16px) saturate(1.3));
+ background:linear-gradient(to bottom,
+  color-mix(in srgb, var(--background-color, #121212) 78%, transparent) 0%,
+  color-mix(in srgb, var(--background-color, #121212) 62%, transparent) 100%) !important;
+ border-bottom:1px solid color-mix(in srgb, var(--list-item-border-color, rgba(128,128,128,0.28)) 70%, transparent);
+}
+
+.theme--light .lib-fusion-frost {
+ background:linear-gradient(to bottom,
+  color-mix(in srgb, var(--background-color, #fafafa) 82%, transparent) 0%,
+  color-mix(in srgb, var(--background-color, #fafafa) 68%, transparent) 100%) !important;
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+ .lib-fusion-frost {
+  background:rgba(18, 18, 18, 0.78) !important;
+ }
+ .theme--light .lib-fusion-frost {
+  background:rgba(250, 250, 250, 0.82) !important;
+ }
+}
+
+/* Tabs — frosted glass covering Artists | Albums | Songs (always one row) */
+.lib-fusion-tabs {
+ position:relative;
+ z-index:50 !important;
+ flex:0 0 48px;
+ display:flex !important;
+ flex-shrink:0;
+ flex-wrap:nowrap !important;
+ align-items:center;
+ gap:6px;
+ padding:6px 8px;
+ min-height:48px;
+ max-height:48px;
+ height:48px;
+ box-sizing:border-box;
+ pointer-events:auto !important;
+ /* visible so sort/column menus are not clipped */
+ overflow:visible !important;
+ /* stronger frosted glass strip */
+ backdrop-filter:blur(22px) saturate(1.45);
+ -webkit-backdrop-filter:blur(22px) saturate(1.45);
+ background:linear-gradient(to bottom,
+  color-mix(in srgb, var(--background-color, #121212) 72%, transparent) 0%,
+  color-mix(in srgb, var(--background-color, #121212) 48%, transparent) 100%) !important;
+ border-bottom:1px solid color-mix(in srgb, var(--list-item-border-color, rgba(128,128,128,0.3)) 55%, transparent);
+ box-shadow:0 8px 24px rgba(0,0,0,0.12);
+}
+
+.theme--light .lib-fusion-tabs {
+ background:linear-gradient(to bottom,
+  color-mix(in srgb, var(--background-color, #fafafa) 78%, transparent) 0%,
+  color-mix(in srgb, var(--background-color, #fafafa) 52%, transparent) 100%) !important;
+}
+
+/*
+ * Artists / Albums / Songs — Material header tabs (default themes).
+ * Sliding indicator is a bottom bar (like Vuetify v-tabs).
+ * Mojave keeps the iOS segmented control — see html.theme-mojave rules below.
+ */
+.lib-fusion-seg {
+ position:relative;
+ display:flex;
+ align-items:stretch;
+ gap:0;
+ padding:0;
+ border-radius:0;
+ background:transparent;
+ backdrop-filter:none;
+ -webkit-backdrop-filter:none;
+ flex:1 1 auto;
+ min-width:0;
+ --pill-i:0;
+ /* hairline under the whole tab strip */
+ box-shadow:inset 0 -1px 0 var(--tab-border-color, color-mix(in srgb, var(--list-item-border-color, rgba(128,128,128,0.35)) 80%, transparent));
+}
+.lib-fusion-seg-pill {
+ position:absolute;
+ top:auto;
+ bottom:0;
+ left:0;
+ width:calc(100% / 3);
+ height:3px;
+ border-radius:3px 3px 0 0;
+ background:var(--active-color, var(--primary-color, #1976d2));
+ box-shadow:none;
+ transform:translateX(calc(var(--pill-i, 0) * 100%));
+ transition:transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+ pointer-events:none;
+ z-index:1;
+}
+.theme--light .lib-fusion-seg-pill {
+ background:var(--active-color, var(--primary-color, #1976d2));
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+ .lib-fusion-tabs {
+  background:rgba(20, 20, 20, 0.72) !important;
+ }
+ .theme--light .lib-fusion-tabs {
+  background:rgba(250, 250, 250, 0.78) !important;
+ }
+}
+
+.lib-fusion-tab {
+ appearance:none;
+ -webkit-appearance:none;
+ border:none;
+ background:transparent !important;
+ color:inherit;
+ opacity:0.72;
+ font:inherit;
+ font-size:0.875rem;
+ font-weight:500;
+ padding:12px 16px 11px;
+ border-radius:0;
+ cursor:pointer;
+ letter-spacing:0.04em;
+ text-transform:uppercase;
+ position:relative;
+ z-index:2;
+ pointer-events:auto !important;
+ flex:1 1 0;
+ text-align:center;
+ white-space:nowrap;
+ -webkit-user-select:none;
+ user-select:none;
+ min-width:0;
+}
+
+.lib-fusion-tab:hover {
+ opacity:1;
+ background:color-mix(in srgb, var(--primary-color, #1976d2) 8%, transparent) !important;
+}
+
+.lib-fusion-tab-active {
+ opacity:1;
+ background:transparent !important;
+ color:var(--active-color, var(--primary-color, #1976d2));
+ font-weight:600;
+ border:none;
+ box-shadow:none;
+}
+
+/* —— Mojave: keep iOS-style segmented control + sliding pill —— */
+html.theme-mojave .lib-fusion-seg,
+body.theme-mojave .lib-fusion-seg {
+ align-items:center;
+ padding:3px;
+ border-radius:22px;
+ background:color-mix(in srgb, var(--list-item-border-color, rgba(128,128,128,0.35)) 35%, transparent);
+ backdrop-filter:blur(8px);
+ -webkit-backdrop-filter:blur(8px);
+ flex:0 0 auto;
+ box-shadow:none;
+}
+html.theme-mojave .lib-fusion-seg-pill,
+body.theme-mojave .lib-fusion-seg-pill {
+ top:3px;
+ bottom:3px;
+ left:3px;
+ width:calc((100% - 6px) / 3);
+ height:auto;
+ border-radius:18px;
+ background:color-mix(in srgb, var(--primary-color, #1976d2) 22%, var(--background-color, #121212));
+ box-shadow:0 1px 4px rgba(0,0,0,0.18);
+ transition:transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+ z-index:0;
+}
+html.theme-mojave.theme--light .lib-fusion-seg-pill,
+html.theme-mojave .theme--light .lib-fusion-seg-pill,
+body.theme-mojave.theme--light .lib-fusion-seg-pill {
+ background:color-mix(in srgb, var(--primary-color, #1976d2) 18%, #fff);
+}
+html.theme-mojave .lib-fusion-tab,
+body.theme-mojave .lib-fusion-tab {
+ opacity:0.75;
+ font-size:0.92rem;
+ font-weight:var(--bold-weight, 600);
+ padding:8px 16px;
+ border-radius:18px;
+ letter-spacing:0.02em;
+ text-transform:none;
+}
+html.theme-mojave .lib-fusion-tab:hover,
+body.theme-mojave .lib-fusion-tab:hover {
+ opacity:1;
+ background:rgba(128,128,128,0.12) !important;
+}
+html.theme-mojave .lib-fusion-tab-active,
+body.theme-mojave .lib-fusion-tab-active {
+ opacity:1;
+ background:transparent !important;
+ color:var(--primary-color, #1976d2);
+ font-weight:var(--bold-weight, 600);
+}
+
+.lib-fusion-tab-close {
+ margin-left:4px;
+ padding:8px 12px;
+}
+
+/* Filter: icon collapses; open expands like global list search (same row) */
+.lib-fusion-filter-wrap {
+ flex:0 0 auto;
+ position:relative;
+ display:flex;
+ align-items:center;
+ margin:0 2px;
+ max-width:40px;
+ min-width:36px;
+ overflow:hidden;
+ transition:flex 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+  max-width 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+  min-width 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+  margin 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.lib-fusion-filter-wrap.lib-fusion-filter-open {
+ flex:1 1 auto;
+ min-width:0;
+ max-width:none;
+ margin:0 4px;
+}
+
+/* When filter open, hide tab segment / sort so field can grow like global search */
+.lib-fusion-tabs:has(.lib-fusion-filter-open) .lib-fusion-seg,
+.lib-fusion-tabs:has(.lib-fusion-filter-open) .lib-fusion-sort-wrap,
+.lib-fusion-tabs:has(.lib-fusion-filter-open) .lib-fusion-disp-wrap {
+ opacity:0;
+ max-width:0 !important;
+ min-width:0 !important;
+ margin:0 !important;
+ padding:0 !important;
+ overflow:hidden;
+ pointer-events:none;
+ transition:opacity 0.2s ease, max-width 0.28s cubic-bezier(0.32, 0.72, 0, 1), margin 0.28s ease;
+}
+.lib-fusion-tabs .lib-fusion-seg,
+.lib-fusion-tabs .lib-fusion-sort-wrap,
+.lib-fusion-tabs .lib-fusion-disp-wrap {
+ transition:opacity 0.22s ease 0.04s, max-width 0.28s cubic-bezier(0.32, 0.72, 0, 1), margin 0.28s ease;
+ max-width:100%;
+}
+
+.lib-fusion-filter-btn {
+ appearance:none;
+ -webkit-appearance:none;
+ border:none;
+ background:transparent;
+ color:inherit;
+ font:inherit;
+ font-size:1.05rem;
+ width:36px;
+ height:36px;
+ display:inline-flex;
+ align-items:center;
+ justify-content:center;
+ padding:0;
+ cursor:pointer;
+ opacity:0.85;
+ flex-shrink:0;
+}
+.lib-fusion-filter-btn:hover {
+ opacity:1;
+ background:transparent;
+}
+.lib-fusion-filter-icn {
+ width:22px !important;
+ height:22px !important;
+ display:block;
+}
+.lib-fusion-filter-btn-legacy {
+ width:36px;
+ height:36px;
+ border-radius:18px;
+ cursor:pointer;
+ line-height:1;
+ padding:0;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ opacity:0.85;
+}
+
+/* Match global list-search field */
+.lib-fusion-filter {
+ width:100%;
+ box-sizing:border-box;
+ appearance:none;
+ -webkit-appearance:none;
+ border:none;
+ border-bottom:1px solid var(--list-item-border-color, rgba(128,128,128,0.35));
+ border-radius:0;
+ background:transparent;
+ color:inherit;
+ font:inherit;
+ font-size:var(--std-font-size, 1rem);
+ font-weight:400;
+ /* room for close X on the right */
+ padding:6px 36px 6px 4px;
+ outline:none;
+ min-width:0;
+ height:36px;
+ opacity:0;
+ transform:translateX(8px);
+ transition:opacity 0.22s ease 0.04s, transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* Hide native webkit search cancel so we only show our close control */
+.lib-fusion-filter::-webkit-search-cancel-button,
+.lib-fusion-filter::-webkit-search-decoration {
+ -webkit-appearance:none;
+ appearance:none;
+ display:none;
+}
+.lib-fusion-filter-wrap.lib-fusion-filter-open .lib-fusion-filter {
+ opacity:1;
+ transform:translateX(0);
+}
+
+.lib-fusion-filter:focus {
+ border-bottom-color:var(--primary-color, #1976d2);
+ background:transparent;
+}
+
+.lib-fusion-filter-clear {
+ position:absolute;
+ right:0;
+ top:50%;
+ transform:translateY(-50%);
+ appearance:none;
+ -webkit-appearance:none;
+ border:none;
+ background:transparent;
+ color:inherit;
+ opacity:0.7;
+ cursor:pointer;
+ padding:4px 8px;
+ font-size:0.85rem;
+ z-index:3;
+ display:inline-flex;
+ align-items:center;
+ justify-content:center;
+ min-width:32px;
+ min-height:32px;
+ border-radius:50%;
+}
+
+.lib-fusion-filter-clear:hover {
+ opacity:1;
+ background:color-mix(in srgb, var(--text-color) 10%, transparent);
+}
+.lib-fusion-filter-clear .v-icon {
+ font-size:18px !important;
+ width:18px !important;
+ height:18px !important;
+}
+
+.lib-fusion-icon-btn {
+ appearance:none;
+ -webkit-appearance:none;
+ border:none;
+ background:transparent;
+ color:inherit;
+ font-size:1.1rem;
+ padding:6px 10px;
+ cursor:pointer;
+ opacity:0.85;
+ border-radius:50%;
+}
+
+.lib-fusion-icon-btn:hover {
+ background:var(--list-hover-color, rgba(128,128,128,0.15));
+}
+
+.lib-fusion-body {
+ position:relative;
+ z-index:1;
+ flex:1 1 auto;
+ min-height:0;
+ display:flex !important;
+ overflow:hidden;
+}
+
+.lib-fusion-artists {
+ flex-direction:row;
+ overflow:hidden;
+}
+
+/* Desktop: track is a normal flex row */
+.lib-fusion-artists-track {
+ display:flex;
+ flex-direction:row;
+ flex:1 1 auto;
+ min-height:0;
+ min-width:0;
+ width:100%;
+ height:100%;
+}
+
+.lib-fusion-col {
+ position:relative;
+ display:flex;
+ flex-direction:column;
+ min-height:0;
+ min-width:0;
+}
+
+.lib-fusion-artist-list {
+ flex:0 0 280px;
+ max-width:40vw;
+ border-right:1px solid var(--list-item-border-color, rgba(128,128,128,0.25));
+}
+
+.lib-fusion-detail {
+ flex:1 1 auto;
+}
+
+.lib-fusion-chevron {
+ flex:0 0 auto;
+ opacity:0.4;
+ font-size:1.2rem;
+ padding-left:4px;
+}
+
+.lib-fusion-back-btn {
+ appearance:none;
+ -webkit-appearance:none;
+ border:none;
+ background:transparent;
+ color:inherit;
+ font-size:1.6rem;
+ line-height:1;
+ padding:4px 10px 4px 2px;
+ cursor:pointer;
+ opacity:0.9;
+ flex:0 0 auto;
+}
+
+.lib-fusion-back-btn:hover {
+ color:var(--primary-color, #1976d2);
+}
+
+/* Frosted section headers — content scrolls underneath via scroll padding */
+.lib-fusion-col-head,
+.lib-fusion-tab-head {
+ position:sticky;
+ top:0;
+ z-index:4;
+ flex:0 0 auto;
+ max-height:48px;
+ padding:10px 12px 10px 12px;
+ font-size:0.72rem;
+ font-weight:var(--bold-weight, 600);
+ letter-spacing:0.06em;
+ text-transform:uppercase;
+ opacity:1;
+ color:inherit;
+ box-sizing:border-box;
+ backdrop-filter:var(--toolbar-filter, blur(14px) saturate(1.25));
+ -webkit-backdrop-filter:var(--toolbar-filter, blur(14px) saturate(1.25));
+ background:linear-gradient(to bottom,
+  color-mix(in srgb, var(--background-color, #121212) 88%, transparent) 0%,
+  color-mix(in srgb, var(--background-color, #121212) 55%, transparent) 100%) !important;
+ border-bottom:1px solid color-mix(in srgb, var(--list-item-border-color, rgba(128,128,128,0.2)) 60%, transparent);
+}
+
+.theme--light .lib-fusion-col-head,
+.theme--light .lib-fusion-tab-head {
+ background:linear-gradient(to bottom,
+  color-mix(in srgb, var(--background-color, #fafafa) 90%, transparent) 0%,
+  color-mix(in srgb, var(--background-color, #fafafa) 60%, transparent) 100%) !important;
+}
+
+.lib-fusion-col-head,
+.lib-fusion-tab-head {
+ opacity:0.92;
+ display:flex;
+ align-items:center;
+ gap:6px;
+ min-width:0;
+}
+.lib-fusion-tab-head > .ellipsis {
+ flex:1 1 auto;
+ min-width:0;
+}
+
+.lib-fusion-count {
+ opacity:0.55;
+ font-weight:400;
+ margin-left:4px;
+}
+
+.lib-fusion-col-scroll {
+ flex:1 1 auto;
+ min-height:0;
+ overflow:auto;
+ -webkit-overflow-scrolling:touch;
+}
+
+.lib-fusion-simple-list {
+ min-height:0;
+}
+
+/* Artist rows with circular artwork */
+.lib-fusion-artist-row {
+ display:flex;
+ align-items:center;
+ gap:10px;
+ height:52px;
+ padding:0 12px;
+ cursor:pointer;
+ box-sizing:border-box;
+ border-left:3px solid transparent;
+}
+
+.lib-fusion-artist-row:hover {
+ background:var(--list-hover-color, rgba(128,128,128,0.12));
+}
+
+.lib-fusion-row-active {
+ background:rgba(25, 118, 210, 0.16);
+ border-left-color:var(--primary-color, #1976d2);
+ font-weight:var(--bold-weight, 600);
+}
+
+.lib-fusion-artist-art {
+ width:36px;
+ height:36px;
+ border-radius:50%;
+ object-fit:cover;
+ flex:0 0 auto;
+ background:var(--image-background-color, rgba(128,128,128,0.15));
+}
+
+.lib-fusion-artist-name {
+ flex:1 1 auto;
+ min-width:0;
+}
+
+.lib-fusion-detail-head {
+ position:sticky;
+ top:0;
+ z-index:4;
+ flex:0 0 auto;
+ display:flex;
+ align-items:center;
+ gap:10px;
+ padding:10px 12px 10px 12px;
+ border-bottom:none;
+ backdrop-filter:var(--toolbar-filter, blur(14px) saturate(1.25));
+ -webkit-backdrop-filter:var(--toolbar-filter, blur(14px) saturate(1.25));
+ background:linear-gradient(to bottom,
+  color-mix(in srgb, var(--background-color, #121212) 90%, transparent) 0%,
+  color-mix(in srgb, var(--background-color, #121212) 58%, transparent) 100%) !important;
+}
+
+.lib-fusion-detail-art {
+ width:48px;
+ height:48px;
+ border-radius:50%;
+ object-fit:cover;
+ flex:0 0 auto;
+ background:var(--image-background-color, rgba(128,128,128,0.15));
+}
+
+.lib-fusion-detail-title {
+ flex:1 1 auto;
+ min-width:0;
+ font-size:1.15rem;
+ font-weight:var(--bold-weight, 600);
+}
+
+.lib-fusion-detail-actions {
+ flex:0 0 auto;
+ display:flex;
+ align-items:center;
+}
+
+.lib-fusion-bio {
+ margin:10px 14px 14px 14px;
+ padding:12px 14px;
+ border-radius:12px;
+ font-size:0.88rem;
+ line-height:1.45;
+ opacity:0.88;
+ background:rgba(128, 128, 128, 0.12);
+}
+
+/* Artist detail — album rows with inline play actions */
+.lib-fusion-album {
+ border-bottom:1px solid var(--list-item-border-color, rgba(128,128,128,0.14));
+}
+
+.lib-fusion-album-head {
+ display:flex;
+ align-items:center;
+ gap:10px;
+ padding:10px 12px;
+ position:relative;
+ cursor:pointer;
+}
+
+.lib-fusion-album-head:hover {
+ background:var(--list-hover-color, rgba(128,128,128,0.1));
+}
+
+.lib-fusion-album-art {
+ width:56px;
+ height:56px;
+ border-radius:6px;
+ object-fit:cover;
+ flex:0 0 auto;
+ display:block;
+ background:var(--image-background-color, rgba(128,128,128,0.15));
+}
+
+.lib-fusion-album-meta {
+ flex:1 1 auto;
+ min-width:0;
+ cursor:pointer;
+ display:flex;
+ flex-direction:column;
+ justify-content:center;
+}
+
+.lib-fusion-album-title {
+ font-weight:var(--bold-weight, 600);
+ font-size:0.98rem;
+ overflow:hidden;
+ text-overflow:ellipsis;
+ white-space:nowrap;
+ line-height:1.25;
+}
+
+.lib-fusion-album-sub {
+ font-size:0.72rem;
+ letter-spacing:0.04em;
+ margin-top:2px;
+ overflow:hidden;
+ text-overflow:ellipsis;
+ white-space:nowrap;
+ line-height:1.25;
+}
+
+.lib-fusion-expand {
+ opacity:0.55;
+ flex:0 0 auto;
+ cursor:pointer;
+ padding:8px;
+}
+
+/*
+ * Play actions overlay like Material .list-btns —
+ * sit left of the ⋮ column (and expand chevron on album heads).
+ */
+.lib-fusion-row-btns {
+ position:absolute;
+ top:50%;
+ right:32px; /* leave room for ⋮ only */
+ transform:translateY(-50%);
+ z-index:4; /* below ⋮ (z-index 6) */
+ display:flex;
+ align-items:center;
+ justify-content:flex-end;
+ gap:0;
+ min-width:0;
+ padding:4px 6px;
+ border-radius:14px;
+ background:color-mix(in srgb, var(--background-color, #121212) 88%, transparent);
+ backdrop-filter:blur(10px) saturate(1.2);
+ -webkit-backdrop-filter:blur(10px) saturate(1.2);
+ box-shadow:0 2px 10px rgba(0,0,0,0.28);
+ pointer-events:auto;
+}
+
+.theme--light .lib-fusion-row-btns {
+ background:color-mix(in srgb, var(--background-color, #fafafa) 90%, transparent);
+ box-shadow:0 2px 10px rgba(0,0,0,0.12);
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+ .lib-fusion-row-btns {
+  background:rgba(24, 24, 24, 0.9);
+ }
+ .theme--light .lib-fusion-row-btns {
+  background:rgba(250, 250, 250, 0.92);
+ }
+}
+
+/* Artist album rows: ⋮ (~28px) + expand (~32px) — keep play cluster clear of both */
+.lib-fusion-album-head .lib-fusion-row-btns {
+ right:68px !important;
+}
+/* Track rows: duration sits left of ⋮; hover cluster clears ⋮ only */
+.lib-fusion-track-row .lib-fusion-row-btns,
+.lib-fusion-song-row .lib-fusion-row-btns {
+ right:36px !important;
+}
+
+.lib-fusion-ibtn {
+ width:var(--icon-size, 24px);
+ height:var(--icon-size, 24px);
+ cursor:pointer;
+ opacity:0.85;
+ display:block;
+ flex:0 0 auto;
+ margin-right:6px;
+}
+.lib-fusion-row-btns .lib-fusion-ibtn:last-child {
+ margin-right:0;
+}
+
+.lib-fusion-ibtn:hover {
+ opacity:1;
+}
+
+/* Expand chevron stays clickable above hover play cluster */
+.lib-fusion-expand,
+.lib-fusion-chevron {
+ position:relative;
+ z-index:6;
+ flex:0 0 auto;
+}
+
+/* —— Expanded album tracks: align with default Material list —— */
+.lib-fusion-tracks {
+ padding:0 0 6px 0;
+ margin:0;
+ border-bottom:1px solid var(--list-item-border-color, rgba(128,128,128,0.14));
+ background:color-mix(in srgb, var(--background-color, #121212) 96%, transparent);
+}
+.theme--light .lib-fusion-tracks {
+ background:color-mix(in srgb, var(--background-color, #fafafa) 96%, transparent);
+}
+.lib-fusion-track-list {
+ display:flex;
+ flex-direction:column;
+}
+.lib-fusion-track-row-mat {
+ min-height:var(--list-item-height, 48px);
+ height:auto;
+ padding:6px 8px 6px 16px !important;
+ border-radius:0 !important;
+ border-bottom:1px solid var(--list-item-border-color, rgba(128,128,128,0.12));
+ gap:10px;
+}
+.lib-fusion-track-row-mat:last-child {
+ border-bottom:none;
+}
+.lib-fusion-track-row-mat .lib-fusion-track-num {
+ flex:0 0 36px;
+ text-align:right;
+ font-variant-numeric:tabular-nums;
+ opacity:0.55;
+ font-size:0.9rem;
+ padding-right:4px;
+}
+.lib-fusion-track-row-mat .lib-fusion-track-title {
+ flex:1 1 auto;
+ min-width:0;
+ font-size:var(--std-font-size, 1rem);
+ cursor:pointer;
+}
+.lib-fusion-track-row-mat .lib-fusion-track-time {
+ flex:0 0 auto;
+ min-width:2.8em;
+ text-align:right;
+ font-variant-numeric:tabular-nums;
+ font-size:0.85rem;
+ opacity:0.65;
+ padding-right:4px;
+}
+.lib-fusion-track-row-mat:hover .lib-fusion-track-time {
+ opacity:0.2;
+}
+/* Indent expanded tracks under album cover only (not full-width drill pane) */
+.lib-fusion-tracks .lib-fusion-track-row-mat {
+ padding-left:78px !important; /* art 56 + gap */
+}
+/* Drill / full album track panes: standard Material list padding */
+.lib-fusion-tracks-pane .lib-fusion-track-row-mat,
+.lib-fusion-simple-list .lib-fusion-track-row-mat {
+ padding-left:16px !important;
+}
+
+/* Virtual scroller fills remaining panel height */
+.lib-fusion-scroller {
+ flex:1 1 auto !important;
+ min-height:0 !important;
+ height:100%;
+ max-height:100%;
+ overflow:auto !important;
+ -webkit-overflow-scrolling:touch;
+}
+
+.lib-fusion-col-scroll {
+ display:flex;
+ flex-direction:column;
+}
+
+.lib-fusion-col-scroll > .lib-fusion-col-head,
+.lib-fusion-col-scroll > .lib-fusion-tab-head,
+.lib-fusion-col-scroll > .lib-fusion-detail-head,
+.lib-fusion-col-scroll > .lib-fusion-song-header {
+ flex:0 0 auto;
+}
+
+.lib-fusion-artist-row {
+ height:52px;
+}
+
+.lib-fusion-song-row {
+ height:40px;
+}
+
+/* Album grid: min 2 cols, more when wide; pinch via --browse-zoom */
+.lib-fusion-album-grid {
+ display:grid;
+ /* min track size zooms; never larger than half width so ≥2 columns always fit */
+ --fusion-cell:min(calc(118px * var(--browse-zoom, 1)), calc((100% - 14px) / 2));
+ grid-template-columns:repeat(auto-fill, minmax(var(--fusion-cell), 1fr));
+ gap:calc(10px * var(--browse-zoom, 1));
+ padding:8px 14px 24px 14px;
+}
+
+.lib-fusion-grid-item {
+ text-align:center;
+ min-width:0;
+ position:relative;
+ overflow:visible;
+ border-radius:8px;
+ display:flex;
+ flex-direction:column;
+ align-items:stretch;
+}
+.lib-fusion-grid-text {
+ min-width:0;
+ width:100%;
+ padding:4px 26px 6px 4px; /* room for side 3-dot menu */
+ text-align:center;
+ position:relative;
+ display:flex;
+ flex-direction:column;
+ align-items:center;
+ justify-content:flex-start;
+ box-sizing:border-box;
+}
+.lib-fusion-grid-menu-side {
+ position:absolute !important;
+ right:0 !important;
+ top:50% !important;
+ bottom:auto !important;
+ left:auto !important;
+ transform:translateY(-50%);
+ z-index:5;
+ opacity:0.7;
+}
+.lib-fusion-grid-item:hover .lib-fusion-grid-menu-side,
+.msk-is-touch .lib-fusion-grid-menu-side {
+ opacity:0.95;
+}
+
+.lib-fusion-cover-wrap {
+ position:relative;
+ width:100%;
+ aspect-ratio:1;
+ border-radius:8px;
+ overflow:hidden;
+ cursor:pointer;
+ background:var(--image-background-color, rgba(128,128,128,0.15));
+}
+
+.lib-fusion-cover-wrap > img {
+ width:100%;
+ height:100%;
+ object-fit:cover;
+ display:block;
+}
+
+/* Same idea as .grid-btns on album pages */
+.lib-fusion-grid-btns {
+ position:absolute;
+ top:4px;
+ right:4px;
+ z-index:3;
+ display:flex;
+ flex-direction:row;
+ align-items:center;
+ gap:2px;
+ padding:4px;
+ margin:-4px;
+ opacity:0;
+ pointer-events:none;
+ transition:opacity 0.12s ease;
+}
+
+.msk-is-non-touch .lib-fusion-cover-wrap:hover .lib-fusion-grid-btns,
+.msk-is-non-touch .lib-fusion-grid-btns:hover,
+.msk-is-non-touch .lib-fusion-cover-wrap:focus-within .lib-fusion-grid-btns {
+ opacity:1;
+ pointer-events:auto;
+}
+
+/* Touch / mobile: hide art overlays — use contextual menu */
+.msk-is-touch .lib-fusion-grid-btns,
+.msk-is-touch .lib-fusion-row-btns {
+ display:none !important;
+}
+
+/* SVG hover-play/shuffle already include a circle — no extra chip background */
+.lib-fusion-gbtn {
+ width:var(--icon-size, 24px);
+ height:var(--icon-size, 24px);
+ border-radius:50%;
+ cursor:pointer;
+ display:block;
+ background:transparent;
+ opacity:0.85;
+ box-shadow:none;
+}
+
+.lib-fusion-gbtn:hover {
+ opacity:1;
+}
+
+.lib-fusion-gbtn-main {
+ width:calc(var(--icon-size, 24px) + 4px) !important;
+ height:calc(var(--icon-size, 24px) + 4px) !important;
+}
+
+/* Material Icons chips on art / rows */
+.lib-fusion-gbtn-mat,
+.lib-fusion-mat-btn {
+ display:inline-flex !important;
+ align-items:center;
+ justify-content:center;
+ color:#fff !important;
+}
+.lib-fusion-gbtn-mat .v-icon,
+.lib-fusion-mat-btn .v-icon {
+ color:#fff !important;
+ font-size:18px !important;
+ width:auto !important;
+ height:auto !important;
+}
+.lib-fusion-gbtn-main .v-icon,
+.lib-fusion-mat-main .v-icon {
+ font-size:22px !important;
+}
+.lib-fusion-mat-btn {
+ width:28px;
+ height:28px;
+ border-radius:50%;
+ background:rgba(32, 32, 32, 0.78);
+ box-shadow:0 1px 3px rgba(0,0,0,0.3);
+ cursor:pointer;
+ margin-left:3px;
+}
+.lib-fusion-mat-main {
+ background:rgba(0,0,0,0.85);
+ width:32px;
+ height:32px;
+}
+.lib-fusion-icon-btn .v-icon {
+ font-size:22px !important;
+ width:auto !important;
+ height:auto !important;
+ color:inherit !important;
+}
+
+/* Swipe-to-add / play-next on fusion rows & grid */
+.lib-fusion-swipe-bg {
+ position:absolute;
+ top:0;
+ bottom:0;
+ width:56%;
+ max-width:100px;
+ display:flex;
+ flex-direction:column;
+ align-items:center;
+ justify-content:center;
+ gap:2px;
+ z-index:0;
+ pointer-events:none;
+ opacity:0;
+ color:#fff;
+ font-size:11px;
+ font-weight:600;
+ border-radius:6px;
+}
+.lib-fusion-swipe-bg .v-icon {
+ color:#fff !important;
+ font-size:20px !important;
+}
+.lib-fusion-swipe-add {
+ left:0;
+ background:linear-gradient(90deg, #2e7d32 0%, #43a047 100%);
+}
+.lib-fusion-swipe-next {
+ right:0;
+ background:linear-gradient(270deg, #1565c0 0%, #1e88e5 100%);
+}
+.lib-fusion-swipe-right .lib-fusion-swipe-add,
+.lib-fusion-swipe-left .lib-fusion-swipe-next {
+ opacity:1;
+}
+.lib-fusion-swipe-armed.lib-fusion-swipe-right .lib-fusion-swipe-add,
+.lib-fusion-swipe-armed.lib-fusion-swipe-left .lib-fusion-swipe-next {
+ filter:brightness(1.08);
+}
+.lib-fusion-album,
+.lib-fusion-song-row,
+.lib-fusion-track-row {
+ position:relative;
+}
+.lib-fusion-swiping {
+ z-index:1;
+ will-change:transform;
+}
+
+.lib-fusion-grid-title {
+ margin-top:4px;
+ width:100%;
+ font-size:calc(0.88rem * var(--browse-text-zoom, 1));
+ font-weight:var(--bold-weight, 600);
+ cursor:pointer;
+ line-height:1.25;
+ text-align:center;
+ overflow:hidden;
+ text-overflow:ellipsis;
+ white-space:nowrap;
+}
+
+.lib-fusion-grid-sub {
+ width:100%;
+ font-size:calc(0.78rem * var(--browse-text-zoom, 1));
+ line-height:1.2;
+ text-align:center;
+ overflow:hidden;
+ text-overflow:ellipsis;
+ white-space:nowrap;
+}
+
+.lib-fusion-track-row,
+.lib-fusion-song-row {
+ display:flex;
+ align-items:center;
+ gap:8px;
+ min-height:40px;
+ padding:4px 12px 4px 0;
+ border-radius:6px;
+ position:relative;
+ box-sizing:border-box;
+}
+
+.lib-fusion-song-row {
+ padding:0 12px;
+}
+
+.lib-fusion-track-row:hover,
+.lib-fusion-song-row:hover {
+ background:var(--list-hover-color, rgba(128,128,128,0.1));
+}
+
+/* Keep time/album visible under overlay but give hover a soft fade edge */
+.lib-fusion-song-row:hover .lib-fusion-song-album,
+.lib-fusion-song-row:hover .lib-fusion-track-time,
+.lib-fusion-track-row:hover .lib-fusion-track-time {
+ opacity:0.25;
+}
+
+.lib-fusion-track-num {
+ flex:0 0 28px;
+ text-align:right;
+ opacity:0.55;
+ font-variant-numeric:tabular-nums;
+ font-size:0.85rem;
+}
+
+.lib-fusion-track-title {
+ flex:1 1 auto;
+ min-width:0;
+ cursor:pointer;
+}
+
+.lib-fusion-track-time {
+ flex:0 0 auto;
+ font-variant-numeric:tabular-nums;
+ font-size:0.82rem;
+ opacity:0.7;
+ padding-right:4px;
+}
+
+.lib-fusion-song-row {
+ height:40px;
+ padding:0 12px;
+ box-sizing:border-box;
+}
+
+.lib-fusion-song-artist,
+.lib-fusion-song-album {
+ flex:0 1 22%;
+ min-width:0;
+ font-size:0.85rem;
+}
+
+.lib-fusion .link-item {
+ cursor:pointer;
+ text-decoration:none;
+}
+.lib-fusion .link-item:hover {
+ text-decoration:underline;
+ color:var(--primary-color, #1976d2);
+}
+
+.lib-fusion-albums-tab,
+.lib-fusion-songs-tab {
+ flex-direction:column !important;
+ width:100%;
+}
+
+/* Full-height scroll panels under frosted tabs */
+.lib-fusion-albums-tab > .lib-fusion-col-scroll,
+.lib-fusion-songs-tab > .lib-fusion-col-scroll {
+ flex:1 1 auto;
+ min-height:0;
+ width:100%;
+ display:flex;
+ flex-direction:column;
+}
+
+.lib-fusion-track-time {
+ min-width:2.6em;
+ text-align:left;
+}
+/* Song table headers always left-aligned (override generic track-time right align) */
+.lib-fusion-song-header .lib-fusion-track-time {
+ text-align:left !important;
+}
+
+.lib-fusion-loading,
+.lib-fusion-empty {
+ padding:24px 16px;
+ opacity:0.65;
+ text-align:center;
+}
+
+.lib-fusion-err {
+ opacity:1 !important;
+ color:#e57373;
+}
+
+.lib-fusion-empty-pad {
+ padding-top:48px;
+}
+
+/* —— Selection bar —— */
+.lib-fusion-selbar {
+ flex:0 0 auto;
+ display:flex;
+ align-items:center;
+ gap:6px;
+ padding:8px 12px;
+ z-index:22;
+ border-bottom:1px solid var(--list-item-border-color, rgba(128,128,128,0.25));
+}
+
+.lib-fusion-selcount {
+ flex:1 1 auto;
+ font-size:0.9rem;
+ font-weight:var(--bold-weight, 600);
+ opacity:0.9;
+}
+
+/* —— Sort / columns dropdowns: icon + small triangle only —— */
+.lib-fusion-sort-wrap,
+.lib-fusion-disp-wrap {
+ position:relative;
+ flex:0 0 auto;
+ z-index:60;
+}
+.lib-fusion-dd-btn {
+ appearance:none;
+ -webkit-appearance:none;
+ border:none;
+ background:transparent;
+ color:inherit;
+ display:inline-flex;
+ align-items:center;
+ gap:0;
+ padding:4px 2px 4px 6px;
+ margin:0;
+ cursor:pointer;
+ opacity:0.85;
+ border-radius:8px;
+}
+.lib-fusion-dd-btn:hover {
+ opacity:1;
+ background:rgba(128,128,128,0.12);
+}
+.lib-fusion-dd-btn .v-icon {
+ font-size:22px !important;
+ width:auto !important;
+ height:auto !important;
+}
+.lib-fusion-dd-caret {
+ margin-left:-4px !important;
+ font-size:20px !important;
+ opacity:0.7;
+}
+
+.lib-fusion-sort-menu {
+ position:absolute;
+ top:calc(100% + 6px);
+ right:0;
+ z-index:70;
+ min-width:200px;
+ max-width:min(92vw, 280px);
+ /* Double-sort menu can be tall (primary + secondary + reverse) — scroll it */
+ max-height:min(60vh, 360px);
+ overflow-x:hidden;
+ overflow-y:auto;
+ -webkit-overflow-scrolling:touch;
+ overscroll-behavior:contain;
+ padding:6px;
+ border-radius:12px;
+ background:color-mix(in srgb, var(--background-color, #1a1a1a) 96%, transparent);
+ backdrop-filter:blur(16px);
+ -webkit-backdrop-filter:blur(16px);
+ border:1px solid var(--list-item-border-color, rgba(128,128,128,0.3));
+ box-shadow:0 10px 28px rgba(0,0,0,0.35);
+ /* Ensure dropdown paints above sliding tab content */
+ pointer-events:auto;
+}
+
+.theme--light .lib-fusion-sort-menu {
+ background:color-mix(in srgb, var(--background-color, #fff) 96%, transparent);
+}
+
+.lib-fusion-sort-head {
+ font-size:0.72rem;
+ font-weight:var(--bold-weight, 600);
+ letter-spacing:0.04em;
+ text-transform:uppercase;
+ opacity:0.55;
+ padding:8px 12px 4px;
+}
+.lib-fusion-sort-sep {
+ height:1px;
+ margin:6px 8px;
+ background:var(--list-item-border-color, rgba(128,128,128,0.35));
+}
+.lib-fusion-sort-opt {
+ display:block;
+ width:100%;
+ text-align:left;
+ appearance:none;
+ -webkit-appearance:none;
+ border:none;
+ background:transparent;
+ color:inherit;
+ font:inherit;
+ font-size:0.88rem;
+ padding:8px 12px;
+ border-radius:8px;
+ cursor:pointer;
+}
+.lib-fusion-sort-reverse {
+ display:flex !important;
+ align-items:center;
+ gap:8px;
+}
+
+.lib-fusion-sort-opt:hover {
+ background:rgba(128,128,128,0.15);
+}
+
+.lib-fusion-sort-opt-on {
+ color:var(--primary-color, #1976d2);
+ font-weight:var(--bold-weight, 600);
+ background:rgba(25, 118, 210, 0.14);
+}
+
+/* Songs display / columns menu */
+.lib-fusion-disp-wrap {
+ position:relative;
+ flex:0 0 auto;
+}
+
+.lib-fusion-disp-btn {
+ max-width:130px;
+}
+
+.lib-fusion-disp-menu {
+ min-width:200px;
+ right:0;
+}
+
+.lib-fusion-disp-head {
+ padding:8px 12px 4px 12px;
+ font-size:0.72rem;
+ font-weight:var(--bold-weight, 600);
+ letter-spacing:0.05em;
+ text-transform:uppercase;
+ opacity:0.65;
+}
+
+.lib-fusion-disp-opt {
+ display:flex;
+ align-items:center;
+ gap:10px;
+ width:100%;
+ text-align:left;
+ appearance:none;
+ -webkit-appearance:none;
+ border:none;
+ background:transparent;
+ color:inherit;
+ font:inherit;
+ font-size:0.9rem;
+ padding:9px 12px;
+ border-radius:8px;
+ cursor:pointer;
+}
+
+.lib-fusion-disp-opt:hover {
+ background:rgba(128,128,128,0.14);
+}
+
+.lib-fusion-disp-locked {
+ opacity:0.55;
+ cursor:default;
+}
+
+.lib-fusion-disp-check {
+ flex:0 0 20px;
+ width:20px;
+ height:20px;
+ border-radius:4px;
+ border:2px solid rgba(128,128,128,0.5);
+ box-sizing:border-box;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ font-size:0.75rem;
+ font-weight:700;
+ line-height:1;
+ color:#fff;
+}
+
+.lib-fusion-disp-check-on {
+ border-color:var(--primary-color, #1976d2);
+ background:var(--primary-color, #1976d2);
+}
+
+/* Song table columns */
+.lib-fusion-song-header {
+ flex:0 0 auto;
+ display:flex;
+ align-items:center;
+ justify-content:flex-start;
+ gap:8px;
+ padding:6px 12px;
+ max-height:40px;
+ box-sizing:border-box;
+ font-size:0.68rem;
+ font-weight:var(--bold-weight, 600);
+ letter-spacing:0.04em;
+ text-transform:uppercase;
+ text-align:left;
+ opacity:0.72;
+ border-bottom:1px solid var(--list-item-border-color, rgba(128,128,128,0.2));
+ position:sticky;
+ /* Sit under sticky "Songs" section head when both expanded */
+ top:48px;
+ z-index:5;
+ /* Frosted glass — content scrolls underneath */
+ backdrop-filter:var(--toolbar-filter, blur(14px) saturate(1.25));
+ -webkit-backdrop-filter:var(--toolbar-filter, blur(14px) saturate(1.25));
+ background:linear-gradient(to bottom,
+  color-mix(in srgb, var(--background-color, #121212) 90%, transparent) 0%,
+  color-mix(in srgb, var(--background-color, #121212) 72%, transparent) 100%) !important;
+}
+.theme--light .lib-fusion-song-header {
+ background:linear-gradient(to bottom,
+  color-mix(in srgb, var(--background-color, #fafafa) 92%, transparent) 0%,
+  color-mix(in srgb, var(--background-color, #fafafa) 76%, transparent) 100%) !important;
+}
+.lib-fusion-chrome-collapsed .lib-fusion-song-header {
+ top:0;
+}
+
+/* Desktop: table header always visible (never collapse), frosted over scrolling rows */
+@media (min-width:800px) {
+ .lib-fusion-songs-tab > .lib-fusion-col-scroll {
+  /* Headers pin; only the scroller (or overflow content) moves */
+  overflow:hidden;
+ }
+ .lib-fusion-songs-tab .lib-fusion-song-header {
+  position:sticky !important;
+  top:0 !important; /* under flex flow the "Songs" head is already above; pin to top of remaining scroll if any */
+  z-index:6 !important;
+  max-height:40px !important;
+  min-height:32px !important;
+  opacity:0.9 !important;
+  transform:none !important;
+  pointer-events:auto !important;
+  overflow:visible !important;
+  padding:6px 12px !important;
+  margin:0 !important;
+  border-bottom:1px solid color-mix(in srgb, var(--list-item-border-color, rgba(128,128,128,0.28)) 70%, transparent) !important;
+  backdrop-filter:var(--toolbar-filter, blur(16px) saturate(1.3)) !important;
+  -webkit-backdrop-filter:var(--toolbar-filter, blur(16px) saturate(1.3)) !important;
+  background:linear-gradient(to bottom,
+   color-mix(in srgb, var(--background-color, #121212) 92%, transparent) 0%,
+   color-mix(in srgb, var(--background-color, #121212) 70%, transparent) 100%) !important;
+ }
+ .theme--light .lib-fusion-songs-tab .lib-fusion-song-header {
+  background:linear-gradient(to bottom,
+   color-mix(in srgb, var(--background-color, #fafafa) 94%, transparent) 0%,
+   color-mix(in srgb, var(--background-color, #fafafa) 74%, transparent) 100%) !important;
+ }
+ /* Never hide the table header when chrome collapses on desktop */
+ .lib-fusion-chrome-collapsed .lib-fusion-songs-tab .lib-fusion-song-header {
+  max-height:40px !important;
+  min-height:32px !important;
+  opacity:0.9 !important;
+  padding:6px 12px !important;
+  margin:0 !important;
+  border-bottom-width:1px !important;
+  overflow:visible !important;
+  pointer-events:auto !important;
+  transform:none !important;
+ }
+ /* When "Songs" section head collapses, table header sticks to top of pane */
+ .lib-fusion-chrome-collapsed .lib-fusion-songs-tab .lib-fusion-song-header {
+  top:0 !important;
+ }
+ /* Prefer scrolling inside RecycleScroller so header stays in flex chrome above */
+ .lib-fusion-songs-tab .lib-fusion-scroller {
+  flex:1 1 auto !important;
+  min-height:0 !important;
+  overflow:auto !important;
+ }
+}
+
+.lib-fusion-check-ph {
+ flex:0 0 20px;
+ margin-right:4px;
+ visibility:hidden;
+}
+
+.lib-fusion-song-num,
+.lib-fusion-song-num-h {
+ flex:0 0 28px;
+ text-align:left;
+ font-variant-numeric:tabular-nums;
+ opacity:0.7;
+ font-size:0.85rem;
+}
+
+.lib-fusion-song-genre {
+ flex:0 1 14%;
+ min-width:0;
+ font-size:0.85rem;
+ text-align:left;
+}
+
+.lib-fusion-song-year {
+ flex:0 0 44px;
+ text-align:left;
+ font-variant-numeric:tabular-nums;
+ font-size:0.85rem;
+}
+
+.lib-fusion-song-added {
+ flex:0 0 88px;
+ min-width:0;
+ font-size:0.78rem;
+ text-align:left;
+ opacity:0.8;
+}
+
+/* Clickable column headers (songs) */
+.lib-fusion-col-sort {
+ cursor:pointer;
+ user-select:none;
+ text-align:left !important;
+ display:inline-flex;
+ align-items:center;
+ gap:3px;
+ min-width:0;
+}
+.lib-fusion-col-sort:hover {
+ opacity:1;
+ color:var(--primary-color, #1976d2);
+}
+.lib-fusion-col-sort-on {
+ opacity:1;
+ color:var(--primary-color, #1976d2);
+}
+.lib-fusion-col-sort-dir {
+ font-size:0.65rem;
+ opacity:0.85;
+}
+
+/* Genre drill list (songs sorted by genre) */
+.lib-fusion-genre-row {
+ display:flex;
+ align-items:center;
+ gap:10px;
+ min-height:48px;
+ padding:8px 12px;
+ cursor:pointer;
+ border-bottom:1px solid var(--list-item-border-color, rgba(128,128,128,0.12));
+}
+.lib-fusion-genre-row:hover {
+ background:rgba(128,128,128,0.08);
+}
+.lib-fusion-genre-name {
+ flex:1 1 auto;
+ min-width:0;
+ font-weight:var(--bold-weight, 600);
+}
+.lib-fusion-genre-count {
+ flex:0 0 auto;
+ opacity:0.55;
+ font-size:0.85rem;
+}
+
+/* Default song row flex — columns opt-in via .has-* */
+.lib-fusion-song-main {
+ display:contents; /* desktop: title + artist stay as flex siblings */
+}
+.lib-fusion-song-row .lib-fusion-track-title,
+.lib-fusion-song-row .lib-fusion-song-main .lib-fusion-track-title {
+ flex:1 1 auto;
+ min-width:0;
+}
+.lib-fusion-song-row .lib-fusion-song-artist,
+.lib-fusion-song-row .lib-fusion-song-main .lib-fusion-song-artist,
+.lib-fusion-song-row .lib-fusion-song-album {
+ flex:0 1 20%;
+ min-width:0;
+}
+.lib-fusion-song-row.has-genre .lib-fusion-song-artist,
+.lib-fusion-song-row.has-genre .lib-fusion-song-album {
+ flex:0 1 16%;
+}
+.lib-fusion-song-header .lib-fusion-track-title,
+.lib-fusion-song-header .lib-fusion-song-artist,
+.lib-fusion-song-header .lib-fusion-song-album,
+.lib-fusion-song-header .lib-fusion-song-genre,
+.lib-fusion-song-header .lib-fusion-song-year,
+.lib-fusion-song-header .lib-fusion-song-added,
+.lib-fusion-song-header .lib-fusion-track-time,
+.lib-fusion-song-header .lib-fusion-song-num-h,
+.lib-fusion-song-header .lib-fusion-col-sort {
+ min-width:0;
+ text-align:left !important;
+ justify-content:flex-start;
+}
+.lib-fusion-song-header .lib-fusion-track-time {
+ text-align:left !important;
+}
+.lib-fusion-song-row.has-added .lib-fusion-song-artist,
+.lib-fusion-song-row.has-added .lib-fusion-song-album {
+ flex:0 1 15%;
+}
+.lib-fusion-song-header .lib-fusion-track-title {
+ flex:1 1 auto;
+}
+.lib-fusion-song-header .lib-fusion-song-artist,
+.lib-fusion-song-header .lib-fusion-song-album {
+ flex:0 1 20%;
+}
+.lib-fusion-song-header .lib-fusion-song-genre {
+ flex:0 1 14%;
+}
+.lib-fusion-song-header .lib-fusion-song-added {
+ flex:0 0 88px;
+}
+.lib-fusion-song-header .lib-fusion-track-time {
+ flex:0 0 auto;
+}
+.lib-fusion-song-row .lib-fusion-song-added {
+ flex:0 0 88px;
+ min-width:0;
+}
+
+/* —— Keyboard focus + selection chrome —— */
+.lib-fusion:focus {
+ outline:none;
+}
+
+.lib-fusion-kb {
+ outline:1px solid color-mix(in srgb, var(--primary-color, #1976d2) 70%, transparent);
+ outline-offset:-1px;
+ background:rgba(25, 118, 210, 0.1) !important;
+}
+
+.lib-fusion-picked {
+ background:rgba(25, 118, 210, 0.14) !important;
+}
+
+.lib-fusion-check {
+ flex:0 0 20px;
+ width:20px;
+ height:20px;
+ margin-right:4px;
+ border-radius:4px;
+ border:2px solid rgba(128,128,128,0.55);
+ box-sizing:border-box;
+ cursor:pointer;
+ position:relative;
+}
+
+.lib-fusion-check-on {
+ border-color:var(--primary-color, #1976d2);
+ background:var(--primary-color, #1976d2);
+}
+
+.lib-fusion-check-on:after {
+ content:"";
+ position:absolute;
+ left:5px;
+ top:1px;
+ width:5px;
+ height:10px;
+ border:solid #fff;
+ border-width:0 2px 2px 0;
+ transform:rotate(45deg);
+}
+
+.lib-fusion-check-grid {
+ position:absolute;
+ top:8px;
+ left:8px;
+ z-index:4;
+ background:rgba(0,0,0,0.35);
+}
+
+.lib-fusion-check-grid.lib-fusion-check-on {
+ background:var(--primary-color, #1976d2);
+}
+
+.lib-fusion-grid-item.lib-fusion-picked .lib-fusion-cover-wrap {
+ box-shadow:0 0 0 2px var(--primary-color, #1976d2);
+}
+
+.lib-fusion-grid-item {
+ position:relative;
+ cursor:pointer;
+}
+
+.lib-fusion-artist-row {
+ position:relative;
+}
+
+/* —— Context menu (secondary click) —— */
+.lib-fusion-ctx-scrim {
+ position:fixed;
+ inset:0;
+ z-index:90;
+ background:transparent;
+}
+
+.lib-fusion-ctx {
+ position:fixed;
+ z-index:91;
+ min-width:180px;
+ max-width:260px;
+ padding:6px;
+ border-radius:12px;
+ background:color-mix(in srgb, var(--background-color, #1c1c1c) 94%, transparent);
+ backdrop-filter:blur(18px) saturate(1.3);
+ -webkit-backdrop-filter:blur(18px) saturate(1.3);
+ border:1px solid var(--list-item-border-color, rgba(128,128,128,0.35));
+ box-shadow:0 12px 32px rgba(0,0,0,0.4);
+}
+
+.theme--light .lib-fusion-ctx {
+ background:color-mix(in srgb, var(--background-color, #fff) 96%, transparent);
+ box-shadow:0 12px 32px rgba(0,0,0,0.16);
+}
+
+.lib-fusion-ctx-title {
+ padding:8px 12px 6px 12px;
+ font-size:0.78rem;
+ font-weight:var(--bold-weight, 600);
+ opacity:0.65;
+ text-transform:uppercase;
+ letter-spacing:0.04em;
+}
+
+.lib-fusion-ctx-item {
+ display:block;
+ width:100%;
+ text-align:left;
+ appearance:none;
+ -webkit-appearance:none;
+ border:none;
+ background:transparent;
+ color:inherit;
+ font:inherit;
+ font-size:0.92rem;
+ padding:9px 12px;
+ border-radius:8px;
+ cursor:pointer;
+}
+
+.lib-fusion-ctx-item:hover {
+ background:rgba(25, 118, 210, 0.18);
+ color:var(--primary-color, #1976d2);
+}
+
+.lib-fusion-ctx-divider {
+ height:1px;
+ margin:4px 8px;
+ background:var(--list-item-border-color, rgba(128,128,128,0.3));
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+ .lib-fusion-ctx {
+  background:rgba(28, 28, 28, 0.95);
+ }
+ .theme--light .lib-fusion-ctx {
+  background:rgba(255, 255, 255, 0.96);
+ }
+}
+
+/* Desktop: hide narrow-only tracks pane inside artists track */
+.lib-fusion-artists-track > .lib-fusion-tracks-pane {
+ display:none;
+}
+
+.lib-fusion-detail-art-sq {
+ border-radius:6px !important;
+}
+
+.lib-fusion-track-row-pad {
+ padding-left:12px !important;
+ padding-right:12px !important;
+}
+
+/* Narrow: iPod artists → albums → tracks (no vertical push) */
+@media (max-width:799px) {
+ .lib-fusion-body {
+  overflow:hidden !important;
+ }
+ .lib-fusion-artists {
+  flex-direction:row !important;
+  overflow:hidden !important;
+  min-height:0 !important;
+ }
+ .lib-fusion-artists-track {
+  display:flex !important;
+  flex-direction:row !important;
+  width:300% !important;
+  flex:0 0 auto !important;
+  height:100% !important;
+  min-height:0 !important;
+  transition:transform 0.32s cubic-bezier(0.22, 0.9, 0.28, 1);
+  transform:translateX(0);
+  will-change:transform;
+ }
+ .lib-fusion-artists.lib-fusion-drill-1 .lib-fusion-artists-track {
+  transform:translateX(-33.333%);
+ }
+ .lib-fusion-artists.lib-fusion-drill-2 .lib-fusion-artists-track {
+  transform:translateX(-66.666%);
+ }
+ .lib-fusion-artists-track > .lib-fusion-artist-list,
+ .lib-fusion-artists-track > .lib-fusion-detail,
+ .lib-fusion-artists-track > .lib-fusion-tracks-pane {
+  display:flex !important;
+  flex:0 0 33.333% !important;
+  width:33.333% !important;
+  max-width:none !important;
+  min-width:0 !important;
+  height:100% !important;
+  border:none !important;
+  box-sizing:border-box;
+ }
+ .lib-fusion-artists-track > .lib-fusion-detail,
+ .lib-fusion-artists-track > .lib-fusion-tracks-pane {
+  box-shadow:-6px 0 18px rgba(0,0,0,0.16);
+ }
+
+ /* Albums tab: grid → tracks */
+ .lib-fusion-albums-tab {
+  overflow:hidden !important;
+ }
+ .lib-fusion-albums-track {
+  display:flex;
+  flex-direction:row;
+  width:200%;
+  height:100%;
+  min-height:0;
+  transition:transform 0.32s cubic-bezier(0.22, 0.9, 0.28, 1);
+  transform:translateX(0);
+ }
+ .lib-fusion-albums-tab.lib-fusion-album-drill .lib-fusion-albums-track {
+  transform:translateX(-50%);
+ }
+ .lib-fusion-albums-grid-pane,
+ .lib-fusion-albums-tab .lib-fusion-tracks-pane {
+  flex:0 0 50%;
+  width:50%;
+  min-width:0;
+  height:100%;
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+ }
+ .lib-fusion-albums-tab .lib-fusion-tracks-pane {
+  box-shadow:-6px 0 18px rgba(0,0,0,0.16);
+ }
+
+ .lib-fusion-song-album {
+  display:none;
+ }
+
+ /* Filter expands as overlay — never pushes body / header down */
+ .lib-fusion-tabs {
+  flex-wrap:nowrap !important;
+  position:relative;
+  flex:0 0 44px !important;
+  min-height:44px !important;
+  max-height:44px !important;
+  height:44px !important;
+  padding:4px 6px !important;
+  overflow:visible !important;
+ }
+ /* Songs: stack artist under title when narrow */
+ .lib-fusion-song-main {
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:center;
+  flex:1 1 auto;
+  min-width:0;
+  gap:1px;
+ }
+ .lib-fusion-song-row .lib-fusion-song-main .lib-fusion-track-title {
+  flex:0 0 auto;
+  width:100%;
+  max-width:100%;
+ }
+ .lib-fusion-song-row .lib-fusion-song-main .lib-fusion-song-artist {
+  flex:0 0 auto;
+  width:100%;
+  max-width:100%;
+  font-size:0.78rem !important;
+  opacity:0.62;
+  line-height:1.15;
+ }
+ /* Hide standalone artist column — shown under title */
+ .lib-fusion-song-row > .lib-fusion-song-artist,
+ .lib-fusion-song-header .lib-fusion-song-artist {
+  display:none !important;
+ }
+ .lib-fusion-song-row {
+  min-height:48px;
+ }
+ .lib-fusion-scroller .vue-recycle-scroller__item-view .lib-fusion-song-row {
+  min-height:48px;
+ }
+ /* Mobile: filter stays inside the tabs row (never floats under main titlebar) */
+ .lib-fusion-tabs {
+  position:relative !important;
+  z-index:50 !important;
+  flex-wrap:nowrap !important;
+  align-items:center !important;
+ }
+ .lib-fusion-filter-wrap.lib-fusion-filter-open {
+  position:relative !important;
+  left:auto !important;
+  right:auto !important;
+  top:auto !important;
+  bottom:auto !important;
+  margin:0 2px !important;
+  max-width:none !important;
+  min-width:0 !important;
+  flex:1 1 auto !important;
+  z-index:5 !important;
+  order:unset !important;
+  transform:none !important;
+ }
+ .lib-fusion-filter-wrap.lib-fusion-filter-open .lib-fusion-filter {
+  position:relative !important;
+  background:transparent !important;
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+  box-shadow:none !important;
+  top:auto !important;
+ }
+ /* Icon-only sort/display on small screens — long labels grew the bar */
+ .lib-fusion-sort-btn {
+  max-width:40px;
+  min-width:36px;
+  font-size:0.95rem;
+  padding:7px 0;
+  overflow:hidden;
+  text-indent:0;
+  letter-spacing:0;
+ }
+ .lib-fusion-sort-btn {
+  /* keep glyph; hide trailing label text via fixed width + clip */
+  white-space:nowrap;
+ }
+ .lib-fusion-seg .lib-fusion-tab {
+  padding:10px 8px 9px;
+  font-size:0.78rem;
+  letter-spacing:0.03em;
+ }
+ html.theme-mojave .lib-fusion-seg .lib-fusion-tab,
+ body.theme-mojave .lib-fusion-seg .lib-fusion-tab {
+  padding:6px 10px;
+  font-size:0.85rem;
+  letter-spacing:0.02em;
+ }
+ .lib-fusion-selbar {
+  min-height:40px;
+  max-height:40px;
+  padding:4px 8px;
+  overflow:hidden;
+ }
+}
+
+/* Home-split open/close / narrow desktop must not reflow Fusion chrome height */
+#browse-view.browse-home-split .browse-main-pane.lib-fusion-main > .browse-subheader-wrap,
+#browse-view:not(.browse-home-split) .browse-main-pane.lib-fusion-main > .browse-subheader-wrap {
+ height:var(--sub-toolbar-height, 48px) !important;
+ min-height:var(--sub-toolbar-height, 48px) !important;
+ max-height:var(--sub-toolbar-height, 48px) !important;
+ overflow:hidden !important;
+ flex:0 0 var(--sub-toolbar-height, 48px) !important;
+}
+/* When home-split collapses at narrow width, keep glass subheader overlay (not a second in-flow bar) */
+#browse-view:not(.browse-home-split) .browse-main-pane.lib-fusion-main > .browse-subheader-wrap {
+ position:absolute !important;
+ top:0 !important;
+ left:0 !important;
+ right:0 !important;
+ z-index:6 !important;
+}
+/* Main toolbar: never grow when desktop unified layout is squeezed */
+.lms-toolbar.maintoolbar-glass,
+.lms-toolbar {
+ max-height:var(--main-toolbar-height) !important;
+}
+
+/* Desktop albums track is just a wrapper */
+@media (min-width:800px) {
+ .lib-fusion-albums-track {
+  display:flex;
+  flex-direction:column;
+  width:100%;
+  height:100%;
+  min-height:0;
+  flex:1 1 auto;
+ }
+ .lib-fusion-albums-grid-pane {
+  flex:1 1 auto;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+ }
+ .lib-fusion-albums-tab .lib-fusion-tracks-pane {
+  display:none !important;
+ }
+}
