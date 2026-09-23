@@ -1,0 +1,99 @@
+/**
+ * Lyrion.app — Material overrides for the Tauri / WKWebView shell.
+ * Loaded via: &css=msk--minim  →  /material/customcss/msk--minim
+ *
+ * Hide scrollbars visually only. Do NOT set --scrollbar-size: 0 — Material
+ * virtual lists use that for layout. Do NOT force height:100% /
+ * overflow:hidden on lists. Do NOT set --drag-area-height !important.
+ */
+
+:root {
+  --window-area-left: 78px !important;
+  --window-area-right: 0px !important;
+  --top-pad: 0px !important;
+  --main-toolbar-height: 52px !important;
+}
+
+html,
+body,
+.v-application {
+  background-color: #1c1c1e !important;
+}
+
+#main-toolbar.lms-toolbar,
+.lms-toolbar.v-toolbar,
+.lms-toolbar {
+  background-color: rgba(44, 44, 46, 0.72) !important;
+  background-image: none !important;
+  border-bottom: 0.5px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.subtoolbar {
+  background-color: rgba(44, 44, 46, 0.65) !important;
+  border-bottom: 0.5px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+.lms-footer,
+.v-footer.lms-footer,
+.np-bar,
+.nav-shortcut-bar,
+.nav-shortcut-footer {
+  background-color: rgba(44, 44, 46, 0.82) !important;
+  border-top: 0.5px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.np-bar,
+.np-bar .v-list__tile__title,
+.np-bar .v-list__tile__sub-title,
+.np-bar .np-bar-marquee-text,
+.np-bar .media-icon,
+.np-bar .v-icon {
+  color: rgba(245, 245, 247, 0.92) !important;
+}
+
+/* WKWebView: never hide the browse list while the boot loader is up */
+#browse-view .lms-list.bgnd-cover.browse-content-loading > #browse-list,
+#browse-view .lms-list.bgnd-cover.browse-content-loading > .lms-jumplist {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* Home-extra / RecycleScroller stalls used to leave this overlay forever. */
+#browse-view .lms-list.bgnd-cover > .browse-progress {
+  display: none !important;
+}
+
+/* Hide scrollbars; keep --scrollbar-size for RecycleScroller metrics. */
+html,
+body,
+.v-application,
+.v-content,
+.v-content__wrap,
+.v-navigation-drawer,
+.lms-list,
+#browse-list,
+#queue-list,
+.browse-list,
+.pq-list,
+.nd-main,
+.np-info-list,
+.v-dialog,
+.v-card,
+.v-card__text,
+.v-menu__content {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent !important;
+  border: none !important;
+}
