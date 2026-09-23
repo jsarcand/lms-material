@@ -1,0 +1,329 @@
+/**
+ * LMS-Material — Neon
+ * Sandbox neon look: near-black surfaces + electric lime green accents.
+ * Restored to match the sandbox screenshot (not cyan/magenta).
+ *
+ * Copyright (c) 2018-2026 Craig Drummond <craig.p.drummond@gmail.com>
+ * MIT license.
+ */
+
+/* html:root beats style.css :root so theme vars stick */
+html:root {
+ /* —— Electric neon green —— */
+ --default-primary-color:#39FF14;
+ --default-accent-color:#7CFF5A;
+ --default-highlight-rgb:57,255,20;
+ --primary-color:#39FF14;
+ --accent-color:#7CFF5A;
+ --highlight-rgb:57,255,20;
+ --active-color:#39FF14;
+ --active-nav-btn-color:#39FF14;
+ --toolbar-volume-color:#39FF14;
+ --bottom-position-slider-color:#39FF14;
+
+ /* —— Surfaces (deep black / charcoal) —— */
+ --std-background-color:#0A0A0A;
+ --std-popup-background-color:rgba(18,18,18,0.96);
+ --popup-border-color:rgba(57,255,20,0.16);
+ --background-shadow-color:rgba(0,0,0,0.88);
+ --subtoolbar-shadow-color:rgba(0,0,0,0.75);
+ --background-fade-start:rgba(10,10,10,0);
+ --background-fade-end:rgba(10,10,10,1);
+ --text-shadow-color:#000;
+ --browse-header-color:rgba(57,255,20,0.06);
+
+ /* Labels */
+ --light-text-color:#F2F2F2;
+ --dark-text-color:#0A0A0A;
+ --text-color:#EAEAEA;
+ --icon-color:rgba(234,234,234,0.92);
+ --dlg-icon-color:rgba(234,234,234,0.92);
+ --subheader-color:rgba(180,180,180,0.62);
+ --top-toolbar-text-color:#F2F2F2;
+ --sub-toolbar-text-color:#EAEAEA;
+ --bottom-toolbar-text-color:#EAEAEA;
+ --dialog-toolbar-text-color:#F2F2F2;
+
+ /* Separators */
+ --border-color:rgba(57,255,20,0.12);
+ --tab-border-color:rgba(57,255,20,0.14);
+ --list-item-border-color:rgba(80,80,80,0.35);
+ --top-toolbar-border-color:rgba(57,255,20,0.12);
+ --sub-toolbar-border-color:rgba(57,255,20,0.08);
+ --bottom-toolbar-border-color:rgba(57,255,20,0.12);
+ --dialog-toolbar-border-color:rgba(57,255,20,0.12);
+ --splitter-color:rgba(57,255,20,0.10);
+ --album-separator-color:rgba(80,80,80,0.4);
+ --npbar-border-color:rgba(57,255,20,0.14);
+
+ /* Hover / selection */
+ --btn-hover-color:rgba(57,255,20,0.10)!important;
+ --list-hover-color:rgba(57,255,20,0.08)!important;
+ --list-active-color:rgba(57,255,20,0.16)!important;
+ --nav-hover-color:rgba(57,255,20,0.14)!important;
+ --pq-current-color:rgba(57,255,20,0.18);
+ --pq-current-album-color:rgba(57,255,20,0.08);
+ --drop-target-color:rgba(57,255,20,0.4);
+ --window-btn-color:rgba(255,255,255,0.08);
+ --window-btn-hover-color:rgba(57,255,20,0.16);
+ --image-background-color:rgba(0,0,0,0.35);
+ --pbar-bgnd:rgba(255,255,255,0.08);
+ --pbar-colored-bgnd:rgba(57,255,20,0.22);
+
+ /* Scrollbars */
+ --std-scrollbar-thumb-color:rgba(57,255,20,0.28);
+ --std-scrollbar-thumb-hover-color:rgba(57,255,20,0.5);
+ --scrollbar-size:9px;
+ scrollbar-color:var(--std-scrollbar-thumb-color) transparent;
+
+ /* Typography */
+ --std-font-size:14px;
+ --small-font-size:12px;
+ --std-weight:400;
+ --bold-weight:600;
+ --sub-opacity:0.58;
+
+ /* Density */
+ --list-elem-height:42px;
+ --list-elem-3line-height:62px;
+ --main-toolbar-height:calc(var(--top-pad) + 48px);
+ --sub-toolbar-height:44px;
+ --icon-size:22px;
+ --small-icon-size:16px;
+ --toolbar-button-margin:2px;
+ --grid-icon-size:64px;
+
+ /* Glass */
+ --toolbar-filter:blur(24px) saturate(140%);
+ --backdrop-filter:blur(20px) saturate(140%);
+ --bgnd-filter-size:8px;
+ --np-bgnd-filter-size:12px;
+ --menu-dlg-shadow:0 12px 36px rgba(0,0,0,0.7), 0 0 0 1px rgba(57,255,20,0.1), 0 0 20px rgba(57,255,20,0.06);
+ --trans-bottom-toolbar-color:rgba(10,10,10,0.55);
+ --np-bgnd-full-shadow-color:rgba(10,10,10,0.82);
+}
+
+html, body, .v-application {
+ background-color:var(--std-background-color) !important;
+ color:var(--text-color);
+}
+
+.lms-toolbar .v-btn__content i.active-btn {
+ color:var(--active-color) !important;
+ text-shadow:0 0 10px rgba(57,255,20,0.55);
+ opacity:1 !important;
+}
+
+.inactive-btn, .dimmed, .subtext {
+ opacity:var(--sub-opacity);
+}
+
+/* Chrome */
+.lms-toolbar {
+ background-color:rgba(12,12,12,0.94) !important;
+ border-bottom:1px solid rgba(57,255,20,0.12) !important;
+}
+
+.subtoolbar {
+ background-color:rgba(12,12,12,0.82) !important;
+ border-bottom:1px solid rgba(57,255,20,0.08) !important;
+}
+
+.np-bar {
+ background-color:rgba(12,12,12,0.94) !important;
+ border-top:1px solid rgba(57,255,20,0.14) !important;
+ box-shadow:0 -4px 20px rgba(57,255,20,0.05);
+}
+
+#main-toolbar.lms-toolbar.maintoolbar-glass {
+ background-color:transparent !important;
+ border-bottom:1px solid rgba(57,255,20,0.12) !important;
+ box-shadow:none !important;
+}
+#main-toolbar.lms-toolbar.maintoolbar-glass::before {
+ backdrop-filter:blur(24px) saturate(140%) !important;
+ -webkit-backdrop-filter:blur(24px) saturate(140%) !important;
+ background-color:rgba(12,12,12,0.7) !important;
+}
+
+#browse-view .browse-subheader-glass {
+ border:none !important;
+ box-shadow:none !important;
+ filter:none !important;
+}
+
+/* List tiles */
+.lms-list .v-list__tile {
+ border-radius:8px;
+}
+.lms-list .v-list__tile--link:hover,
+.lms-list .list-active .v-list__tile,
+.list-active {
+ border-radius:8px;
+}
+.list-active .v-list__tile {
+ box-shadow:inset 3px 0 0 0 var(--primary-color), 0 0 16px rgba(57,255,20,0.08);
+}
+
+/* Icons that should read as neon when active / primary actions */
+.lms-toolbar .v-icon.active-btn,
+.active-btn,
+.pq-current .v-icon,
+.v-btn--active .v-icon {
+ color:var(--primary-color) !important;
+}
+
+/* Menus / dialogs */
+.v-menu__content, .menu-content, .v-dialog:not(.v-dialog--fullscreen) {
+ border-radius:12px !important;
+ backdrop-filter:blur(24px) saturate(140%);
+ -webkit-backdrop-filter:blur(24px) saturate(140%);
+ box-shadow:var(--menu-dlg-shadow) !important;
+ border:1px solid rgba(57,255,20,0.14) !important;
+ background-color:rgba(16,16,16,0.94) !important;
+}
+
+.v-dialog .v-card {
+ border-radius:12px !important;
+ background-color:#121212 !important;
+}
+.v-overlay--active:before {
+ opacity:0.78 !important;
+ background:#000 !important;
+}
+
+.v-navigation-drawer {
+ backdrop-filter:blur(24px) saturate(140%);
+ -webkit-backdrop-filter:blur(24px) saturate(140%);
+ background-color:rgba(10,10,10,0.94) !important;
+ border-right:1px solid rgba(57,255,20,0.1) !important;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+ width:9px;
+ height:9px;
+}
+::-webkit-scrollbar-thumb {
+ background:var(--std-scrollbar-thumb-color) !important;
+ border-radius:9px;
+ border:2px solid transparent;
+ background-clip:content-box;
+}
+::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active {
+ background:var(--std-scrollbar-thumb-hover-color) !important;
+ background-clip:content-box;
+}
+::-webkit-scrollbar-track {
+ background:transparent !important;
+}
+
+.np-info-cover {
+ background-color:#000;
+}
+
+/* Home split */
+#browse-view.browse-home-split .browse-home-pane {
+ background:rgba(10,10,10,0.96);
+ border-right:1px solid rgba(57,255,20,0.08);
+}
+#browse-view.browse-home-split .browse-home-pane-search {
+ border-radius:10px;
+ background:rgba(57,255,20,0.06);
+ border:1px solid rgba(57,255,20,0.12);
+ padding:8px 12px;
+ min-height:40px;
+ box-sizing:border-box;
+}
+#browse-view.browse-home-split .browse-home-pane-search:hover {
+ background:rgba(57,255,20,0.1);
+ border-color:rgba(57,255,20,0.22);
+}
+
+/* Progress — neon glow like the sandbox miniplayer bar */
+.pbar .value {
+ border-radius:2px;
+ background:var(--primary-color) !important;
+ box-shadow:0 0 10px rgba(57,255,20,0.55), 0 0 2px rgba(57,255,20,0.9);
+}
+.pbar-track {
+ background:rgba(255,255,255,0.08) !important;
+}
+
+/* Buttons */
+.v-btn--floating, .v-btn--depressed {
+ box-shadow:none !important;
+}
+.toolbar-button:hover:before,
+.v-btn:hover:before {
+ opacity:0.12 !important;
+}
+
+/* Current track */
+.pq-current, .pq-current .v-list__tile {
+ box-shadow:inset 3px 0 0 0 var(--primary-color);
+}
+.pill {
+ box-shadow:0 0 12px rgba(57,255,20,0.45);
+ background:var(--primary-color) !important;
+}
+
+/* Shortcut strip active */
+.nav-shortcut-btn.nav-shortcut-active {
+ background:rgba(57,255,20,0.12) !important;
+ box-shadow:0 0 12px rgba(57,255,20,0.16);
+}
+.nav-shortcut-btn.nav-shortcut-active .nav-shortcut-icon,
+.nav-shortcut-btn.nav-shortcut-active .v-icon {
+ color:#39FF14 !important;
+ fill:#39FF14 !important;
+ text-shadow:0 0 8px rgba(57,255,20,0.5);
+}
+
+/* Frosted panels */
+.frosted, .pq-unpinned > .lms-list.frosted {
+ background-color:rgba(12,12,12,0.88) !important;
+ backdrop-filter:blur(20px) saturate(140%);
+ -webkit-backdrop-filter:blur(20px) saturate(140%);
+ border:1px solid rgba(57,255,20,0.08);
+}
+
+/* Tech / mono */
+.np-bar-tech, .browse-html code, .mono {
+ font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace !important;
+ font-size:11px !important;
+ color:rgba(57,255,20,0.85);
+}
+
+/* Links */
+a, .link-item {
+ color:#39FF14 !important;
+}
+a:hover, .link-item:hover {
+ color:#7CFF5A !important;
+ text-shadow:0 0 8px rgba(57,255,20,0.35);
+}
+
+/* Bottom nav / footer */
+.lms-footer, .nav-shortcut-footer {
+ background-color:rgba(10,10,10,0.96) !important;
+ border-top:1px solid rgba(57,255,20,0.1);
+}
+
+/* Snack / toasts */
+.v-snack__wrapper {
+ background-color:rgba(16,16,16,0.96) !important;
+ border:1px solid rgba(57,255,20,0.16) !important;
+ box-shadow:0 8px 28px rgba(0,0,0,0.6), 0 0 14px rgba(57,255,20,0.1) !important;
+}
+
+/* SVG icons that use currentColor / fill via filters — keep accent readable */
+.nav-svg-img, .svg-img, .svg-list-img {
+ /* browser filter can't fully recolor arbitrary SVGs; rely on css var primary for material icons */
+}
+
+/* Volume / media icons when “active” use primary */
+.media-icon.active, .np-bar .v-icon.primary--text {
+ color:var(--primary-color) !important;
+ filter:drop-shadow(0 0 4px rgba(57,255,20,0.45));
+}

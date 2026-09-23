@@ -18,6 +18,7 @@
   { "key":"deeporange", "color":"#f4511e", "acolor":"#ff844c" },
   { "key":"brown",      "color":"#8d6e63", "acolor":"#be9c91" },
   { "key":"bluegrey",   "color":"#455a64", "acolor":"#718792" },
-  { "key":"lyrion",     "color":"#e2fdc4", "lcolor":"#589e81" }
+  { "key":"lyrion",     "color":"#e2fdc4", "lcolor":"#589e81" },
+  { "key":"neon",       "color":"#39FF14", "acolor":"#7CFF5A" }
  ]
 }

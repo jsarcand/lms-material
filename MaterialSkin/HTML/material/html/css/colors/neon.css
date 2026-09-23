@@ -1,0 +1,13 @@
+/**
+ * LMS-Material — Neon color accent (electric lime)
+ * Matches the Neon theme primary; usable with black/dark themes too.
+ *
+ * Copyright (c) 2018-2026 Craig Drummond <craig.p.drummond@gmail.com>
+ * MIT license.
+ */
+
+:root {
+ --highlight-rgb:57,255,20;
+ --primary-color:#39FF14;
+ --accent-color:#7CFF5A;
+}
