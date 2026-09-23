@@ -11,24 +11,28 @@
   font-style: normal;
   font-weight: 300;
   src: local('Roboto Light'), local('Roboto-Light'), url('Roboto-Light.ttf?r=49') format('truetype');
+  font-display: optional;
 }
 @font-face {
   font-family: 'Roboto';
   font-style: normal;
   font-weight: 400;
   src: local('Roboto'), local('Roboto-Regular'), url('Roboto-Regular.ttf?r=49') format('truetype');
+  font-display: optional;
 }
 @font-face {
   font-family: 'Roboto';
   font-style: normal;
   font-weight: 500;
   src: local('Roboto Medium'), local('Roboto-Medium'), url('Roboto-Medium.ttf?r=49') format('truetype');
+  font-display: optional;
 }
 @font-face {
   font-family: 'Roboto';
   font-style: normal;
   font-weight: 700;
   src: local('Roboto Bold'), local('Roboto-Bold'), url('Roboto-Bold.ttf?r=49') format('truetype');
+  font-display: optional;
 }
 
 @font-face {
@@ -36,6 +40,37 @@
   font-style: normal;
   font-weight: 400;
   src: local('Roboto Mono'), local('RobotoMono-Regular'), url('Roboto-Regular.ttf?r=49') format('truetype');
+  font-display: optional;
+}
+
+/* Metropolis — player name (SIL Open Font License; via Beocreate / Bang & Olufsen) */
+@font-face {
+  font-family: 'Metropolis';
+  font-style: normal;
+  font-weight: 400;
+  src: url('Metropolis-Regular.otf?r=1') format('opentype');
+  font-display: optional;
+}
+@font-face {
+  font-family: 'Metropolis';
+  font-style: normal;
+  font-weight: 500;
+  src: url('Metropolis-Medium.otf?r=1') format('opentype');
+  font-display: optional;
+}
+@font-face {
+  font-family: 'Metropolis';
+  font-style: normal;
+  font-weight: 600;
+  src: url('Metropolis-SemiBold.otf?r=1') format('opentype');
+  font-display: optional;
+}
+@font-face {
+  font-family: 'Metropolis';
+  font-style: normal;
+  font-weight: 700;
+  src: url('Metropolis-Bold.otf?r=1') format('opentype');
+  font-display: optional;
 }
 
 .material-icons {
