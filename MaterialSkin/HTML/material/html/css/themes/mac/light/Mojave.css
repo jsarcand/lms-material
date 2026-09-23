@@ -1,34 +1,390 @@
 /**
- * LMS-Material
+ * LMS-Material — macOS Mojave (Light)
+ * Apple design cues: SF system font, system blue, vibrancy/glass, denser lists.
  *
  * Copyright (c) 2018-2026 Craig Drummond <craig.p.drummond@gmail.com>
  * MIT license.
  */
 
-:root {
- --active-color:var(--primary-color);
- --std-scrollbar-thumb-color:#8e9192;
- --std-scrollbar-thumb-hover-color:#6e7172;
- --std-background-color:#fff;
- --background-shadow-color:rgba(255, 255, 255, 0.9);
- --subtoolbar-shadow-color:rgba(255, 255, 255, 0.75);
- --background-fade-start:rgba(255, 255, 255, 0);
- --background-fade-end:rgba(255, 255, 255, 1);
- --text-shadow-color:#fff;
- --active-nav-btn-color:var(--primary-color);
- --toolbar-volume-color:var(--primary-color);
- --bottom-position-slider-color:var(--primary-color);
- --browse-header-color:rgba(238, 238, 238, 0.35);
- --btn-hover-color:rgba(184, 184, 184, 0.4)!important;
- --std-popup-background-color:#f6f5f4;
- --popup-border-color:var(--list-item-border-color);
- scrollbar-color:var(--scrollbar-thumb-color) var(--scrollbar-track-color);
+/* html:root beats style.css :root so density/typography/glass vars stick */
+html:root {
+ /* —— Apple system blue (accents / selection) —— */
+ --default-primary-color:#007AFF;
+ --default-accent-color:#0A84FF;
+ --default-highlight-rgb:0,122,255;
+ --primary-color:#007AFF;
+ --accent-color:#0A84FF;
+ --highlight-rgb:0,122,255;
+ --active-color:#007AFF;
+ --active-nav-btn-color:#007AFF;
+ --toolbar-volume-color:#007AFF;
+ --bottom-position-slider-color:#007AFF;
+
+ /* —— Surfaces (macOS light / Mojave-era white chrome) —— */
+ --std-background-color:#FFFFFF;
+ --std-popup-background-color:rgba(246,246,246,0.92);
+ --popup-border-color:rgba(0,0,0,0.08);
+ --background-shadow-color:rgba(255,255,255,0.78);
+ --subtoolbar-shadow-color:rgba(255,255,255,0.62);
+ --background-fade-start:rgba(255,255,255,0);
+ --background-fade-end:rgba(255,255,255,1);
+ --text-shadow-color:rgba(255,255,255,0.9);
+ --browse-header-color:rgba(242,242,247,0.72);
+
+ /* Labels (Apple primary / secondary) */
+ --dark-text-color:#1D1D1F;
+ --light-text-color:#F5F5F7;
+ --text-color:#1D1D1F;
+ --icon-color:rgba(29,29,31,0.88);
+ --dlg-icon-color:rgba(29,29,31,0.88);
+ --subheader-color:rgba(60,60,67,0.6);
+ --top-toolbar-text-color:#1D1D1F;
+ --sub-toolbar-text-color:#1D1D1F;
+ --bottom-toolbar-text-color:#1D1D1F;
+ --dialog-toolbar-text-color:#1D1D1F;
+
+ /* Separators / borders (Apple hairlines) */
+ --border-color:rgba(60,60,67,0.18);
+ --tab-border-color:rgba(60,60,67,0.12);
+ --list-item-border-color:rgba(60,60,67,0.12);
+ --top-toolbar-border-color:rgba(0,0,0,0.08);
+ --sub-toolbar-border-color:rgba(0,0,0,0.06);
+ --bottom-toolbar-border-color:rgba(0,0,0,0.08);
+ --dialog-toolbar-border-color:rgba(0,0,0,0.08);
+ --splitter-color:rgba(0,0,0,0.08);
+ --album-separator-color:rgba(60,60,67,0.18);
+ --npbar-border-color:rgba(0,0,0,0.08);
+
+ /* Hover / selection (system blue tint) */
+ --btn-hover-color:rgba(0,0,0,0.05)!important;
+ --list-hover-color:rgba(0,0,0,0.04)!important;
+ --list-active-color:rgba(0,122,255,0.14)!important;
+ --nav-hover-color:rgba(0,122,255,0.10)!important;
+ --pq-current-color:rgba(0,122,255,0.16);
+ --pq-current-album-color:rgba(0,122,255,0.08);
+ --drop-target-color:rgba(0,122,255,0.35);
+ --window-btn-color:rgba(0,0,0,0.08);
+ --window-btn-hover-color:rgba(0,0,0,0.14);
+ --image-background-color:rgba(0,0,0,0.04);
+ --pbar-bgnd:rgba(0,0,0,0.08);
+ --pbar-colored-bgnd:rgba(0,122,255,0.22);
+
+ /* Scrollbars (macOS thin, muted) */
+ --std-scrollbar-thumb-color:rgba(0,0,0,0.22);
+ --std-scrollbar-thumb-hover-color:rgba(0,0,0,0.36);
+ --scrollbar-size:9px;
+ scrollbar-color:var(--std-scrollbar-thumb-color) transparent;
+
+ /* Typography scale — closer to macOS body / callout */
+ --std-font-size:13px;
+ --small-font-size:11px;
+ --std-weight:400;
+ --bold-weight:600;
+ --sub-opacity:0.55;
+
+ /* Density — Apple list rows sit under Material’s 48px */
+ --list-elem-height:40px;
+ --list-elem-3line-height:60px;
+ --main-toolbar-height:calc(var(--top-pad) + 46px);
+ --sub-toolbar-height:44px;
+ --icon-size:20px;
+ --small-icon-size:16px;
+ --toolbar-button-margin:2px;
+ --grid-icon-size:64px;
+
+ /* Glass / vibrancy */
+ --toolbar-filter:blur(40px) saturate(180%);
+ --backdrop-filter:blur(28px) saturate(160%);
+ --bgnd-filter-size:8px;
+ --np-bgnd-filter-size:12px;
+ --menu-dlg-shadow:0 10px 40px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(0,0,0,0.06);
+ --trans-bottom-toolbar-color:rgba(255,255,255,0.55);
+ --np-bgnd-full-shadow-color:rgba(255,255,255,0.72);
+}
+
+/* SF Pro / system UI stack (falls back cleanly off Apple) */
+html, body, .v-application, .v-application .v-btn, .v-list, .v-toolbar,
+.v-dialog, .v-menu__content, .v-card, .v-input, .v-label, .v-chip,
+.presets-picker-panel, .presets-picker-panel button, .presets-picker-item,
+.presets-picker-item-title, .presets-picker-item-sub, .presets-picker-title,
+.presets-picker-empty, .presets-picker-footer, .presets-picker-footer .v-btn,
+.presets-editor-menu, .presets-editor-menu-list,
+.presets-editor-menu-list .v-list__tile__title {
+ font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+             "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+ -webkit-font-smoothing:antialiased;
+ -moz-osx-font-smoothing:grayscale;
+ letter-spacing:-0.01em;
+}
+
+.material-icons, .v-icon {
+ font-family:"Material Icons" !important;
+ /* Optical weight closer to SF Symbols “regular/medium” */
+ font-weight:400 !important;
+ font-size:var(--icon-size) !important;
+ opacity:0.92;
+ transform:scale(0.94);
+ transform-origin:center;
+ -webkit-font-smoothing:antialiased;
+}
+
+.lms-toolbar .v-icon,
+.subtoolbar .v-icon,
+.toolbar-button .v-icon {
+ font-size:22px !important;
+ opacity:0.88;
+}
+
+.lms-toolbar .v-btn__content i.active-btn {
+ color:var(--active-color) !important;
+ opacity:1 !important;
+}
+
+/* Inactive nav / secondary chrome */
+.inactive-btn, .dimmed, .subtext {
+ opacity:var(--sub-opacity);
+}
+
+/* Toolbars — translucent fill for glass */
+.lms-toolbar {
+ background-color:rgba(255,255,255,0.72) !important;
+ border-bottom-color:rgba(0,0,0,0.08) !important;
+}
+
+.subtoolbar {
+ background-color:rgba(255,255,255,0.65) !important;
+ border-bottom-color:rgba(0,0,0,0.06) !important;
+}
+
+#browse-view .browse-subheader-glass.subtoolbar {
+ background-color:transparent !important;
+ border:none !important;
+ border-bottom:none !important;
+ box-shadow:none !important;
+}
+
+.np-bar {
+ background-color:rgba(255,255,255,0.78) !important;
+ border-top-color:rgba(0,0,0,0.08) !important;
+}
+
+/* Mobile glass overrides — stronger vibrancy */
+#main-toolbar.lms-toolbar.maintoolbar-glass {
+ background-color:transparent !important;
+ border-bottom:0.5px solid rgba(0,0,0,0.12) !important;
+ box-shadow:none !important;
+}
+#main-toolbar.lms-toolbar.maintoolbar-glass::before {
+ backdrop-filter:blur(40px) saturate(180%) !important;
+ -webkit-backdrop-filter:blur(40px) saturate(180%) !important;
+ background-color:rgba(255,255,255,0.62) !important;
+}
+.theme--light #main-toolbar.lms-toolbar.maintoolbar-glass::before {
+ background-color:rgba(255,255,255,0.62) !important;
+}
+
+#browse-view .browse-subheader-glass {
+ border:none !important;
+ box-shadow:none !important;
+ filter:none !important;
+}
+
+/* List density / selected row */
+.lms-list .v-list__tile {
+ border-radius:8px;
+}
+.lms-list .v-list__tile--link:hover,
+.lms-list .list-active .v-list__tile,
+.list-active {
+ border-radius:8px;
+}
+
+/* Popovers / menus — floating glass card */
+.v-menu__content, .menu-content, .v-dialog:not(.v-dialog--fullscreen) {
+ border-radius:12px !important;
+ backdrop-filter:blur(40px) saturate(180%);
+ -webkit-backdrop-filter:blur(40px) saturate(180%);
+ box-shadow:var(--menu-dlg-shadow) !important;
+ border:0.5px solid rgba(0,0,0,0.08) !important;
+}
+
+/* Dialogs */
+.v-dialog .v-card {
+ border-radius:14px !important;
+}
+.v-overlay:before {
+ transition:opacity 0.28s cubic-bezier(0.32, 0.72, 0, 1) !important;
+ transition-delay:0s !important;
+}
+.v-overlay--active:before {
+ opacity:0.35 !important;
+ background:#000 !important;
+}
+
+/* Nav drawer */
+.v-navigation-drawer {
+ backdrop-filter:blur(40px) saturate(180%);
+ -webkit-backdrop-filter:blur(40px) saturate(180%);
+ background-color:rgba(246,246,246,0.86) !important;
+ border-right:0.5px solid rgba(0,0,0,0.08) !important;
+}
+
+/* Scrollbars — thinner, Apple-like */
+::-webkit-scrollbar {
+ width:9px;
+ height:9px;
+}
+::-webkit-scrollbar-thumb {
+ background:var(--std-scrollbar-thumb-color) !important;
+ border-radius:9px;
+ border:2px solid transparent;
+ background-clip:content-box;
+}
+::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active {
+ background:var(--std-scrollbar-thumb-hover-color) !important;
+ background-clip:content-box;
+}
+::-webkit-scrollbar-track {
+ background:transparent !important;
 }
 
 .np-info-cover {
  background-color:#000;
 }
 
-.lms-toolbar .v-btn__content i.active-btn {
- color:var(--active-color) !important;
+/* Home split search — rounded square box */
+#browse-view.browse-home-split .browse-home-pane-search {
+ border-radius:10px;
+ background:rgba(0,0,0,0.05);
+ padding:8px 12px;
+ min-height:40px;
+ box-sizing:border-box;
+}
+#browse-view.browse-home-split .browse-home-pane-search:hover {
+ background:rgba(0,0,0,0.07);
+}
+
+/* Home sidebar selection: only the rounded selection pill is inset — not the row layout */
+#browse-view.browse-home-split .browse-home-pane .list-active .v-list__tile,
+#browse-view.browse-home-split .browse-home-pane-item.list-active .v-list__tile,
+#browse-view.browse-home-split .browse-home-pane-home.list-active .v-list__tile {
+ margin:0 8px !important;
+ width:calc(100% - 16px) !important;
+ max-width:calc(100% - 16px) !important;
+ border-radius:10px !important;
+ background:rgba(0,122,255,0.14) !important;
+ box-shadow:none !important;
+ box-sizing:border-box !important;
+}
+/* Unified primary tint for ALL sidebar icons */
+#browse-view.browse-home-split .browse-home-pane .v-list__tile__avatar .v-icon,
+#browse-view.browse-home-split .browse-home-pane .browse-home-pane-search-icon,
+#browse-view.browse-home-split .browse-home-pane .v-icon {
+ color:var(--primary-color, #007AFF) !important;
+ opacity:0.9 !important;
+ fill:var(--primary-color, #007AFF) !important;
+}
+#browse-view.browse-home-split .browse-home-pane .list-active .v-list__tile__avatar .v-icon,
+#browse-view.browse-home-split .browse-home-pane .list-active .v-icon {
+ opacity:1 !important;
+}
+#browse-view.browse-home-split .browse-home-pane .svg-list-img,
+#browse-view.browse-home-split .browse-home-pane img.svg-list-img {
+ filter:brightness(0) saturate(100%) invert(36%) sepia(98%) saturate(2400%) hue-rotate(195deg) brightness(1) !important;
+ opacity:0.9 !important;
+}
+#browse-view.browse-home-split .browse-home-pane .list-active .svg-list-img {
+ opacity:1 !important;
+}
+
+/* Progress / sliders — continuous system style */
+.pbar .value {
+ border-radius:3px;
+}
+
+/* Soften material elevation */
+.v-btn--floating, .v-btn--depressed {
+ box-shadow:none !important;
+}
+.toolbar-button:hover:before,
+.v-btn:hover:before {
+ opacity:0.06 !important;
+}
+
+/* Mono (technical info) — SF Mono stack */
+.np-bar-tech, .browse-html code, .mono {
+ font-family:"SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace !important;
+ font-size:11px !important;
+ letter-spacing:0;
+}
+
+/* Queue: fully frosted glass (light) */
+.frosted,
+.pq-unpinned > .lms-list.frosted,
+.pq-unpinned-np0 > .lms-list.frosted,
+.pq-unpinned-np2 > .lms-list.frosted,
+#queue-view .lms-list,
+#queue-view .lms-list.frosted,
+#queue-view #queue-list {
+ background-color:rgba(250,250,250,0.55) !important;
+ backdrop-filter:blur(40px) saturate(180%) !important;
+ -webkit-backdrop-filter:blur(40px) saturate(180%) !important;
+}
+#queue-view .list-swipe-row,
+#queue-view .list-swipe-tile,
+#queue-view .list-swipe-tile .v-list__tile,
+#queue-view .lms-list-item,
+#queue-view .v-list__tile,
+#queue-view .pq-grp-header,
+#queue-view .pq-work-header,
+#queue-view .pq-albumstyle,
+#queue-view .browse-header {
+ background-color:transparent !important;
+ background:transparent !important;
+}
+#queue-view .list-swipe-row {
+ max-height:none !important;
+ border-bottom:none !important;
+}
+#queue-view .list-active .v-list__tile,
+#queue-view .pq-current .v-list__tile {
+ background-color:rgba(0,122,255,0.12) !important;
+}
+#browse-view .browse-header .v-list__tile,
+#browse-view .browse-header {
+ background-color:transparent !important;
+}
+
+/* Volume popover — Apple menu-bar attachment (chevron + HUD glass) */
+.vol-modal-scrim {
+ background:rgba(0,0,0,0.12) !important;
+}
+.vol-sheet-modal.vol-sheet-popover {
+ border-radius:10px !important;
+ border:0.5px solid rgba(0,0,0,0.12) !important;
+ background:rgba(246,246,246,0.86) !important;
+ --vol-sheet-bg:rgba(246,246,246,0.92) !important;
+ --vol-sheet-border:rgba(0,0,0,0.12) !important;
+ box-shadow:var(--menu-dlg-shadow, 0 10px 40px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(0,0,0,0.06)) !important;
+ backdrop-filter:blur(40px) saturate(180%) !important;
+ -webkit-backdrop-filter:blur(40px) saturate(180%) !important;
+}
+.vol-popover-arrow::before {
+ background:rgba(246,246,246,0.94) !important;
+ border-color:rgba(0,0,0,0.12) !important;
+ box-shadow:none !important;
+}
+.vol-modal-header-compact {
+ border-bottom-color:rgba(60,60,67,0.12) !important;
+ padding:6px 4px 6px 6px !important;
+}
+.vol-modal-mute-text {
+ color:var(--primary-color, #007AFF) !important;
+ font-weight:600 !important;
+}
+.vol-modal-mute-text-on {
+ background:rgba(0,122,255,0.12) !important;
+}
+.vol-modal-body-compact {
+ padding:4px 4px 10px !important;
 }
