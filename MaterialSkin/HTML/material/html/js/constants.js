@@ -32,6 +32,7 @@ const IS_WINDOWS  = !IS_ANDROID && !IS_APPLE && checkPlatform('Win');
 const IS_LINUX    = !IS_ANDROID && !IS_APPLE && !IS_WINDOWS && checkPlatform('Linux');
 const SUPPORTS_TOUCH = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0) ||(navigator.msMaxTouchPoints > 0));
 const BACK_ARROW = IS_APPLE ? "arrow_back_ios" : "arrow_back";
+const BACK_ICON = BACK_ARROW;
 const UP_ARROW = /*IS_APPLE ? "arrow_drop_up" :*/ "arrow_upward";
 const DOWN_ARROW = /*IS_APPLE ? "arrow_drop_down" :*/ "arrow_downward";
 
@@ -291,6 +292,8 @@ const SEARCH_WORKS_CAT = 3;
 const SEARCH_TRACKS_CAT = 4;
 const SEARCH_PLAYLISTS_CAT = 5;
 const SEARCH_OTHER_CAT = 6;
+const SEARCH_RADIOS_CAT = 7;
+const SEARCH_PODCASTS_CAT = 8;
 
 const HOME_SHORTCUT = "-h";
 const SEARCH_SHORTCUT = "-s";
