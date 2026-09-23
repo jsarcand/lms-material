@@ -20,8 +20,8 @@ Vue.component('lms-volumeoverlay', {
     },
     mounted() {
         if (!IS_MOBILE) {
-            bindKey('up', 'alt', true);
-            bindKey('down', 'alt', true);
+            bindKey('up', IS_APPLE ? 'mod' : 'alt', true);
+            bindKey('down', IS_APPLE ? 'mod' : 'alt', true);
             bindKey('decvol', undefined, true);
             bindKey('incvol', undefined, true);
             bindKey('decvolfirefox', undefined, true);
@@ -30,7 +30,7 @@ Vue.component('lms-volumeoverlay', {
                 if (!this.$store.state.player || this.$store.state.visibleMenus.size>0 || (this.$store.state.openDialogs.length>0 && this.$store.state.openDialogs[0]!='info-dialog'))  {
                     return;
                 }
-                if (('alt'==modifier && (key=='up' || key=='down')) ||
+                if (((IS_APPLE && 'mod'==modifier) || (!IS_APPLE && 'alt'==modifier)) && (key=='up' || key=='down') ||
                     (undefined==modifier && (key=='incvol' || key=='decvol' || key=='incvolfirefox' || key=='decvolfirefox'))) {
                     this.startTimeout();
                 }

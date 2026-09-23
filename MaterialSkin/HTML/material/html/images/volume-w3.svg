@@ -1,0 +1,6 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+ <!-- High (2/3–max): double concentric wave arcs -->
+ <path fill="#000" d="M3 9v6h4l5 5V4L7 9H3z"/>
+ <path fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" d="M12.55 6.55a7.4 7.4 0 0 1 0 10.9"/>
+ <path fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" d="M13.9 4.35a10.1 10.1 0 0 1 0 15.3"/>
+</svg>
