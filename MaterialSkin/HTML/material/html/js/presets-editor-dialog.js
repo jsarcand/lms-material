@@ -10,26 +10,40 @@ function _clampMode(v) {
     return (v === 1 || v === 2) ? v : 0;
 }
 
+function _wiimSourceLabel(source) {
+    var s = String(source || '').toUpperCase();
+    if (s === 'SPOTIFY') { return 'Spotify'; }
+    if (s === 'TIDAL') { return 'TIDAL'; }
+    if (s === 'QOBUZ') { return 'Qobuz'; }
+    if (s === 'ROUTINE') { return (typeof i18n === 'function') ? i18n('Routine') : 'Routine'; }
+    return '';
+}
+
 Vue.component('lms-presets-editor', {
     template: `
 <div>
  <v-dialog v-model="show" v-if="show" persistent no-click-animation scrollable fullscreen>
   <v-card class="presets-editor-card">
    <v-card-title class="settings-title">
-    <v-toolbar app-data class="dialog-toolbar" id="presets-editor-toolbar">
+    <v-toolbar app-data class="dialog-toolbar presets-editor-inset" @mousedown="mouseDown" id="presets-editor-toolbar">
+     <lms-windowcontrols v-if="queryParams.nativeTitlebar && queryParams.tbarBtnsPos=='l'"></lms-windowcontrols>
+     <div class="drag-area-left"></div>
      <v-btn flat icon @click="close" :title="ttShortcutStr(i18n('Go back'), 'esc')"><v-icon>{{BACK_ICON}}</v-icon></v-btn>
      <v-toolbar-title>{{title}}</v-toolbar-title>
-     <v-spacer></v-spacer>
+     <v-spacer class="drag-area"></v-spacer>
      <v-icon v-if="saveOk" class="settings-save-ok" :title="i18n('Saved')">check</v-icon>
+     <div class="drag-area-right"></div>
+     <lms-windowcontrols v-if="queryParams.nativeTitlebar && queryParams.tbarBtnsPos=='r'"></lms-windowcontrols>
     </v-toolbar>
    </v-card-title>
    <v-card-text class="presets-editor-body">
     <v-list two-line class="presets-editor-list">
      <div class="presets-editor-hint subtext">{{i18n('Assign playlists or streams to the numbered preset keys. Drag to reorder. Shuffle and repeat apply when that preset is played, including from a WiiM Home /preset/N shortcut.')}}</div>
+     <div v-if="isWiim" class="presets-editor-hint subtext">{{i18n('A remote WiiM button stays on the device until you replace it with this slot.')}}</div>
      <div class="presets-editor-sortable msk-sortable-host" ref="presetsSortable" id="presets-editor-sortable">
       <div v-for="(item, index) in presets" :key="item._uid"
            class="presets-editor-sort-row" :data-msk-index="index">
-       <v-list-tile class="presets-editor-row" :class="{'presets-editor-row--ph': slotsLoading}"
+       <v-list-tile class="presets-editor-row" :class="{'presets-editor-row--ph': slotsLoading, 'presets-editor-row--remote': isRemoteRow(index)}"
                     @click="onRowClick(item, index, $event)">
         <v-icon class="presets-editor-drag-handle" :title="i18n('Drag to reorder')">drag_indicator</v-icon>
         <!-- Slot number is the row position; it updates after drop, not during drag. -->
@@ -48,8 +62,8 @@ Vue.component('lms-presets-editor', {
          </template>
          <template v-else>
           <v-list-tile-title class="ellipsis">{{item.text ? displayTitle(item) : emptyLabel}}</v-list-tile-title>
-          <v-list-tile-sub-title v-if="item.text" class="ellipsis subtext">{{itemSubtitleLine(item)}}</v-list-tile-sub-title>
-          <v-list-tile-sub-title v-else class="ellipsis subtext">{{i18n('Empty')}}</v-list-tile-sub-title>
+          <v-list-tile-sub-title v-if="rowSub(item)" class="ellipsis subtext">{{rowSub(item)}}</v-list-tile-sub-title>
+          <v-list-tile-sub-title v-else-if="!item.text" class="ellipsis subtext">{{i18n('Empty')}}</v-list-tile-sub-title>
          </template>
         </v-list-tile-content>
         <v-list-tile-action class="presets-editor-actions" @click.stop>
@@ -78,11 +92,11 @@ Vue.component('lms-presets-editor', {
  </v-dialog>
 
  <!-- Row actions (phone): categories as submenus + link / clear -->
- <div v-if="menu.show && !desktopLayout" class="msk-context-scrim presets-editor-ctx-scrim" @click="ctxSheetClose()" @touchmove.prevent=""></div>
- <v-menu v-model="menu.show" :position-x="menu.x" :position-y="menu.y"
+ <div v-if="menu.show && useContextSheet" class="msk-context-scrim presets-editor-ctx-scrim" @click="ctxSheetClose()" @touchmove.prevent=""></div>
+ <v-menu v-model="menu.show" :key="useContextSheet ? 'ctx-sheet' : 'ctx-pop'" :position-x="menu.x" :position-y="menu.y"
          absolute :close-on-content-click="false"
-         :content-class="!desktopLayout ? 'msk-context-sheet presets-editor-menu-sheet' : 'presets-editor-menu'">
-  <div class="msk-ctx-chrome" v-if="!desktopLayout && menu.show"
+         :content-class="useContextSheet ? 'msk-context-sheet presets-editor-menu-sheet' : 'presets-editor-menu msk-context-popover'">
+  <div class="msk-ctx-chrome" v-if="useContextSheet && menu.show"
        @touchstart.passive="ctxSheetTouchStart"
        @pointerdown="ctxSheetTouchStart"
        @mousedown="ctxSheetTouchStart">
@@ -99,11 +113,11 @@ Vue.component('lms-presets-editor', {
    </div>
   </div>
   <!-- iOS-style dual panels: categories → items (lateral slide, sticky chrome/back) -->
-  <div v-bind:class="{'msk-ctx-panels': !desktopLayout, 'msk-ctx-panels-info': !desktopLayout && !!menu.category, 'presets-menu-panels': true}">
+  <div v-bind:class="{'msk-ctx-panels': useContextSheet, 'msk-ctx-panels-info': useContextSheet && !!menu.category, 'presets-menu-panels': true}">
    <!-- Level 0: sources / categories -->
-   <div v-bind:class="{'msk-ctx-panel': !desktopLayout}"
+   <div v-bind:class="{'msk-ctx-panel': useContextSheet}"
         class="presets-menu-panel">
-    <div v-bind:class="{'msk-ctx-body': !desktopLayout}"
+    <div v-bind:class="{'msk-ctx-body': useContextSheet}"
          class="presets-menu-scroll"
          ref="presetsMenuRootScroll"
          @scroll.passive="ctxSheetOnBodyScroll"
@@ -137,6 +151,10 @@ Vue.component('lms-presets-editor', {
        <v-list-tile-avatar><v-icon>content_copy</v-icon></v-list-tile-avatar>
        <v-list-tile-title>{{i18n('Copy direct link')}}</v-list-tile-title>
       </v-list-tile>
+      <v-list-tile role="menuitem" @click.stop="replaceWiim" v-if="canReplaceWiim(menu.index)">
+       <v-list-tile-avatar><v-icon>swap_horiz</v-icon></v-list-tile-avatar>
+       <v-list-tile-title>{{replaceWiimLabel(menu.index)}}</v-list-tile-title>
+      </v-list-tile>
       <v-divider v-if="menu.item && menu.item.preset && (menu.item.preset.url || menu.item.preset.text)"></v-divider>
       <v-list-tile role="menuitem" @click.stop="clearPreset" v-if="menu.item && menu.item.preset && (menu.item.preset.url || menu.item.preset.text)">
        <v-list-tile-avatar><v-icon>clear</v-icon></v-list-tile-avatar>
@@ -146,7 +164,7 @@ Vue.component('lms-presets-editor', {
     </div>
    </div>
    <!-- Level 1: items (sticky back bar + scrollable list) -->
-   <div v-bind:class="{'msk-ctx-panel': !desktopLayout}"
+   <div v-bind:class="{'msk-ctx-panel': useContextSheet}"
         class="presets-menu-panel presets-menu-panel-items">
     <div class="presets-menu-nav" v-if="menu.category">
      <v-btn icon flat small class="presets-menu-nav-back" @click.stop="menuCategoryBack" :title="i18n('Go back')">
@@ -154,7 +172,7 @@ Vue.component('lms-presets-editor', {
      </v-btn>
      <span class="presets-menu-nav-title ellipsis">{{menu.category}}</span>
     </div>
-    <div v-bind:class="{'msk-ctx-body': !desktopLayout}"
+    <div v-bind:class="{'msk-ctx-body': useContextSheet}"
          class="presets-menu-scroll"
          ref="presetsMenuItemsScroll"
          @scroll.passive="ctxSheetOnBodyScroll"
@@ -231,6 +249,7 @@ Vue.component('lms-presets-editor', {
     </template>
    </div>
    <div v-if="desktopLayout" class="presets-picker-footer">
+    <v-btn v-if="canReplaceWiim(menu.index)" flat @click="replaceWiim">{{replaceWiimLabel(menu.index)}}</v-btn>
     <v-spacer></v-spacer>
     <v-btn flat @click="closePicker">{{i18n('Cancel')}}</v-btn>
    </div>
@@ -249,6 +268,7 @@ Vue.component('lms-presets-editor', {
             presets: [],
             options: [],
             isWiim: false,
+            wiimKeys: {},
             saveOk: false,
             dirty: false,
             emptyLabel: '',
@@ -267,6 +287,9 @@ Vue.component('lms-presets-editor', {
         },
         desktopLayout() {
             return this.$store.state.desktopLayout;
+        },
+        useContextSheet() {
+            return typeof contextMenuUseSheet==='function' ? contextMenuUseSheet(this) : !this.desktopLayout;
         },
         darkUi() {
             return this.$store.state.darkUi;
@@ -497,6 +520,57 @@ Vue.component('lms-presets-editor', {
             if (meta) { return meta; }
             return this.itemCategoryLabel(item) || '';
         },
+        isRemoteRow(index) {
+            let k = this.wiimKeys[index + 1];
+            return !!(k && k.kind === 'remote');
+        },
+        wiimLine(item) {
+            if (!item || !this.isWiim) { return ''; }
+            let k = this.wiimKeys[item.index];
+            if (!k) { return ''; }
+            if (k.kind === 'remote') {
+                let parts = [this.i18n('Remote preset')];
+                let src = _wiimSourceLabel(k.source);
+                if (src) { parts.push(src); }
+                if (k.name && !/^preset\s*\d+$/i.test(k.name)) { parts.push(k.name); }
+                return parts.join(' · ');
+            }
+            if (k.kind === 'local' && k.lmsSlot && k.lmsSlot !== item.index) {
+                var via = (typeof i18n === 'function')
+                    ? i18n('Button plays preset %1', k.lmsSlot)
+                    : ('Preset ' + k.lmsSlot);
+                var played = (k.name && !/^preset\s*\d+$/i.test(k.name)) ? k.name : '';
+                var rowName = item.text ? this.displayTitle(item) : '';
+                if (played && played !== rowName) { return via + ' · ' + played; }
+                return via;
+            }
+            return '';
+        },
+        rowSub(item) {
+            let wiim = this.wiimLine(item);
+            let k = item && this.wiimKeys[item.index];
+            // The button note is the whole line. The row's "on Spotify" tag
+            // describes the Lyrion slot, and gluing it on reads as one sentence.
+            if (wiim && k && k.kind === 'local' && k.lmsSlot && k.lmsSlot !== item.index) {
+                return wiim;
+            }
+            let meta = (item && item.text) ? (this.itemSubtitleLine(item) || '') : '';
+            if (wiim && meta) { return wiim + ' — ' + meta; }
+            return wiim || meta || '';
+        },
+        canReplaceWiim(index) {
+            if (!this.isWiim || index == null || index < 0) { return false; }
+            let k = this.wiimKeys[index + 1];
+            return !!(k && k.kind === 'remote');
+        },
+        replaceWiimLabel(index) {
+            let item = (this.presets && this.presets[index]) || {};
+            let k = this.wiimKeys[index + 1] || {};
+            if (!(item.url || item.text) && k.copyable) {
+                return this.i18n('Save stream in Lyrion');
+            }
+            return this.i18n('Replace with local preset');
+        },
         categoryIcon(label) {
             let s = String(label || '').toLowerCase();
             if (/current|en cours|courante/.test(s)) { return 'queue_music'; }
@@ -517,6 +591,7 @@ Vue.component('lms-presets-editor', {
             this.closePicker();
             this.closeRowMenu();
             this.options = [];
+            this.wiimKeys = {};
             this.presets = this._emptyPresets();
             this.loading = false;
             this.slotsLoading = true;
@@ -530,6 +605,11 @@ Vue.component('lms-presets-editor', {
             this.show = false;
             this.closePicker();
             this.closeRowMenu();
+        },
+        mouseDown(ev) {
+            if (typeof toolbarMouseDown === 'function') {
+                toolbarMouseDown(ev);
+            }
         },
         closeRowMenu() {
             if (this.menu) {
@@ -635,6 +715,7 @@ Vue.component('lms-presets-editor', {
                 if (r.player_name) {
                     self.playerName = r.player_name;
                 }
+                if (self.isWiim) { self.loadWiimKeys(); }
                 let loop = r.presets_loop || [];
                 let list = [];
                 for (let i = 0; i < 10; i++) {
@@ -1002,17 +1083,18 @@ Vue.component('lms-presets-editor', {
                 : { x: (event && event.clientX) || 0, y: (event && event.clientY) || 0 };
             // Do NOT use showMenu() — it delay-replaces `menu` and wipes `category`
             // after openCategory() has already drilled into a submenu.
+            let sheet = !!this.useContextSheet;
             let next = {
                 show: true,
                 item: pseudo,
                 index: index,
                 category: null,
-                x: this.desktopLayout ? (pos.x || window.innerWidth - 40) : 0,
-                y: this.desktopLayout ? (pos.y || 80) : (window.innerHeight || document.documentElement.clientHeight || 800),
-                sheet: !this.desktopLayout
+                x: sheet ? 0 : (pos.x || (this.desktopLayout ? window.innerWidth - 40 : 0)),
+                y: sheet ? (window.innerHeight || document.documentElement.clientHeight || 800) : (pos.y || (this.desktopLayout ? 80 : 0)),
+                sheet: sheet
             };
             this.menu = next;
-            if (!this.desktopLayout) {
+            if (sheet) {
                 this.$nextTick(function() {
                     if (typeof this.ctxSheetPrepareOpen === 'function') {
                         try { this.ctxSheetPrepareOpen(); } catch (e) {}
@@ -1121,6 +1203,74 @@ Vue.component('lms-presets-editor', {
             });
             this.scheduleSave();
         },
+        loadWiimKeys() {
+            if (!this.playerId || !this.isWiim || typeof lmsCommand !== 'function') {
+                this.wiimKeys = {};
+                return;
+            }
+            let self = this;
+            lmsCommand(this.playerId, ['wiimintegration', 'presets', 0, 20]).then(function(res) {
+                let r = res && res.data && res.data.result;
+                let loop = (r && r.item_loop) || [];
+                let map = {};
+                loop.forEach(function(it) {
+                    let cmd = (it.actions && it.actions.do && it.actions.do.cmd) || [];
+                    let num = parseInt(cmd[cmd.length - 1], 10);
+                    if (!num) {
+                        let m = String(it.id || '').match(/(\d+)/);
+                        num = m ? parseInt(m[1], 10) : 0;
+                    }
+                    if (!num || num > 10) { return; }
+                    map[num] = {
+                        kind: it.kind || '',
+                        source: it.source || '',
+                        name: it.wiim_name || it.text || '',
+                        url: it.url || '',
+                        lmsSlot: parseInt(it.lms_slot, 10) || 0,
+                        copyable: it.copyable === 1 || it.copyable === '1',
+                        pic: it.pic || ''
+                    };
+                });
+                self.wiimKeys = map;
+            }).catch(function() {});
+        },
+        replaceWiim() {
+            let idx = this.menu && this.menu.index;
+            if (idx == null || idx < 0) { return; }
+            let num = idx + 1;
+            this.closePicker();
+            this.closeRowMenu();
+            let self = this;
+            let run = function() {
+                lmsCommand(self.playerId, ['wiimintegration', 'presetclaim', String(num)]).then(function(res) {
+                    let r = res && res.data && res.data.result;
+                    if (r && (r.ok === 1 || r.ok === '1')) {
+                        if (r.copied === 1 || r.copied === '1') {
+                            self.loadSlots();
+                        }
+                        self.loadWiimKeys();
+                        bus.$emit('showMessage', self.i18n('Preset button updated'));
+                        return;
+                    }
+                    if (r && r.error === 'nothing_to_claim') {
+                        bus.$emit('showMessage', self.i18n('This remote preset has no address to copy. Fill this slot first, then replace the button.'));
+                        return;
+                    }
+                    bus.$emit('showError', undefined, self.i18n('Failed to save'));
+                }).catch(function() {
+                    bus.$emit('showError', undefined, self.i18n('Failed to save'));
+                });
+            };
+            let pending = this.flushSave(true);
+            if (pending && pending.then) {
+                pending.then(function(ok) {
+                    if (ok === false) { return; }
+                    run();
+                });
+            } else {
+                run();
+            }
+        },
         copyWiimLink(item) {
             this.closeRowMenu();
             if (!item) { return; }
@@ -1175,7 +1325,7 @@ Vue.component('lms-presets-editor', {
                 this._saveTimer = undefined;
             }
             if (!this.dirty || !this.playerId) {
-                return;
+                return Promise.resolve();
             }
             this.dirty = false;
             let payload = this.presets.map(function(p) {
@@ -1188,13 +1338,18 @@ Vue.component('lms-presets-editor', {
                 };
             });
             let json = JSON.stringify(payload);
-            lmsCommand('', ['material-skin', 'player-presets-set', 'player:' + this.playerId, 'presets:' + json]).then(function() {
+            let self = this;
+            return lmsCommand('', ['material-skin', 'player-presets-set', 'player:' + this.playerId, 'presets:' + json]).then(function() {
                 if (!silent) {
-                    this.flashSaveOk();
+                    self.flashSaveOk();
                 }
-            }.bind(this)).catch(function() {
-                bus.$emit('showError', undefined, this.i18n('Failed to save'));
-            }.bind(this));
+                if (self.isWiim) {
+                    setTimeout(function() { self.loadWiimKeys(); }, 1500);
+                }
+            }).catch(function() {
+                bus.$emit('showError', undefined, self.i18n('Failed to save'));
+                return false;
+            });
         },
         flashSaveOk() {
             this.saveOk = true;
@@ -1223,7 +1378,7 @@ Vue.component('lms-presets-editor', {
             this.$store.commit('menuVisible', { name: 'presetseditor-row', shown: val });
             if (val) {
                 this._syncPresetsPickerTheme();
-                if (typeof this.ctxSheetPrepareOpen==='function' && !this.desktopLayout) {
+                if (typeof this.ctxSheetPrepareOpen==='function' && this.useContextSheet) {
                     this.ctxSheetPrepareOpen();
                 }
             } else {

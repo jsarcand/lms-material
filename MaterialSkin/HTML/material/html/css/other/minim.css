@@ -23,7 +23,7 @@ body,
 #main-toolbar.lms-toolbar,
 .lms-toolbar.v-toolbar,
 .lms-toolbar {
-  background-color: rgba(44, 44, 46, 0.72) !important;
+  background-color: rgba(50, 50, 52, 0.96) !important;
   background-image: none !important;
   border-bottom: 0.5px solid rgba(255, 255, 255, 0.08) !important;
 }
@@ -96,4 +96,26 @@ body,
 ::-webkit-scrollbar-corner {
   background: transparent !important;
   border: none !important;
+}
+
+/* WKWebView recaches backdrop-filter on every scroll frame. On this Mac the
+   previous frame flashes through (home, albums, queue). Solid fills instead. */
+html.theme-glass .lms-toolbar,
+html.theme-glass .subtoolbar,
+html.theme-glass .browse-subheader,
+html.theme-glass .toolbar-blur,
+#browse-list.bgnd-blur,
+#browse-list.backdrop-blur,
+#queue-list.bgnd-blur,
+#queue-list.backdrop-blur,
+.lms-jumplist.bgnd-blur,
+.lms-jumplist.backdrop-blur {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html.theme-glass .subtoolbar,
+html.theme-glass #browse-view .browse-subheader,
+html.theme-glass .browse-subheader {
+  background-color: rgba(44, 44, 46, 0.94) !important;
+  background-image: none !important;
 }
