@@ -8,9 +8,15 @@
 :root {
  /* Content height of the bottom nav (excluding safe-area pad) — used by miniplayer dock */
  --bottom-nav-content-height:52px;
- --bottom-toolbar-height:calc(var(--bottom-pad) + var(--bottom-nav-content-height));
+ /* Home-indicator phones: env() is the real inset. Home-button phones stay on --bottom-pad. */
+ --shortcut-bottom-inset:var(--bottom-pad);
+ --shortcut-bottom-inset:max(var(--bottom-pad), env(safe-area-inset-bottom, 0px));
+ /* Slight player lift when shortcuts are hidden. 0 when there is no home indicator. */
+ --np-home-rest:0px;
+ --np-home-rest:min(16px, env(safe-area-inset-bottom, 0px));
+ --bottom-toolbar-height:calc(var(--shortcut-bottom-inset) + var(--bottom-nav-content-height));
  /* Full shortcut footer height (pad + strip). Independent of docked --bottom-toolbar-height override. */
- --np-bar-dock-lift:calc(var(--bottom-pad) + var(--bottom-nav-content-height));
+ --np-bar-dock-lift:calc(var(--shortcut-bottom-inset) + var(--bottom-nav-content-height));
  /* How much of the shortcut strip tucks under the miniplayer bar */
  --nav-shortcut-tuck:max(0px, calc(var(--bottom-nav-content-height) - var(--mobile-npbar-height, 0px)));
  --nav-shortcut-visible-height:var(--mobile-npbar-height, var(--bottom-nav-content-height, 52px));
@@ -72,7 +78,7 @@
 
 .no-navbar {
  /* Keep chrome for the shortcut strip under replace-nav miniplayer */
- --bottom-toolbar-height:calc(var(--bottom-pad) + var(--bottom-nav-content-height, 52px));
+ --bottom-toolbar-height:calc(var(--shortcut-bottom-inset, var(--bottom-pad)) + var(--bottom-nav-content-height, 52px));
  --bottom-np-pad:0px;
 }
 
@@ -150,6 +156,32 @@
  height:var(--bottom-toolbar-height) !important;
  box-shadow:none;
  background-color:var(--bottom-toolbar-color)!important;
+}
+/* Keyboard: JS writes translate3d each visualViewport frame. No height/display change. */
+html.msk-keyboard #np-bar,
+html.msk-keyboard #nav-bar {
+ transition:none !important;
+ -webkit-transition:none !important;
+ will-change:transform;
+ backface-visibility:hidden;
+ -webkit-backface-visibility:hidden;
+ -webkit-transform-style:preserve-3d;
+ transform-style:preserve-3d;
+}
+/* Filter field focused: hide the shortcut strip, the mini player, and the fade.
+   Visibility only — do not translate the bars or rewrite --vh. */
+html.msk-filter-kb #np-bar,
+html.msk-filter-kb #np-bar *,
+html.msk-filter-kb #nav-bar,
+html.msk-filter-kb #nav-bar *,
+html.msk-filter-kb .msk-bottom-fade {
+ visibility:hidden !important;
+ pointer-events:none !important;
+}
+html.msk-filter-kb #np-bar,
+html.msk-filter-kb #nav-bar,
+html.msk-filter-kb .msk-bottom-fade {
+ opacity:0 !important;
 }
 
 .trans-footer {
@@ -273,12 +305,20 @@
  justify-content:center !important;
  line-height:1 !important;
 }
+.nav-shortcut-btn .v-icon,
+.nav-page-toggle .v-icon,
+.nav-search-fixed .v-icon,
+.nav-shortcut-icon.material-icons,
+.nav-shortcut-icon.v-icon {
+ font-size:var(--nav-shortcut-icon-size, 22px) !important;
+ width:var(--nav-shortcut-icon-size, 22px) !important;
+ height:var(--nav-shortcut-icon-size, 22px) !important;
+}
 .nav-shortcut-btn .nav-svg-img,
 .nav-page-toggle .nav-svg-img,
 .nav-search-fixed .nav-svg-img {
- /* Scale with strip height (slim/medium) — cap at 24px */
- width:min(24px, calc(var(--bottom-nav-content-height, 52px) * 0.5)) !important;
- height:min(24px, calc(var(--bottom-nav-content-height, 52px) * 0.5)) !important;
+ width:var(--nav-shortcut-icon-size, 22px) !important;
+ height:var(--nav-shortcut-icon-size, 22px) !important;
  display:block !important;
  margin:0 auto !important;
  opacity:0.58;
@@ -305,7 +345,7 @@
  -webkit-overflow-scrolling:touch;
  overscroll-behavior-x:none;
  overscroll-behavior-y:none;
- touch-action:pan-x;
+ touch-action:pan-x pinch-zoom;
  scroll-behavior:auto;
  height:100%;
  width:100%;
@@ -323,11 +363,38 @@
  height:0;
 }
 
+.nav-shortcut-bar.nav-shortcuts-drop {
+ outline:2px dashed color-mix(in srgb, var(--primary-color, #1976d2) 70%, transparent);
+ outline-offset:-3px;
+ background:color-mix(in srgb, var(--primary-color, #1976d2) 12%, transparent);
+}
+.nav-shortcut-btn.nav-shortcut-dragging {
+ opacity:0.28;
+}
+.nav-shortcut-ghost {
+ position:fixed;
+ z-index:10060;
+ width:44px;
+ height:44px;
+ margin:0;
+ padding:0;
+ border-radius:12px;
+ pointer-events:none;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ transform:translate3d(-50%, -50%, 0);
+ -webkit-transform:translate3d(-50%, -50%, 0);
+ background:color-mix(in srgb, var(--bottom-toolbar-color, #222) 88%, transparent);
+ box-shadow:0 8px 22px rgba(0,0,0,0.28);
+ will-change:transform, left, top;
+}
+
 .nav-shortcut-btn,
 .nav-page-toggle,
 .nav-search-fixed {
- /* Touch target tracks strip height (slim 44 / medium 48 / large 52) */
- --nav-shortcut-btn-size:min(40px, calc(var(--bottom-nav-content-height, 52px) - 4px));
+ /* Touch target tracks strip height (pref shortcutSize 1–5) */
+ --nav-shortcut-btn-size:min(56px, calc(var(--bottom-nav-content-height, 52px) - 4px));
  flex:0 0 var(--nav-shortcut-btn-size) !important;
  width:var(--nav-shortcut-btn-size) !important;
  height:var(--nav-shortcut-btn-size) !important;
@@ -343,22 +410,32 @@
  justify-content:center !important;
 }
 
-/* Active space: full-bright ink + soft pill (primary tint) */
-.nav-shortcut-btn.nav-shortcut-active {
+/* Active space: one pill for shortcuts, search, and the queue toggle. */
+.nav-shortcut-btn.nav-shortcut-active,
+.nav-page-toggle.nav-shortcut-active,
+.nav-search-fixed.nav-shortcut-active {
  background:color-mix(in srgb, var(--bottom-toolbar-text-color) 12%, transparent) !important;
  border-radius:12px !important;
 }
 .nav-shortcut-btn.nav-shortcut-active .nav-shortcut-icon,
-.nav-shortcut-btn.nav-shortcut-active .v-icon {
+.nav-shortcut-btn.nav-shortcut-active .v-icon,
+.nav-page-toggle.nav-shortcut-active .nav-shortcut-icon,
+.nav-page-toggle.nav-shortcut-active .v-icon,
+.nav-search-fixed.nav-shortcut-active .nav-shortcut-icon,
+.nav-search-fixed.nav-shortcut-active .v-icon {
  opacity:1 !important;
  color:var(--primary-color, var(--bottom-toolbar-text-color)) !important;
  fill:var(--primary-color, var(--bottom-toolbar-text-color)) !important;
 }
-.nav-shortcut-btn.nav-shortcut-active .nav-svg-img {
+.nav-shortcut-btn.nav-shortcut-active .nav-svg-img,
+.nav-page-toggle.nav-shortcut-active .nav-svg-img,
+.nav-search-fixed.nav-shortcut-active .nav-svg-img {
  opacity:1 !important;
 }
 @supports not (color: color-mix(in srgb, red, blue)) {
- .nav-shortcut-btn.nav-shortcut-active {
+ .nav-shortcut-btn.nav-shortcut-active,
+ .nav-page-toggle.nav-shortcut-active,
+ .nav-search-fixed.nav-shortcut-active {
   background:rgba(128,128,128,0.18) !important;
  }
 }
@@ -548,7 +625,8 @@ html.jl-side-right .lms-image-grid-jump {
 }
 
 .np-sheet-scrim.np-sheet-scrim-enter {
- animation:npSheetScrimIn 0.38s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+ animation:none !important;
+ opacity:0.38;
 }
 
 .np-sheet-scrim.np-sheet-scrim-exit {
@@ -557,8 +635,8 @@ html.jl-side-right .lms-image-grid-jump {
 
 .np-sheet-scrim.np-sheet-scrim-drag {
  animation:none !important;
- opacity:var(--np-sheet-scrim-opacity, 1);
- transition:opacity 0.05s linear;
+ transition:none !important;
+ opacity:0.28 !important;
 }
 
 @keyframes npSheetScrimIn {
@@ -584,13 +662,18 @@ html.jl-side-right .lms-image-grid-jump {
  overflow:hidden;
  /* Keep modest: above miniplayer/footer, not above app chrome/dialogs */
  z-index:5;
- transform:translate3d(0,0,0);
  -webkit-transform:translate3d(0,0,0);
- transform-origin:bottom center;
- -webkit-transform-origin:bottom center;
+ transform:translate3d(0,0,0);
+ transform-origin:top center;
+ -webkit-transform-origin:top center;
+ /* translate3d + will-change keeps the open/close slide on the compositor.
+    preserve-3d fights overflow:hidden and makes WKWebView hit-test this
+    full-viewport layer above the device drawer. Stay flat. */
  will-change:transform;
- backface-visibility:hidden;
  -webkit-backface-visibility:hidden;
+ backface-visibility:hidden;
+ -webkit-transform-style:flat;
+ transform-style:flat;
  padding-top:0;
  box-sizing:border-box;
  /* Larger art on NP slide; lyrics moved to their own card */
@@ -770,15 +853,15 @@ html.jl-side-right .lms-image-grid-jump {
  pointer-events:none;
 }
 
-/* Apple Music–style drawer handle — thinner bar under toolbar */
+/* Drawer grabber — short box fully under the toolbar (not in the title bar). */
 .np-sheet-handle {
  position:absolute;
- /* Sit closer to the toolbar (higher), leave gap above art */
- top:calc(var(--main-toolbar-height) - 2px);
+ /* Fully below the toolbar so iOS hits the handle, not the player title bar */
+ top:var(--main-toolbar-height);
  left:0;
  right:0;
- z-index:30;
- height:36px;
+ z-index:40;
+ height:20px;
  display:flex;
  align-items:center;
  justify-content:center;
@@ -851,6 +934,13 @@ html.jl-side-right .lms-image-grid-jump {
  min-height:0;
  height:100%;
 }
+/* A mis-settled slide must not paint its lyrics across the transport. */
+.np-page-mobile-sheet .np-main-swiper .swiper-slide {
+ overflow:hidden;
+}
+.np-page-mobile-sheet .np-main-swiper .swiper-slide-active {
+ z-index:3;
+}
 /* Push-style card transition (iOS-ish): leaving card eases left, next enters full-width */
 .np-main-swiper.np-main-swiper-push .swiper-wrapper {
  transition-timing-function:cubic-bezier(0.32, 0.72, 0, 1) !important;
@@ -875,17 +965,20 @@ html.jl-side-right .lms-image-grid-jump {
  /* Transparent by default so page palette gradient shows on NP slide */
  background:transparent;
 }
-/* Lyrics / artist / album cards keep solid fill so NP does not ghost through */
+/* Queue / lyrics / artist / album cards keep solid fill so NP does not ghost through */
+.np-main-swiper .swiper-slide.np-main-slide-queue,
 .np-main-swiper .swiper-slide.np-main-slide-lyrics,
 .np-main-swiper .swiper-slide.np-main-slide-artist,
 .np-main-swiper .swiper-slide.np-main-slide-album {
  background:var(--background-color, #121212);
 }
+.theme--dark .np-main-swiper .swiper-slide.np-main-slide-queue,
 .theme--dark .np-main-swiper .swiper-slide.np-main-slide-lyrics,
 .theme--dark .np-main-swiper .swiper-slide.np-main-slide-artist,
 .theme--dark .np-main-swiper .swiper-slide.np-main-slide-album {
  background:#121212;
 }
+.theme--light .np-main-swiper .swiper-slide.np-main-slide-queue,
 .theme--light .np-main-swiper .swiper-slide.np-main-slide-lyrics,
 .theme--light .np-main-swiper .swiper-slide.np-main-slide-artist,
 .theme--light .np-main-swiper .swiper-slide.np-main-slide-album {
@@ -947,10 +1040,10 @@ html.jl-side-right .lms-image-grid-jump {
  flex:1 1 auto;
  min-height:0;
  /* Handle sits at toolbar bottom; dots sit above home indicator */
- --np-sheet-handle-h:22px;
+ --np-sheet-handle-h:20px;
  --np-sheet-dots-h:40px;
  /* Soft alpha fade bands (mask transparency, not solid paint) */
- --np-overflow-fade-top:calc(var(--main-toolbar-height, 48px) + var(--np-sheet-handle-h, 22px) + 8px);
+ --np-overflow-fade-top:calc(var(--main-toolbar-height, 48px) + var(--np-sheet-handle-h, 20px) + 8px);
  --np-overflow-fade-bottom:calc(var(--np-sheet-dots-h, 40px) + 20px);
 }
 
@@ -1003,12 +1096,13 @@ html.jl-side-right .lms-image-grid-jump {
   color-mix(in srgb, var(--np-mai-palette-3, #1a1a1a) 42%, #121212) 100%);
 }
 /* Bottom chrome (dots + safe gap) reserved outside the text box height */
+.np-page-mobile-sheet .np-main-slide-queue .np-card-panel,
 .np-page-mobile-sheet .np-main-slide-lyrics .np-card-panel,
 .np-page-mobile-sheet .np-main-slide-artist .np-card-panel,
 .np-page-mobile-sheet .np-main-slide-album .np-card-panel {
  --np-card-bottom-reserve:calc(var(--np-sheet-dots-h, 40px) + max(10px, env(safe-area-inset-bottom, 0px)));
  /* Top of text box sits under the sheet handle (not under the status/toolbar chrome) */
- --np-card-top-chrome:calc(var(--main-toolbar-height, 48px) + var(--np-sheet-handle-h, 22px));
+ --np-card-top-chrome:calc(var(--main-toolbar-height, 48px) + var(--np-sheet-handle-h, 20px));
  --np-card-fade-top-h:10px;
  --np-card-fade-bottom-h:10px;
 }
@@ -1016,6 +1110,62 @@ html.jl-side-right .lms-image-grid-jump {
  * Scroll viewport is inset between handle and page dots so text never paints
  * above the drawer handle or below the pagination dots (lyrics / artist / album).
  */
+.np-page-mobile-sheet .np-queue-row.pq-current {
+ background:rgba(255,255,255,0.10);
+ border-radius:12px;
+}
+.theme--light .np-page-mobile-sheet .np-queue-row.pq-current {
+ background:rgba(0,0,0,0.06);
+}
+.np-page-mobile-sheet .np-queue-controls {
+ position:sticky;
+ top:0;
+ z-index:6;
+ display:flex;
+ align-items:center;
+ gap:0;
+ margin:-10px -18px 10px;
+ padding:2px 2px 6px 12px;
+ background:var(--sub-toolbar-color, #1e1e1e);
+}
+html.theme-glass .np-page-mobile-sheet .np-queue-controls {
+ background:rgba(18, 19, 22, 0.96);
+}
+html.theme-glass .theme--light .np-page-mobile-sheet .np-queue-controls {
+ background:rgba(246, 246, 247, 0.96);
+}
+.np-queue-controls-meta {
+ flex:1 1 auto;
+ min-width:0;
+ padding-right:4px;
+}
+.np-queue-controls-count {
+ font-size:0.95rem;
+ font-weight:600;
+ line-height:1.2;
+}
+.np-queue-controls-sub {
+ font-size:0.75rem;
+ opacity:0.62;
+ line-height:1.2;
+}
+.np-page-mobile-sheet .np-queue-controls .np-queue-ctl.v-btn {
+ width:34px !important;
+ height:34px !important;
+ min-width:34px !important;
+ margin:0 !important;
+ flex:0 0 auto;
+}
+.np-page-mobile-sheet .np-queue-controls .np-queue-ctl .v-icon {
+ font-size:22px;
+}
+.np-page-mobile-sheet .np-queue-controls .svg-img,
+.np-page-mobile-sheet .np-queue-controls .svg-list-img,
+.np-page-mobile-sheet .np-queue-controls .btn-img {
+ width:22px;
+ height:22px;
+}
+.np-page-mobile-sheet .np-main-slide-queue .np-card-panel-scroll,
 .np-page-mobile-sheet .np-main-slide-lyrics .np-card-panel-scroll,
 .np-page-mobile-sheet .np-main-slide-artist .np-card-panel-scroll,
 .np-page-mobile-sheet .np-main-slide-album .np-card-panel-scroll {
@@ -1068,7 +1218,7 @@ html.jl-side-right .lms-image-grid-jump {
 }
 .np-card-edge-top {
  /* At the top of the inset text box (just under the handle) */
- top:var(--np-card-top-chrome, calc(var(--main-toolbar-height, 48px) + var(--np-sheet-handle-h, 22px)));
+ top:var(--np-card-top-chrome, calc(var(--main-toolbar-height, 48px) + var(--np-sheet-handle-h, 20px)));
  height:var(--np-card-fade-top-h, 10px);
  /* opacity driven by scroll (0 at top → 1 after first ~10px); see onNpCardPanelScroll */
  opacity:0;
@@ -1389,9 +1539,9 @@ html.jl-side-right .lms-image-grid-jump {
  min-height:0 !important;
  touch-action:pan-y pan-x;
  box-sizing:border-box !important;
- --np-np-top-chrome:calc(var(--main-toolbar-height, 48px) + var(--np-sheet-handle-h, 22px));
+ --np-np-top-chrome:calc(var(--main-toolbar-height, 48px) + var(--np-sheet-handle-h, 20px));
  --np-np-bottom-reserve:calc(var(--np-sheet-dots-h, 40px) + max(10px, env(safe-area-inset-bottom, 0px)));
- padding:calc(var(--np-np-top-chrome) + 4px) 0 calc(var(--np-np-bottom-reserve) + 4px) 0 !important;
+ padding:calc(var(--np-np-top-chrome) + 0px) 0 calc(var(--np-np-bottom-reserve) + 4px) 0 !important;
  margin:0 !important;
  overflow:hidden !important;
  background:transparent !important;
@@ -1404,7 +1554,7 @@ html.jl-side-right .lms-image-grid-jump {
 }
 .np-page-mobile-sheet .np-main-slide-np .np-main.np-main-port {
  /* True square art — same width and height, no 40% max that squashes */
- --np-portrait-image-size:min(72vw, 36vh, calc(100vw - 48px));
+ --np-portrait-image-size:min(78vw, 42vh, calc(100vw - 32px));
 }
 /* Hero is a real flex column (never display:contents) */
 .np-page-mobile-sheet .np-main-slide-np .np-sheet-hero {
@@ -1443,7 +1593,7 @@ html.jl-side-right .lms-image-grid-jump {
  max-width:var(--np-portrait-image-size) !important;
  max-height:var(--np-portrait-image-size) !important;
  aspect-ratio:1 / 1 !important;
- margin:8px auto 0 auto !important;
+ margin:2px auto 0 auto !important;
  padding:0 !important;
  z-index:2 !important;
  display:block !important;
@@ -1505,7 +1655,7 @@ html.jl-side-right .lms-image-grid-jump {
 }
 /* After fade: never leave a residual transform from swipe keyframes */
 .np-page-mobile-sheet .np-main-slide-np .np-cover-stack:not(.np-cover-fading) .np-cover-current,
-.np-bar .np-cover-stack:not(.np-cover-fading) .np-cover-current {
+.np-bar:not(.np-bar-sliding) .np-cover-stack:not(.np-cover-fading) .np-cover-current {
  transform:none !important;
  filter:none !important;
 }
@@ -1557,7 +1707,7 @@ html.jl-side-right .lms-image-grid-jump {
  width:100% !important;
  max-width:100% !important;
  min-height:0 !important;
- margin:auto 0 0 0 !important;
+ margin:0 !important;
  padding:4px 10px 2px 10px !important;
  box-sizing:border-box !important;
  z-index:3 !important;
@@ -1664,10 +1814,10 @@ html.jl-side-right .lms-image-grid-jump {
  left:0;
  right:0;
  bottom:0;
- /* Only the dots band — do NOT cover transport (shuffle was non-reactive under this layer) */
- height:calc(var(--np-sheet-dots-h, 36px) + max(6px, env(safe-area-inset-bottom, 0px)));
+ /* Dots only. A taller catcher sat on the shuffle button and ate its taps. */
+ height:var(--np-sheet-dots-h, 28px);
  z-index:11;
- pointer-events:auto;
+ pointer-events:none;
  touch-action:pan-x;
  background:transparent;
 }
@@ -1684,7 +1834,7 @@ html.jl-side-right .lms-image-grid-jump {
 .np-page-mobile-sheet .np-side-progress {
  position:absolute;
  right:max(4px, env(safe-area-inset-right, 0px));
- top:calc(var(--main-toolbar-height, 48px) + var(--np-sheet-handle-h, 22px) + 12px);
+ top:calc(var(--main-toolbar-height, 48px) + var(--np-sheet-handle-h, 20px) + 12px);
  bottom:calc(var(--np-sheet-dots-h, 40px) + max(12px, env(safe-area-inset-bottom, 0px)));
  width:22px;
  z-index:14;
@@ -1735,6 +1885,11 @@ html.jl-side-right .lms-image-grid-jump {
 }
 .theme--light .np-page-mobile-sheet .np-side-progress-track {
  background:rgba(0,0,0,0.12);
+}
+/* Seek rail stops above the transport. It sits outside the swiper stacking
+   context, so a full-height rail covered the right half of shuffle. */
+.np-page-mobile-sheet.np-slide-np .np-side-progress {
+ bottom:calc(var(--np-sheet-dots-h, 40px) + 84px + max(0px, env(safe-area-inset-bottom, 0px)));
 }
 /* Wider hit target, slim visual track */
 .msk-is-touch .np-page-mobile-sheet .np-side-progress {
@@ -2830,7 +2985,7 @@ html.jl-side-right .lms-image-grid-jump {
   font-size:80% !important;
  }
  .np-page-mobile-sheet .np-sheet-handle {
-  top:calc(var(--main-toolbar-height) - 4px);
+  top:var(--main-toolbar-height);
   height:20px;
  }
  .np-page-mobile-sheet .np-sheet-handle-bar {
@@ -2838,7 +2993,7 @@ html.jl-side-right .lms-image-grid-jump {
   height:3px;
  }
  .np-page-mobile-sheet .np-main-land {
-  padding-top:calc(var(--main-toolbar-height) + 16px);
+  padding-top:calc(var(--main-toolbar-height) + 20px);
  }
 }
 
@@ -3013,18 +3168,15 @@ html.jl-side-right .lms-image-grid-jump {
 .lms-app.np-sheet-drag-active .np-bgnd.np-sheet-dragging,
 .lms-app.np-sheet-drag-active #np-bar.np-sheet-dragging {
  animation:none !important;
- transition:none !important;
- transform:translate3d(0, var(--np-sheet-drag-y, 0px), 0) !important;
- -webkit-transform:translate3d(0, var(--np-sheet-drag-y, 0px), 0) !important;
+ /* Transform is set inline (translate3d) so iOS keeps it on the compositor.
+  * CSS variables in transform force a style recalc every frame on WKWebView.
+  * Flat, not preserve-3d: overflow:hidden would flatten it anyway and the
+  * 3D context is what steals taps from the device drawer. */
  will-change:transform;
  backface-visibility:hidden;
  -webkit-backface-visibility:hidden;
-}
-.lms-app.np-sheet-drag-active .np-page-mobile-sheet.np-sheet-drag-snap,
-.np-page-mobile-sheet.np-sheet-drag-snap,
-.lms-app.np-sheet-drag-active .np-bgnd.np-sheet-drag-snap,
-.lms-app.np-sheet-drag-active #np-bar.np-sheet-drag-snap {
- transition:transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), -webkit-transform 0.28s cubic-bezier(0.32, 0.72, 0, 1) !important;
+ -webkit-transform-style:flat;
+ transform-style:flat;
 }
 
 #np-bar.mobile {
@@ -3051,15 +3203,7 @@ html.jl-side-right .lms-image-grid-jump {
 }
 
 .lms-app.np-sheet-drag-active #np-page.np-page-mobile-sheet.np-sheet-dragging {
- border-top-left-radius:20px;
- border-top-right-radius:20px;
- overflow:hidden;
-}
-
-.lms-app.np-sheet-drag-active .np-bgnd.np-bgnd-sheet-palette.np-sheet-dragging {
- border-top-left-radius:20px;
- border-top-right-radius:20px;
- overflow:hidden;
+ /* Keep existing radius; do not toggle overflow (forces extra paints on iOS). */
 }
 
 
@@ -3123,10 +3267,20 @@ html.jl-side-right .lms-image-grid-jump {
 
 .np-page-sheet-enter {
  animation:npPageSheetIn 0.34s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+ will-change:transform;
+ -webkit-backface-visibility:hidden;
+ backface-visibility:hidden;
+ -webkit-transform-style:flat;
+ transform-style:flat;
 }
 
 .np-page-sheet-exit {
  animation:npPageSheetOut 0.28s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+ will-change:transform;
+ -webkit-backface-visibility:hidden;
+ backface-visibility:hidden;
+ -webkit-transform-style:flat;
+ transform-style:flat;
 }
 
 @keyframes npPageSheetIn {
@@ -3136,7 +3290,8 @@ html.jl-side-right .lms-image-grid-jump {
 
 @keyframes npPageSheetOut {
  from { transform:translate3d(0,0,0); -webkit-transform:translate3d(0,0,0); }
- to { transform:translate3d(0,100%,0); -webkit-transform:translate3d(0,100%,0); }
+ /* 100% of a short box stops above the screen. The extra clears that band. */
+ to { transform:translate3d(0, calc(100% + 120px), 0); -webkit-transform:translate3d(0, calc(100% + 120px), 0); }
 }
 
 .np-bar-sheet-exit {
@@ -3218,17 +3373,17 @@ html.jl-side-right .lms-image-grid-jump {
  -webkit-transform:translate3d(0, calc(-1 * var(--np-bar-dock-lift)), 0);
  /* Modern ambient elevation (single soft layer) */
  box-shadow:0 1px 0 rgba(0,0,0,0.04), 0 10px 28px rgba(0,0,0,0.12) !important;
- /* Transform only — bottom/filter/box-shadow must not be in the transition list */
- transition:transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+ /* Transform only — linear, no ease-out settle (that read as elastic). */
+ transition:transform 0.22s linear;
  touch-action:pan-y;
  will-change:transform;
  backface-visibility:hidden;
  -webkit-backface-visibility:hidden;
 }
-/* Docked: miniplayer at the home-indicator edge */
+/* Docked: miniplayer just above the home indicator (--np-home-rest is 0 without one). */
 #np-bar.mobile.np-bar-dockable.np-bar-docked {
- transform:translate3d(0, 0, 0);
- -webkit-transform:translate3d(0, 0, 0);
+ transform:translate3d(0, calc(-1 * var(--np-home-rest, 0px)), 0);
+ -webkit-transform:translate3d(0, calc(-1 * var(--np-home-rest, 0px)), 0);
 }
 /* Dragging: JS sets transition:none inline. Snap sets ease inline. */
 .theme--light #np-bar.mobile.np-bar-dockable {
@@ -3296,7 +3451,7 @@ html.jl-side-right .lms-image-grid-jump {
 .nav-shortcut-footer {
  display:flex !important;
  flex-direction:column;
- transition:transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+ transition:transform 0.22s linear, opacity 0.18s linear;
  will-change:transform;
  backface-visibility:hidden;
  -webkit-backface-visibility:hidden;
@@ -3309,8 +3464,8 @@ html.jl-side-right .lms-image-grid-jump {
  * IMPORTANT: only in mobile.css so desktop --bottom-toolbar-height is never touched.
  */
 .lms-app.np-bar-docked:not(.np-sheet-open) {
- --bottom-toolbar-height:var(--bottom-pad);
- --mobile-bottom-chrome-height:calc(var(--bottom-pad) + var(--mobile-npbar-height));
+ --bottom-toolbar-height:max(var(--bottom-pad), var(--np-home-rest, 0px));
+ --mobile-bottom-chrome-height:calc(max(var(--bottom-pad), var(--np-home-rest, 0px)) + var(--mobile-npbar-height));
 }
 
 /*
@@ -3362,11 +3517,11 @@ html.jl-side-right .lms-image-grid-jump {
  pointer-events:none !important;
 }
 .lms-app.nav-shortcuts-auto-collapsed:not(.np-bar-docked):not(.np-sheet-open) #np-bar.mobile.np-bar-dockable:not(.np-bar-dock-dragging) {
- transform:translate3d(0, 0, 0) !important;
- -webkit-transform:translate3d(0, 0, 0) !important;
+ transform:translate3d(0, calc(-1 * var(--np-home-rest, 0px)), 0) !important;
+ -webkit-transform:translate3d(0, calc(-1 * var(--np-home-rest, 0px)), 0) !important;
 }
 .lms-app.nav-shortcuts-auto-collapsed:not(.np-bar-docked):not(.np-sheet-open) #np-bar.mobile:not(.np-bar-dockable) {
- bottom:0 !important;
+ bottom:var(--np-home-rest, 0px) !important;
 }
 
 .lms-app.np-bar-dock-noanim #np-bar.mobile.np-bar-dockable,
@@ -3426,7 +3581,7 @@ html.jl-side-right .lms-image-grid-jump {
 }
 
 .no-navbar #np-bar.np-bar-mob-nav.np-bar-docked {
- bottom:0 !important;
+ bottom:var(--np-home-rest, 0px) !important;
 }
 
 .no-navbar #np-bar.np-bar-mob-nav .np-bar-image {
@@ -3593,6 +3748,19 @@ html.jl-side-right .lms-image-grid-jump {
  font-size:0;
 }
 
+#np-bar.np-bar-restarting.np-bar-mob-thick .np-bar-image,
+#np-bar.np-bar-restarting.np-bar-mob-nav .np-bar-image {
+ width:112px !important;
+ aspect-ratio:auto !important;
+}
+#np-bar.np-bar-restarting.np-bar-mob-thick .np-bar-details {
+ left:120px !important;
+ width:calc(100% - 164px) !important;
+}
+#np-bar.np-bar-restarting.np-bar-mob-nav .np-bar-details {
+ left:120px !important;
+}
+
 .np-bar-mob-nav .np-bar-details .v-list__tile {
  height:auto !important;
  min-height:0 !important;
@@ -3654,8 +3822,8 @@ html.jl-side-right .lms-image-grid-jump {
  min-height:0 !important;
  display:grid !important;
  grid-template-columns:minmax(0, 1fr) !important;
- align-content:center !important;
- align-items:stretch !important;
+ align-content:start !important;
+ align-items:start !important;
  justify-items:stretch !important;
 }
 
@@ -3680,7 +3848,16 @@ html.jl-side-right .lms-image-grid-jump {
 
 .np-bar-mob-thick .np-bar-details .np-bar-text-layer {
  grid-area:1 / 1 !important;
+ display:flex !important;
+ flex-direction:column !important;
+ align-items:stretch !important;
  gap:2px !important;
+ align-self:start !important;
+ justify-content:flex-start !important;
+ width:100% !important;
+ height:auto !important;
+ margin:0 !important;
+ padding:0 !important;
 }
 
 .np-bar-mob-thick .np-bar-details .np-bar-marquee .v-list__tile__title,
@@ -3803,7 +3980,7 @@ html.jl-side-right .lms-image-grid-jump {
  font-size:inherit !important;
  line-height:inherit !important;
  white-space:nowrap;
- display:inline-block;
+ display:block;
  width:max-content;
  max-width:none;
 }
@@ -3955,13 +4132,23 @@ html.jl-side-right .lms-image-grid-jump {
 .np-bar-mob-nav .np-bar-details .np-bar-text-morph-host {
  display:grid !important;
  grid-template-columns:minmax(0, 1fr) !important;
- align-content:center !important;
- align-items:stretch !important;
+ align-content:start !important;
+ align-items:start !important;
  justify-items:stretch !important;
  row-gap:2px;
 }
 .np-bar-mob-nav .np-bar-details .np-bar-text-layer {
  grid-area:1 / 1 !important;
+ display:flex !important;
+ flex-direction:column !important;
+ align-items:stretch !important;
+ align-self:start !important;
+ justify-content:flex-start !important;
+ width:100% !important;
+ height:auto !important;
+ margin:0 !important;
+ padding:0 !important;
+ gap:2px !important;
 }
 
 .np-bar-mob-nav .np-bar-details .np-bar-marquee {
@@ -4010,6 +4197,24 @@ html.jl-side-right .lms-image-grid-jump {
 .np-bar-mob-nav .np-bar-details .np-bar-marquee-active {
  -webkit-mask-image:none !important;
  mask-image:none !important;
+}
+
+/* Medium + large: scrolling text stays on the compositor. A mask over the
+   frosted bar repaints the line every frame on iOS. Overflow clips instead. */
+#np-bar.mobile.np-bar-mob-thick .np-bar-marquee-flat,
+#np-bar.mobile.np-bar-mob-nav .np-bar-marquee-flat,
+#np-bar.mobile.np-bar-mob-nav .np-bar-details .np-bar-text-morph-host:has(.np-bar-marquee-flat) {
+ -webkit-mask-image:none !important;
+ mask-image:none !important;
+}
+#np-bar.mobile.np-bar-mob-thick .np-bar-marquee-track,
+#np-bar.mobile.np-bar-mob-nav .np-bar-marquee-track {
+ will-change:auto;
+}
+#np-bar.mobile.np-bar-mob-thick .np-bar-marquee-flat .np-bar-marquee-track,
+#np-bar.mobile.np-bar-mob-nav .np-bar-marquee-flat .np-bar-marquee-track {
+ animation:none !important;
+ will-change:transform;
 }
 
 /* Flush left — title and group share the same origin at rest */
@@ -4085,7 +4290,8 @@ html.jl-side-right .lms-image-grid-jump {
  min-height:1.2em;
  display:grid;
  grid-template-columns:minmax(0, 1fr);
- align-items:center;
+ align-items:start;
+ align-content:start;
  justify-items:stretch;
 }
 
@@ -4145,16 +4351,43 @@ html.jl-side-right .lms-image-grid-jump {
  line-height:1.15 !important;
  margin-top:0 !important;
 }
+/* Same line box as the resting marquee, so the slide does not jump. */
+.np-bar-mob-thick .np-bar-details .np-bar-text-layer .v-list__tile__title,
+.np-bar-mob-thick .np-bar-details .np-bar-text-layer .v-list__tile__sub-title,
+.np-bar-mob-nav .np-bar-details .np-bar-text-layer .v-list__tile__title,
+.np-bar-mob-nav .np-bar-details .np-bar-text-layer .v-list__tile__sub-title,
+.np-bar-mob-thick .np-bar-details .np-bar-slide-in .v-list__tile__title,
+.np-bar-mob-thick .np-bar-details .np-bar-slide-in .v-list__tile__sub-title,
+.np-bar-mob-nav .np-bar-details .np-bar-slide-in .v-list__tile__title,
+.np-bar-mob-nav .np-bar-details .np-bar-slide-in .v-list__tile__sub-title {
+ display:inline !important;
+ width:auto !important;
+ max-width:none !important;
+ overflow:visible !important;
+ text-overflow:clip !important;
+ margin:0 !important;
+ padding:0 !important;
+ text-align:left !important;
+}
+#np-bar.mobile.np-bar-mob-thick .np-cover-current.np-cover-fade-in,
+#np-bar.mobile.np-bar-mob-nav .np-cover-current.np-cover-fade-in {
+ opacity:1;
+}
 
-.np-bar-text-out {
+.np-bar-text-out,
+.np-bar-text-in {
+ grid-area:1 / 1;
  position:relative;
- left:auto;
- right:auto;
+ left:0;
+ right:0;
  top:auto;
+ width:100%;
+ min-width:0;
  pointer-events:none;
 }
 
 .np-bar-text-line {
+ display:block !important;
  width:100%;
  white-space:nowrap;
  overflow:hidden;
@@ -4202,6 +4435,110 @@ html.jl-side-right .lms-image-grid-jump {
  .np-bar-text-out, .np-bar-text-in {
   animation:none !important;
  }
+}
+
+/* Medium + large: both lines travel as one block and fully replace the previous pair. */
+.np-bar-mob-thick .np-bar-text-out.np-bar-text-fwd,
+.np-bar-mob-nav .np-bar-text-out.np-bar-text-fwd {
+ animation-name:npBarTextOutFullFwd;
+}
+.np-bar-mob-thick .np-bar-text-in.np-bar-text-fwd,
+.np-bar-mob-nav .np-bar-text-in.np-bar-text-fwd {
+ animation-name:npBarTextInFullFwd;
+}
+.np-bar-mob-thick .np-bar-text-out.np-bar-text-rev,
+.np-bar-mob-nav .np-bar-text-out.np-bar-text-rev {
+ animation-name:npBarTextOutFullRev;
+}
+.np-bar-mob-thick .np-bar-text-in.np-bar-text-rev,
+.np-bar-mob-nav .np-bar-text-in.np-bar-text-rev {
+ animation-name:npBarTextInFullRev;
+}
+@keyframes npBarTextOutFullFwd {
+ from { transform:translate3d(0,0,0); opacity:1; }
+ to { transform:translate3d(-100%,0,0); opacity:1; }
+}
+@keyframes npBarTextInFullFwd {
+ from { transform:translate3d(100%,0,0); opacity:1; }
+ to { transform:translate3d(0,0,0); opacity:1; }
+}
+@keyframes npBarTextOutFullRev {
+ from { transform:translate3d(0,0,0); opacity:1; }
+ to { transform:translate3d(100%,0,0); opacity:1; }
+}
+@keyframes npBarTextInFullRev {
+ from { transform:translate3d(-100%,0,0); opacity:1; }
+ to { transform:translate3d(0,0,0); opacity:1; }
+}
+
+.np-bar-mob-thick .np-bar-details .np-bar-slide-in,
+.np-bar-mob-nav .np-bar-details .np-bar-slide-in {
+ position:absolute;
+ left:0;
+ right:0;
+ top:0;
+ width:100%;
+ margin:0;
+ padding:0;
+ display:flex;
+ flex-direction:column;
+ justify-content:flex-start;
+ align-items:stretch;
+ gap:2px;
+ pointer-events:none;
+ z-index:2;
+}
+.np-bar-mob-thick .np-bar-details .np-bar-slide-in .np-bar-marquee,
+.np-bar-mob-nav .np-bar-details .np-bar-slide-in .np-bar-marquee {
+ line-height:1.2;
+ min-width:0;
+ width:100%;
+}
+#np-bar.np-bar-sliding .np-bar-text-morph-host {
+ -webkit-mask-image:none !important;
+ mask-image:none !important;
+}
+#np-bar.np-bar-sliding .np-bar-rest-stack,
+#np-bar.np-bar-sliding .np-bar-slide-in,
+#np-bar.np-bar-sliding .np-cover-current,
+#np-bar.np-bar-sliding .np-cover-drag {
+ animation:none !important;
+ will-change:transform;
+}
+#np-bar.mobile.np-bar-sliding .np-cover-drag {
+ transform:translate3d(100%,0,0);
+}
+#np-bar.mobile.np-bar-mob-thick .np-cover-stack.np-cover-fading.np-cover-fade-fwd .np-cover-prev,
+#np-bar.mobile.np-bar-mob-nav .np-cover-stack.np-cover-fading.np-cover-fade-fwd .np-cover-prev {
+ animation:npBarCoverOutFull 0.32s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+#np-bar.mobile.np-bar-mob-thick .np-cover-stack.np-cover-fading.np-cover-fade-fwd .np-cover-current.np-cover-fade-in,
+#np-bar.mobile.np-bar-mob-nav .np-cover-stack.np-cover-fading.np-cover-fade-fwd .np-cover-current.np-cover-fade-in {
+ animation:npBarCoverInFull 0.32s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+#np-bar.mobile.np-bar-mob-thick .np-cover-stack.np-cover-fading.np-cover-fade-rev .np-cover-prev,
+#np-bar.mobile.np-bar-mob-nav .np-cover-stack.np-cover-fading.np-cover-fade-rev .np-cover-prev {
+ animation:npBarCoverOutFullRev 0.32s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+#np-bar.mobile.np-bar-mob-nav .np-cover-stack.np-cover-fading.np-cover-fade-rev .np-cover-current.np-cover-fade-in,
+#np-bar.mobile.np-bar-mob-thick .np-cover-stack.np-cover-fading.np-cover-fade-rev .np-cover-current.np-cover-fade-in {
+ animation:npBarCoverInFullRev 0.32s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+@keyframes npBarCoverOutFull {
+ from { opacity:1; transform:translate3d(0,0,0); filter:none; }
+ to { opacity:1; transform:translate3d(-100%,0,0); filter:none; }
+}
+@keyframes npBarCoverInFull {
+ from { opacity:1; transform:translate3d(100%,0,0); filter:none; }
+ to { opacity:1; transform:translate3d(0,0,0); filter:none; }
+}
+@keyframes npBarCoverOutFullRev {
+ from { opacity:1; transform:translate3d(0,0,0); filter:none; }
+ to { opacity:1; transform:translate3d(100%,0,0); filter:none; }
+}
+@keyframes npBarCoverInFullRev {
+ from { opacity:1; transform:translate3d(-100%,0,0); filter:none; }
+ to { opacity:1; transform:translate3d(0,0,0); filter:none; }
 }
 
 /* Adjust link/more/close buttons in now-playing page up a little */
@@ -4324,6 +4661,53 @@ html.jl-side-right .lms-image-grid-jump {
  padding-bottom:calc(28px - var(--icon-size));
  margin-bottom:0px;
 }
+/* Shortcut bar, including the fixed search and browse/queue buttons.
+ * Must beat the global .v-icon / .nav-svg-img 24px lock. */
+#nav-bar .nav-shortcut-btn .v-icon,
+#nav-bar .nav-page-toggle .v-icon,
+#nav-bar .nav-search-fixed .v-icon,
+#nav-bar .nav-shortcut-icon,
+#nav-bar .nav-svg-img,
+#nav-bar img.nav-shortcut-icon {
+ width:var(--nav-shortcut-icon-size, 22px) !important;
+ height:var(--nav-shortcut-icon-size, 22px) !important;
+ max-width:var(--nav-shortcut-icon-size, 22px) !important;
+ max-height:var(--nav-shortcut-icon-size, 22px) !important;
+ font-size:var(--nav-shortcut-icon-size, 22px) !important;
+ padding:0 !important;
+ line-height:1 !important;
+}
+#nav-bar .nav-page-toggle.v-btn--icon,
+#nav-bar .nav-search-fixed.v-btn--icon,
+#nav-bar .nav-shortcut-btn.v-btn--icon {
+ width:var(--nav-shortcut-btn-size, 48px) !important;
+ height:var(--nav-shortcut-btn-size, 48px) !important;
+ min-width:var(--nav-shortcut-btn-size, 48px) !important;
+ min-height:var(--nav-shortcut-btn-size, 48px) !important;
+ flex:0 0 var(--nav-shortcut-btn-size, 48px) !important;
+}
+/* Later icon locks must not drop the shared active pill or recolor only font icons. */
+#nav-bar .nav-shortcut-btn.nav-shortcut-active,
+#nav-bar .nav-page-toggle.nav-shortcut-active,
+#nav-bar .nav-search-fixed.nav-shortcut-active {
+ background:color-mix(in srgb, var(--bottom-toolbar-text-color) 12%, transparent) !important;
+ border-radius:12px !important;
+}
+#nav-bar .nav-shortcut-btn.nav-shortcut-active .v-icon,
+#nav-bar .nav-shortcut-btn.nav-shortcut-active .nav-shortcut-icon,
+#nav-bar .nav-page-toggle.nav-shortcut-active .v-icon,
+#nav-bar .nav-page-toggle.nav-shortcut-active .nav-shortcut-icon,
+#nav-bar .nav-search-fixed.nav-shortcut-active .v-icon,
+#nav-bar .nav-search-fixed.nav-shortcut-active .nav-shortcut-icon {
+ opacity:1 !important;
+ color:var(--primary-color, var(--bottom-toolbar-text-color)) !important;
+ fill:var(--primary-color, var(--bottom-toolbar-text-color)) !important;
+}
+#nav-bar .nav-shortcut-btn.nav-shortcut-active .nav-svg-img,
+#nav-bar .nav-page-toggle.nav-shortcut-active .nav-svg-img,
+#nav-bar .nav-search-fixed.nav-shortcut-active .nav-svg-img {
+ opacity:1 !important;
+}
 
 @media (hover: hover) and (pointer: fine) {
 .lms-footer .active-nav:hover, .lms-footer .inactive-nav:hover {
@@ -4435,6 +4819,20 @@ html.jl-side-right .lms-image-grid-jump {
 }
 
 /* Active pane on top — clip inactive pane (visibility:hidden breaks fixed subtoolbars on WebKit) */
+/* iOS clears every pane transform while a text field is focused. Put the
+   inactive pane back off-screen so its rows do not paint over the filter. */
+html.msk-is-ios.msk-ios-field .lms-app.page-browse .lms-splitter .right-pane,
+html.msk-filter-kb .lms-app.page-browse .lms-splitter .right-pane {
+ transform:translate3d(100%, 0, 0) !important;
+ -webkit-transform:translate3d(100%, 0, 0) !important;
+ clip-path:inset(0 0 0 100%) !important;
+}
+html.msk-is-ios.msk-ios-field .lms-app.page-queue .lms-splitter .left-pane,
+html.msk-filter-kb .lms-app.page-queue .lms-splitter .left-pane {
+ transform:translate3d(-100%, 0, 0) !important;
+ -webkit-transform:translate3d(-100%, 0, 0) !important;
+ clip-path:inset(0 100% 0 0) !important;
+}
 .lms-app.page-browse .lms-splitter .left-pane {
  z-index:2;
  pointer-events:auto !important;
@@ -4826,9 +5224,24 @@ html.jl-side-right .lms-image-grid-jump {
  flex:1 1 auto;
 }
 #browse-view .browse-subheader #back-button {
- margin:0 0 0 -4px !important;
- width:40px;
- min-width:40px;
+ margin:0 12px 0 2px !important;
+ width:36px;
+ min-width:36px;
+}
+html.msk-is-ios #browse-view .browse-subheader #back-button {
+ margin:0 12px 0 4px !important;
+ width:32px !important;
+ min-width:32px !important;
+}
+html.msk-is-apple #browse-view .browse-subheader #back-button .v-icon,
+html.msk-is-ios #browse-view .browse-subheader #back-button .v-icon {
+ margin-left:0 !important;
+ margin-right:0 !important;
+}
+html.msk-is-ios #browse-view .browse-subheader .browse-title,
+html.msk-is-ios #browse-view .browse-subheader .browse-catalog-title {
+ margin-left:8px !important;
+ padding-left:0 !important;
 }
 #browse-view .browse-subheader .browse-title .subtoolbar-title,
 #browse-view .browse-subheader .browse-title .subtoolbar-title-single {
@@ -4875,6 +5288,21 @@ html.jl-side-right .lms-image-grid-jump {
 #browse-view.browse-catalog .browse-catalog-art-fallback {
  width:72px;
  height:72px;
+}
+#browse-view.browse-catalog .browse-catalog-hero.is-collapsed .browse-catalog-art,
+#browse-view.browse-catalog .browse-catalog-hero.is-collapsed .browse-catalog-art img,
+#browse-view.browse-catalog .browse-catalog-hero.is-collapsed .browse-catalog-art-fallback {
+ width:36px !important;
+ height:36px !important;
+ flex:0 0 36px !important;
+}
+#browse-view.browse-catalog.browse-subheader-compact .browse-subheader-wrap,
+#browse-view.browse-catalog.browse-subheader-compact .browse-subheader.subtoolbar,
+#browse-view.browse-catalog.browse-subheader-compact .browse-subheader {
+ height:var(--sub-toolbar-height) !important;
+ min-height:var(--sub-toolbar-height) !important;
+ max-height:var(--sub-toolbar-height) !important;
+ overflow:hidden !important;
 }
 #browse-view.browse-catalog .browse-catalog-art {
  flex:0 0 72px;
@@ -5024,8 +5452,8 @@ html.browse-catalog-active #browse-view .browse-main-pane > .lms-list.bgnd-cover
 }
 #browse-view.browse-catalog .lms-list.bgnd-cover > #browse-list,
 html.browse-catalog-active #browse-view .lms-list.bgnd-cover > #browse-list {
- padding-top:12px !important;
- scroll-padding-top:12px !important;
+ padding-top:28px !important;
+ scroll-padding-top:28px !important;
 }
 #browse-view.browse-catalog.browse-overflow-open .browse-main-pane > .lms-list,
 #browse-view.browse-catalog.browse-overflow-open .browse-main-pane > .lms-list.bgnd-cover,
@@ -5042,13 +5470,13 @@ html.browse-catalog-active #browse-view.browse-overflow-open .browse-main-pane >
 #browse-view.browse-overflow-open:not(.browse-catalog):not(.detailed-sub):not(.browse-cstats-home) .browse-main-pane > .lms-list.bgnd-cover {
  top:calc(var(--main-toolbar-height) + var(--sub-toolbar-height) - var(--browse-subheader-offset, 0px)) !important;
 }
-#browse-view.detailed-sub.browse-overflow-open .browse-subheader-wrap {
- height:calc(var(--sub-toolbar-height) * 2) !important;
- max-height:none !important;
- overflow:visible !important;
-}
+#browse-view.detailed-sub.browse-overflow-open .browse-subheader-wrap,
+#browse-view.browse-catalog.browse-overflow-open .browse-subheader-wrap,
 #browse-view.detailed-sub.browse-overflow-open .browse-subheader-wrap.subtoolbar-tracklist {
- height:calc(var(--sub-toolbar-height) * 3) !important;
+ height:var(--sub-toolbar-height) !important;
+ min-height:var(--sub-toolbar-height) !important;
+ max-height:var(--sub-toolbar-height) !important;
+ overflow:hidden !important;
 }
 #browse-view.detailed-sub.browse-overflow-open .browse-main-pane > .lms-list.bgnd-cover {
  top:calc(var(--main-toolbar-height) + (var(--sub-toolbar-height) * 2) - var(--browse-subheader-offset, 0px)) !important;
@@ -5106,12 +5534,18 @@ html.browse-catalog-active #browse-view.browse-overflow-open .browse-main-pane >
 
 /* Pull tools sit in the scrolling list, clipped by height while the finger moves. */
 #browse-list > .browse-scroll-tools {
- margin:0 0 6px;
+ margin:0;
  overflow-anchor:none;
 }
+/* An active list filter stays pinned. Scroll must not carry the field away. */
+#browse-list > .browse-scroll-tools.browse-filter-hold.is-open {
+ position:sticky;
+ top:0;
+ z-index:6;
+}
 #browse-list > .browse-scroll-tools .browse-overflow-row {
- height:48px;
- flex:0 0 48px;
+ height:32px;
+ flex:0 0 32px;
 }
 #browse-list > .browse-scroll-tools .browse-overflow-panel {
  display:flex;
@@ -5122,19 +5556,20 @@ html.browse-catalog-active #browse-view.browse-overflow-open .browse-main-pane >
  z-index:1;
  order:0;
  flex:none;
- height:auto !important;
- min-height:40px;
- max-height:none !important;
- margin:0 4px 0;
+ height:100% !important;
+ min-height:0 !important;
+ max-height:100% !important;
+ overflow:hidden;
+ margin:0;
  padding:0 4px;
- border-radius:12px;
+ border-radius:0;
  border:none;
  background:transparent;
  box-sizing:border-box;
 }
 #browse-list > .browse-scroll-tools .browse-overflow-row {
- height:40px;
- flex:0 0 40px;
+ height:32px;
+ flex:0 0 32px;
 }
 #browse-list > .browse-scroll-tools .lms-search,
 #browse-list > .browse-scroll-tools .v-input,
@@ -5143,52 +5578,66 @@ html.browse-catalog-active #browse-view.browse-overflow-open .browse-main-pane >
  padding-top:0 !important;
 }
 #browse-list > .browse-scroll-tools .v-input__slot {
- min-height:36px !important;
+ min-height:32px !important;
  margin:0 !important;
 }
+#browse-list > .browse-scroll-tools:not(.browse-scroll-tools-home) .v-text-field,
+#browse-list > .browse-scroll-tools:not(.browse-scroll-tools-home) .v-input {
+ padding-top:0 !important;
+ margin-top:0 !important;
+ height:32px !important;
+ max-height:32px !important;
+}
 #browse-list > .browse-scroll-tools-home .browse-overflow-panel {
- min-height:108px;
- gap:4px;
- padding:6px 8px 8px;
+ min-height:0;
+ gap:0;
+ padding:0 6px;
 }
 #browse-view.browse-cstats-home .browse-overflow-row {
- flex:0 0 44px;
- height:44px;
+ flex:0 0 36px;
+ height:36px;
 }
 #browse-view.browse-cstats-home .browse-overflow-home-actions {
  display:flex;
- align-items:stretch;
- gap:8px;
+ align-items:center;
+ justify-content:flex-start;
+ flex-wrap:nowrap;
+ gap:6px;
  width:100%;
- flex:1 1 auto;
- min-height:44px;
+ flex:0 0 auto;
+ height:32px;
+ min-height:0;
+ padding:0;
+ overflow-x:auto;
  pointer-events:auto;
 }
 #browse-view.browse-cstats-home .browse-home-act {
- flex:1 1 0;
+ flex:0 0 auto;
+ width:auto;
  min-width:0;
+ height:28px;
  display:flex;
- flex-direction:column;
+ flex-direction:row;
  align-items:center;
  justify-content:center;
- gap:1px;
- padding:4px 6px;
+ gap:4px;
+ padding:0 8px;
  border:0;
  border-radius:14px;
  background:color-mix(in srgb, var(--sub-toolbar-text-color, #fff) 10%, transparent);
  color:inherit;
- font-size:11px;
+ font-size:12px;
  font-weight:600;
  letter-spacing:0.01em;
- line-height:1.15;
+ line-height:1;
  cursor:pointer;
  -webkit-tap-highlight-color:transparent;
 }
 #browse-view.browse-cstats-home .browse-home-act .v-icon,
 #browse-view.browse-cstats-home .browse-home-act .material-icons {
- font-size:20px !important;
- height:20px;
- width:20px;
+ font-size:16px !important;
+ height:16px;
+ width:16px;
  margin:0;
 }
 #browse-view.browse-cstats-home .browse-home-act span {
@@ -5199,6 +5648,32 @@ html.browse-catalog-active #browse-view.browse-overflow-open .browse-main-pane >
 }
 #browse-view.browse-cstats-home .browse-home-act:active {
  background:color-mix(in srgb, var(--sub-toolbar-text-color, #fff) 18%, transparent);
+}
+#browse-view.browse-cstats-home .browse-home-preset {
+ flex:0 0 auto;
+ width:34px;
+ height:34px;
+ border-radius:50%;
+ border:0;
+ padding:0;
+ margin:0;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ font-weight:700;
+ font-size:0.95rem;
+ line-height:1;
+ color:#fff;
+ background:var(--primary-color, #1976d2);
+ box-shadow:0 2px 6px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.18);
+ cursor:pointer;
+ -webkit-tap-highlight-color:transparent;
+}
+#browse-view.browse-cstats-home .browse-home-preset-on {
+ box-shadow:0 0 0 2px var(--primary-color, #1976d2), 0 2px 6px rgba(0,0,0,0.28);
+}
+#browse-view.browse-cstats-home .browse-home-preset:active {
+ transform:scale(0.96);
 }
 #browse-view.browse-overflow-open .browse-subheader-wrap {
  transform:none !important;
@@ -5231,16 +5706,16 @@ html.browse-catalog-active #browse-view.browse-overflow-open .browse-main-pane >
 }
 #browse-view .browse-overflow-icons .v-btn {
  flex:0 0 auto;
+ width:32px !important;
+ height:32px !important;
+ min-width:32px !important;
+ margin:0 !important;
 }
 #browse-view.browse-catalog.browse-overflow-open .browse-subheader-wrap,
-#browse-view.browse-overflow-open.browse-catalog .browse-subheader-wrap {
- min-height:var(--browse-catalog-height) !important;
-}
-#browse-view.detailed-sub.browse-overflow-open .browse-subheader-wrap {
- min-height:calc(var(--sub-toolbar-height) * 2) !important;
-}
+#browse-view.browse-overflow-open.browse-catalog .browse-subheader-wrap,
+#browse-view.detailed-sub.browse-overflow-open .browse-subheader-wrap,
 #browse-view.detailed-sub.browse-overflow-open .browse-subheader-wrap.subtoolbar-tracklist {
- min-height:calc(var(--sub-toolbar-height) * 3) !important;
+ min-height:var(--sub-toolbar-height) !important;
 }
 /* Sub-pages: filter field shares the row with list/grid and other tools */
 #browse-view .browse-overflow-row .lms-search-list-row {
@@ -5356,14 +5831,18 @@ html.browse-catalog-active #browse-view.browse-overflow-open .browse-main-pane >
  overflow-y:auto;
  z-index:10050 !important;
  background:var(--popup-background-color, var(--background-color, #303030));
+ background-color:var(--popup-background-color, var(--background-color, #303030));
  color:var(--text-color, #eee);
  box-shadow:0 8px 28px rgba(0,0,0,0.45);
  border:1px solid color-mix(in srgb, var(--list-item-border-color, rgba(128,128,128,0.4)) 80%, transparent);
  border-radius:12px;
+ backdrop-filter:blur(20px) saturate(1.45);
+ -webkit-backdrop-filter:blur(20px) saturate(1.45);
  -webkit-overflow-scrolling:touch;
 }
 .theme--light .np-player-prefs-menu {
  background:var(--popup-background-color, #fff);
+ background-color:var(--popup-background-color, #fff);
  box-shadow:0 8px 28px rgba(0,0,0,0.18);
 }
 .np-player-prefs-scrim {
@@ -5407,14 +5886,45 @@ html.browse-catalog-active #browse-view.browse-overflow-open .browse-main-pane >
  margin:10px auto 4px;
  flex-shrink:0;
 }
+.np-player-prefs-drawer-title-row {
+ display:flex;
+ align-items:center;
+ gap:2px;
+ min-width:0;
+ padding:0 8px 6px 6px;
+}
 .np-player-prefs-drawer-title {
- padding:4px 18px 10px;
+ flex:1 1 auto;
+ min-width:0;
+ padding:4px 10px 4px 8px;
  font-weight:var(--bold-weight, 600);
  font-size:1.05em;
 }
+.np-player-prefs-back {
+ flex:0 0 auto;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ width:36px;
+ height:36px;
+ margin:0;
+ padding:0;
+ border:0;
+ border-radius:50%;
+ background:transparent;
+ color:inherit;
+ cursor:pointer;
+ appearance:none;
+ -webkit-appearance:none;
+}
+.np-player-prefs-back:active,
+.np-player-prefs-back:focus {
+ background:color-mix(in srgb, var(--primary-color, #1976d2) 14%, transparent);
+ outline:none;
+}
 .np-player-prefs-chrome {
  flex:0 0 auto;
- background:inherit;
+ background:transparent;
 }
 .np-player-prefs-inner {
  display:flex;
@@ -5464,13 +5974,17 @@ html.browse-catalog-active #browse-view.browse-overflow-open .browse-main-pane >
  outline:none;
 }
 .np-player-prefs-section-title {
- flex:0 0 auto;
- font-size:0.72rem;
- font-weight:var(--bold-weight, 700);
- letter-spacing:0.06em;
- text-transform:uppercase;
- color:var(--primary-color, #1976d2);
+ flex:1 1 auto;
+ min-width:0;
+ font-size:var(--std-font-size, 0.95rem);
+ font-weight:var(--std-weight, 400);
+ letter-spacing:0;
+ text-transform:none;
+ color:inherit;
  line-height:1.3;
+}
+.np-player-prefs-section-head.np-player-prefs-section-open {
+ background:color-mix(in srgb, var(--primary-color, #1976d2) 14%, transparent);
 }
 .np-player-prefs-section-current {
  flex:1 1 auto;
@@ -5520,10 +6034,26 @@ html.browse-catalog-active #browse-view.browse-overflow-open .browse-main-pane >
  background:color-mix(in srgb, var(--primary-color, #1976d2) 14%, transparent);
  outline:none;
 }
+.np-player-prefs-text {
+ flex:1 1 auto;
+ min-width:0;
+ display:flex;
+ flex-direction:column;
+ align-items:flex-start;
+ gap:1px;
+}
 .np-player-prefs-label {
  flex:1 1 auto;
  min-width:0;
  line-height:1.3;
+}
+.np-player-prefs-detail {
+ display:block;
+ width:100%;
+ font-size:0.78rem;
+ line-height:1.25;
+ opacity:0.62;
+ font-weight:400;
 }
 .np-player-prefs-on .np-player-prefs-label {
  color:var(--primary-color, #1976d2);
@@ -5536,6 +6066,20 @@ html.browse-catalog-active #browse-view.browse-overflow-open .browse-main-pane >
  font-size:18px !important;
  color:var(--primary-color, #1976d2) !important;
  opacity:1 !important;
+}
+.np-player-prefs-divider {
+ height:1px;
+ margin:6px 12px;
+ background:color-mix(in srgb, var(--list-item-border-color, rgba(128,128,128,0.35)) 85%, transparent);
+}
+.np-player-prefs-action-icn {
+ flex:0 0 auto;
+ width:22px !important;
+ height:22px !important;
+ font-size:20px !important;
+ margin-right:2px;
+ color:inherit !important;
+ opacity:0.9;
 }
 .np-player-prefs-loading,
 .np-player-prefs-empty {
@@ -5843,6 +6387,14 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
  scroll-padding-top:calc(var(--sub-toolbar-height) - var(--browse-subheader-offset, 0px)) !important;
  overflow-y:auto !important;
 }
+/* The list is absolute over the pane. A one-line pad leaves album covers under the hero. */
+.lms-splitter .splitter-pane #browse-view.browse-catalog .browse-main-pane > .lms-list.bgnd-cover > #browse-list {
+ padding-top:calc(var(--browse-catalog-height, var(--sub-toolbar-height)) - var(--browse-subheader-offset, 0px) + 8px) !important;
+ scroll-padding-top:calc(var(--browse-catalog-height, var(--sub-toolbar-height)) - var(--browse-subheader-offset, 0px) + 8px) !important;
+}
+.lms-splitter .splitter-pane #browse-view.browse-catalog .lms-list.bgnd-cover > .lms-jumplist {
+ top:calc(var(--browse-catalog-height, var(--sub-toolbar-height)) - var(--browse-subheader-offset, 0px)) !important;
+}
 
 .lms-splitter .splitter-pane #browse-view.detailed-sub .browse-main-pane > .lms-list.bgnd-cover > #browse-list {
  padding-top:calc((var(--sub-toolbar-height) * 2) - var(--browse-subheader-offset, 0px) + 4px) !important;
@@ -5865,6 +6417,24 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
 .lms-splitter .splitter-pane #browse-view.detailed-sub .lms-list.bgnd-cover.browse-track-list > .lms-jumplist {
  top:calc((var(--sub-toolbar-height) * 3) - var(--browse-subheader-offset, 0px)) !important;
 }
+
+/* Pull menu off Home. The pane is already under the main toolbar, so the
+   viewport top (main + section) must not run here: it drops the whole browse
+   frame and leaves the title clearance as an empty band above the tools.
+   Keep the frame still. The one-line title clearance stays the list padding,
+   so the 36px row sits against the section title. Home keeps its own 8px. */
+.lms-splitter .splitter-pane #browse-view.browse-overflow-open:not(.browse-cstats-home) .browse-main-pane > .lms-list.bgnd-cover,
+.lms-splitter .splitter-pane #browse-view.browse-overflow-open.browse-subheader-compact:not(.browse-cstats-home) .browse-main-pane > .lms-list.bgnd-cover,
+.lms-splitter .splitter-pane #browse-view.detailed-sub.browse-overflow-open .browse-main-pane > .lms-list.bgnd-cover,
+.lms-splitter .splitter-pane #browse-view.browse-catalog.browse-overflow-open .browse-main-pane > .lms-list.bgnd-cover,
+.lms-splitter .splitter-pane #browse-view.detailed-sub.browse-overflow-open .browse-main-pane > .lms-list.bgnd-cover.browse-track-list {
+ top:0 !important;
+}
+.lms-splitter .splitter-pane #browse-view.browse-overflow-open:not(.browse-cstats-home):not(.detailed-sub) .browse-main-pane > .lms-list.bgnd-cover > #browse-list,
+.lms-splitter .splitter-pane #browse-view.browse-overflow-open.browse-subheader-compact:not(.browse-cstats-home) .browse-main-pane > .lms-list.bgnd-cover > #browse-list {
+ padding-top:calc(var(--sub-toolbar-height) - var(--browse-subheader-offset, 0px)) !important;
+ scroll-padding-top:calc(var(--sub-toolbar-height) - var(--browse-subheader-offset, 0px)) !important;
+}
 /* === Volume expand (mobile + narrow desktop; shared rules also in style.css) ===
  * Rest:  #vol-btn home (far right, or 2nd-from-right if info/update icons)
  * Open:  speaker slides left; name fades (no vertical bump); bar expands from icon;
@@ -5876,7 +6446,7 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
    re-layout when tb-vol-mode is removed (that was the end-of-animation bump). */
 .lms-toolbar.tb-vol-mode .tb-player-title {
  pointer-events: none !important;
- transition: opacity 0.32s ease !important;
+ transition: none !important;
 }
 .lms-toolbar.tb-vol-mode-open .tb-player-title,
 .lms-toolbar.tb-vol-mode .tb-player-title.tb-player-title-out {
@@ -5964,7 +6534,7 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
  box-sizing: border-box;
 }
 
-/* Slider: tight to icon; more gap before % */
+/* Slider: compositor layer — no flex/width animation (that is layout, not GPU). */
 .tb-vol-expand-slider {
  flex:1 1 auto !important;
  min-width:40px !important;
@@ -5973,16 +6543,11 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
  padding:0 !important;
  overflow:visible !important;
  opacity:1;
- transform-origin: left center;
- transition:
-  max-width 0.48s cubic-bezier(0.22,1,0.36,1),
-  min-width 0.48s cubic-bezier(0.22,1,0.36,1),
-  flex 0.48s cubic-bezier(0.22,1,0.36,1),
-  margin 0.4s ease,
-  opacity 0.28s ease 0.1s;
-}
-.tb-vol-expand.tb-vol-expand-closing .tb-vol-expand-slider {
- transform-origin: right center !important;
+ -webkit-transform:translate3d(0,0,0);
+ transform:translate3d(0,0,0);
+ will-change:transform;
+ -webkit-backface-visibility:hidden;
+ backface-visibility:hidden;
 }
 .tb-vol-expand-slider.v-input,
 .tb-vol-expand-slider .v-input__control {
@@ -6055,43 +6620,10 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
 .tb-vol-expand .v-slider__track-container,
 .tb-vol-expand .v-slider__track,
 .tb-vol-expand .v-slider__track-fill {
- transition: opacity 0.3s ease 0.08s;
+ transition: none;
 }
-
-/* Pre-open: bar collapsed at left of strip; icon will fly in from home */
-.tb-vol-expand:not(.tb-vol-expand-open):not(.tb-vol-expand-closing) .tb-vol-expand-slider {
- max-width:0 !important;
- min-width:0 !important;
- flex:0 0 0 !important;
- margin:0 !important;
- opacity:0;
-}
-.tb-vol-expand:not(.tb-vol-expand-open):not(.tb-vol-expand-closing) .v-slider__thumb {
- transform: scale(0) !important;
- opacity:0 !important;
-}
-.tb-vol-expand:not(.tb-vol-expand-open):not(.tb-vol-expand-closing) .tb-vol-expand-pct {
- opacity:0;
-}
-
-/* Closing: collapse bar layout (no flex-end), knob→0, % fades but keeps width until unmount */
 .tb-vol-expand.tb-vol-expand-closing .tb-vol-expand-slider {
- max-width:0 !important;
- min-width:0 !important;
- flex:0 0 0 !important;
- margin:0 !important;
- opacity:0 !important;
- transform: none !important;
  pointer-events:none !important;
-}
-.tb-vol-expand.tb-vol-expand-closing .v-slider__thumb {
- transform: scale(0) !important;
- opacity:0 !important;
-}
-.tb-vol-expand.tb-vol-expand-closing .v-slider__track-container,
-.tb-vol-expand.tb-vol-expand-closing .v-slider__track,
-.tb-vol-expand.tb-vol-expand-closing .v-slider__track-fill {
- opacity:0 !important;
 }
 .tb-vol-expand.tb-vol-expand-closing .tb-vol-expand-icon {
  opacity:1 !important;
@@ -6135,7 +6667,7 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
 }
 .tb-vol-expand.tb-vol-expand-open .tb-vol-expand-pct {
  opacity:0.95;
- transition: opacity 0.28s ease 0.12s;
+ transition: none;
 }
 .tb-vol-expand.tb-vol-expand-open.tb-vol-pct-live .tb-vol-expand-pct {
  opacity:0.95;
@@ -6149,18 +6681,35 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
  transition: opacity 0.2s ease;
 }
 
-/* Mobile browse surface → glass swipe pad down to np-bar (+ shortcuts when present) */
+/* Keep the chevron above the player list and the frosted pad */
+.lms-toolbar.tb-vol-mode.v-toolbar--fixed,
+#main-toolbar.lms-toolbar.tb-vol-mode {
+ z-index:46 !important;
+}
+.lms-toolbar.tb-vol-mode .navdrawer-selector {
+ position:relative;
+ z-index:6;
+}
+
+/* Mobile browse surface: full-bleed frost, inner outline only.
+   The frost sibling is glass-only; other themes keep the zone's own fill. */
+.tb-vol-swipe-frost,
+.msk-vol-glass-frost {
+ display:none;
+}
 .tb-vol-swipe-zone {
  position:fixed;
  left:0;
  right:0;
  top:calc(var(--main-toolbar-height, 48px) + var(--top-pad, 0px));
  bottom:var(--mobile-bottom-chrome-height, var(--bottom-toolbar-height, 56px));
- z-index:38;
+ z-index:40;
  touch-action:none;
  -webkit-user-select:none;
  user-select:none;
- background:transparent;
+ background:color-mix(in srgb, var(--background-color, #121212) 42%, transparent);
+ backdrop-filter:blur(28px) saturate(1.45);
+ -webkit-backdrop-filter:blur(28px) saturate(1.45);
  display:flex;
  flex-direction:column;
  align-items:stretch;
@@ -6168,18 +6717,27 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
  padding:0;
  box-sizing:border-box;
  pointer-events:auto;
- transition: top 0.35s ease, bottom 0.35s ease, opacity 0.42s ease;
- animation: tb-vol-glass-in 0.38s ease;
+ transition: top 0.35s ease, bottom 0.35s ease, opacity 0.22s ease, background 0.22s ease;
+ animation:none;
  opacity:1;
-}
-@keyframes tb-vol-glass-in {
- from { opacity:0; }
- to { opacity:1; }
 }
 .tb-vol-swipe-zone.tb-vol-swipe-closing {
  opacity:0;
  pointer-events:none;
  animation:none;
+}
+/* Scroll NP fills the screen. The volume frost runs that full height. */
+.lms-app.np-sheet-open:has(#np-page.np-details-scroll) .tb-vol-swipe-zone {
+ bottom:0 !important;
+}
+.theme--light .tb-vol-swipe-zone {
+ background:color-mix(in srgb, var(--background-color, #fafafa) 48%, transparent);
+}
+.tb-vol-swipe-zone.tb-vol-swipe-active {
+ background:color-mix(in srgb, var(--background-color, #121212) 50%, transparent);
+}
+.theme--light .tb-vol-swipe-zone.tb-vol-swipe-active {
+ background:color-mix(in srgb, var(--background-color, #fafafa) 55%, transparent);
 }
 .tb-vol-swipe-glass {
  flex:1 1 auto;
@@ -6190,43 +6748,37 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
  align-items:center;
  justify-content:center;
  gap:8px;
- border-radius:0;
+ margin:14px 16px 18px;
+ border-radius:22px;
  overflow:hidden;
- background:color-mix(in srgb, var(--background-color, #121212) 36%, transparent);
- backdrop-filter:blur(28px) saturate(1.45);
- -webkit-backdrop-filter:blur(28px) saturate(1.45);
- border:none;
+ background:transparent;
+ border:1px solid color-mix(in srgb, var(--sub-toolbar-text-color, #fff) 28%, transparent);
  box-shadow:none;
+ pointer-events:none;
 }
 .theme--light .tb-vol-swipe-glass {
- background:color-mix(in srgb, var(--background-color, #fafafa) 42%, transparent);
- border:none;
+ background:transparent;
+ border-color:color-mix(in srgb, #000 18%, transparent);
  box-shadow:none;
-}
-.tb-vol-swipe-zone.tb-vol-swipe-active .tb-vol-swipe-glass {
- background:color-mix(in srgb, var(--background-color, #121212) 48%, transparent);
-}
-.theme--light .tb-vol-swipe-zone.tb-vol-swipe-active .tb-vol-swipe-glass {
- background:color-mix(in srgb, var(--background-color, #fafafa) 52%, transparent);
 }
 .tb-vol-swipe-hint {
  position:absolute;
- bottom:16px;
+ bottom:18px;
  left:18px;
  right:18px;
  text-align:center;
  font-size:0.68rem;
  font-weight:400;
- letter-spacing:0.06em;
+ letter-spacing:0.04em;
  line-height:1.3;
  opacity:0.38;
  pointer-events:none;
- color:color-mix(in srgb, var(--std-text-color, #fff) 70%, transparent);
+ color:color-mix(in srgb, var(--std-text-color, #fff) 72%, transparent);
  transition:opacity 0.4s ease;
 }
 .theme--light .tb-vol-swipe-hint {
- opacity:0.34;
- color:color-mix(in srgb, var(--std-text-color, #222) 55%, transparent);
+ opacity:0.36;
+ color:color-mix(in srgb, var(--std-text-color, #222) 68%, transparent);
 }
 .tb-vol-swipe-hint.tb-vol-swipe-hint-out {
  opacity:0 !important;
@@ -6269,7 +6821,7 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
  right:0;
  /* Fallback; JS sets exact toolbar bottom via volGroupPanelStyle */
  top:calc(var(--main-toolbar-height, 48px) + var(--top-pad, 0px));
- z-index:41 !important;
+ z-index:44 !important;
  background:var(--top-toolbar-color, var(--background-color, #121212)) !important;
  backdrop-filter:none;
  -webkit-backdrop-filter:none;
@@ -6376,19 +6928,23 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
  transform:scale(1.35);
 }
 .np-page-mobile-sheet .np-main-swiper-dots {
- pointer-events:auto !important;
+ /* The strip spans the full width over the transport. Only the bullets take taps. */
+ pointer-events:none !important;
  z-index:50 !important;
  opacity:1 !important;
  display:flex !important;
 }
+.np-page-mobile-sheet .np-main-swiper-dots .swiper-pagination-bullet {
+ pointer-events:auto !important;
+}
 
 /* === Custom: track info multi-line scrolls, controls stay put === */
 .np-page-mobile-sheet .np-main-slide-np .np-meta-block {
- max-height:5.6em !important;
+ max-height:none !important;
  overflow-x:hidden !important;
  overflow-y:auto !important;
  -webkit-overflow-scrolling:touch !important;
- flex:0 0 auto !important;
+ flex:1 1 auto !important;
  overscroll-behavior:contain;
 }
 .np-page-mobile-sheet .np-main-slide-np .np-meta-block #np-track-info {
@@ -6408,7 +6964,7 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
 /* classic path too */
 .np-page-mobile-sheet .np-main .np-meta-block#np-track-info-classic,
 .np-page-mobile-sheet #np-track-info-classic {
- max-height:5.6em;
+ max-height:none;
  overflow-y:auto;
  -webkit-overflow-scrolling:touch;
 }
@@ -6485,6 +7041,304 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
   flex: 0 0 auto;
 }
 
+/* Phone NP scroll: lyrics / artist / album follow the transport. */
+.np-page-mobile-sheet.np-details-scroll .np-main-slide-np .np-main {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+.np-page-mobile-sheet.np-details-scroll .np-main-slide-np .np-sheet-hero,
+.np-page-mobile-sheet.np-details-scroll .np-main-slide-np .np-meta-block {
+  flex: 0 0 auto !important;
+}
+.np-page-mobile-sheet.np-details-scroll .np-main-swiper-dots .swiper-pagination-bullet:nth-child(n+3) {
+  display: none !important;
+}
+.np-scroll-extra {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 16px 8px;
+  position: relative;
+  z-index: 1;
+}
+/* Scroll style: lyrics follow the transport. Keep the buttons on a plate so a peek cannot sit on them. */
+.np-page-mobile-sheet.np-details-scroll .np-main-slide-np .np-controls {
+  z-index: 6;
+  background: var(--background-color, #121212);
+}
+.np-detail-card {
+  position: relative;
+  border-radius: 18px;
+  padding: 14px 16px 16px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.09);
+  box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.14);
+  transition: transform 0.16s ease;
+}
+.theme--light .np-detail-card {
+  background: rgba(0,0,0,0.045);
+  box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.08);
+}
+.np-detail-card:active {
+  transform: scale(0.985);
+}
+.np-detail-expand,
+.np-detail-fs-close {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  cursor: pointer;
+}
+.np-detail-expand {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: transparent;
+  opacity: 0.38;
+}
+.np-detail-expand:active {
+  opacity: 0.85;
+}
+.np-detail-expand .v-icon {
+  font-size: 18px;
+  color: inherit;
+}
+.np-detail-fs-close {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.14);
+  opacity: 1;
+}
+.theme--light .np-detail-fs-close {
+  background: rgba(0,0,0,0.08);
+}
+.np-detail-fs-close .v-icon {
+  font-size: 26px;
+  color: inherit;
+}
+.np-detail-kicker {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  opacity: 0.55;
+  margin: 0 0 8px;
+  padding-right: 24px;
+}
+.np-detail-lyrics .np-peek-stage {
+  padding-right: 18px;
+  box-sizing: border-box;
+}
+.np-peek-stage {
+  position: relative;
+  height: 4.8em;
+  overflow: hidden;
+}
+.np-peek-pending {
+  opacity: 0.45;
+}
+.np-peek-lines {
+  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 50%, transparent 100%);
+}
+.np-peek-line-now {
+  font-size: 1.22rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.np-peek-line-next {
+  margin-top: 0.45em;
+  font-size: 1.05rem;
+  line-height: 1.35;
+  opacity: 0.42;
+}
+.np-peek-enter-active,
+.np-peek-leave-active {
+  transition: transform 0.42s cubic-bezier(0.22, 0.8, 0.24, 1), opacity 0.42s ease;
+}
+.np-peek-leave-active {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+.np-peek-enter {
+  transform: translate3d(0, 42%, 0);
+  opacity: 0;
+}
+.np-peek-leave-to {
+  transform: translate3d(0, -46%, 0);
+  opacity: 0;
+}
+.np-detail-about-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.np-detail-about-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.np-detail-avatar,
+.np-detail-album {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+.np-detail-avatar { border-radius: 50%; }
+.np-detail-album { border-radius: 10px; }
+.np-detail-about-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 4px;
+}
+.np-detail-excerpt {
+  font-size: 0.95rem;
+  line-height: 1.4;
+  opacity: 0.8;
+  max-height: 8.4em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
+}
+.np-detail-pending {
+  opacity: 0.4;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+.np-detail-fs {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  background: #121212;
+  animation: npDetailFsIn 0.28s cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+.theme--light .np-detail-fs { background: #f6f6f7; }
+html.theme-glass .np-detail-fs { background: rgba(10, 11, 14, 0.96); }
+.np-detail-fs-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: calc(var(--main-toolbar-height, 48px) + 8px) 12px 8px 18px;
+}
+.np-detail-fs-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np-detail-fs-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 8px 22px calc(28px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+}
+.np-detail-fs .np-info-lyrics,
+.np-detail-fs .np-lyrics-wrap,
+.np-detail-fs .np-card-panel-bio {
+  max-height: none !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+.np-detail-fs-lyrics {
+  position: relative;
+}
+.np-detail-fs .np-detail-fs-body,
+.np-detail-fs .np-detail-fs-lyrics,
+.np-detail-fs .np-lyrics-wrap {
+  background: transparent;
+}
+.np-detail-fs .lyrics-highlight-box,
+.theme--light .np-detail-fs .lyrics-highlight-box {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.np-detail-fs-lyrics obj {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin: 0.7em 0;
+  font-size: 1.35rem;
+  line-height: 1.4;
+  opacity: 0.38;
+}
+.np-detail-fs-lyrics br { display: none; }
+.np-detail-fs-lyrics obj.lyrics-current-line {
+  opacity: 1;
+  font-size: 1.55rem;
+  font-weight: 700;
+}
+.np-detail-fs-prose {
+  font-size: 1.02rem;
+  line-height: 1.55;
+}
+.np-detail-fs-hero,
+.np-detail-fs-album {
+  display: block;
+  object-fit: cover;
+  margin: 4px auto 18px;
+}
+.np-detail-fs-hero {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+}
+.np-detail-fs-album {
+  width: 168px;
+  height: 168px;
+  border-radius: 14px;
+}
+@keyframes npDetailFsIn {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .np-peek-enter-active,
+  .np-peek-leave-active,
+  .np-detail-card { transition: none; }
+  .np-detail-fs { animation: none; }
+}
+
 /* --------------------------------------------------------------------------
  * Mobile context menu = bottom sheet / drawer
  * Used by browse + queue (v-menu with content-class msk-context-sheet)
@@ -6494,16 +7348,8 @@ html.jl-side-right #browse-view .lms-list.bgnd-cover > .lms-jumplist {
  * content node in the DOM when closed; unconditional display:flex / fixed
  * would leave a ghost sheet covering the np-bar.
  * -------------------------------------------------------------------------- */
-/* Browse/queue lift with the sheet so the page is not a frozen block */
-html.msk-ctx-sheet-open #browse-view,
-html.msk-ctx-sheet-open #queue-view {
-  transform: translate3d(0, -18px, 0);
-  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-html:not(.msk-ctx-sheet-open) #browse-view,
-html:not(.msk-ctx-sheet-open) #queue-view {
-  transition: transform 0.26s cubic-bezier(0.4, 0, 1, 1);
-}
+/* Do not transform #browse-view / #queue-view while a menu is open.
+   A transform traps position:fixed menus inside the page, under the np-bar. */
 
 .msk-context-scrim {
   position: fixed;
@@ -6571,6 +7417,18 @@ html:not(.msk-ctx-sheet-open) #queue-view {
   animation: none !important;
   z-index: 10000 !important;
 }
+/* Sit on top of the mini player and the shortcut bar, not underneath them. */
+.v-menu__content.msk-context-sheet.menuable__content__active:not(.presets-editor-menu-sheet) {
+  bottom: var(--mobile-bottom-chrome-height, 0px) !important;
+  z-index: 10050 !important;
+}
+.v-menu__content.msk-context-popover.menuable__content__active {
+  z-index: 10050 !important;
+}
+.msk-context-scrim:not(.presets-editor-ctx-scrim) {
+  bottom: var(--mobile-bottom-chrome-height, 0px);
+  z-index: 10040;
+}
 /* JS owns height once sized (half ↔ full expand); do not re-pin 48vh */
 .v-menu__content.msk-context-sheet.menuable__content__active.msk-context-sheet-sized {
   /* height/max-height come from inline style (setProperty important) */
@@ -6621,10 +7479,17 @@ html:not(.msk-ctx-sheet-open) #queue-view {
 .v-menu__content.msk-context-sheet.msk-context-sheet-dragging {
   transition: none !important;
 }
-/* Closing: allow transform slide-down animation (do not zero all transitions) */
+/* Closing: height collapses onto the chrome. Keep the np-bar above the sheet. */
 .v-menu__content.msk-context-sheet.msk-context-sheet-closing {
   pointer-events: none !important;
-  will-change: transform, opacity;
+  overflow: hidden !important;
+  will-change: height, max-height;
+}
+html.msk-ctx-sheet-closing #np-bar.mobile,
+html.msk-ctx-sheet-closing #nav-bar.nav-shortcut-footer,
+html.msk-ctx-sheet-closing .lms-footer.nav-shortcut-footer,
+html.msk-ctx-sheet-closing .msk-bottom-fade {
+  z-index: 10060 !important;
 }
 
 /* Horizontal panels: actions list ↔ info (artist/album) */
@@ -6813,6 +7678,7 @@ html:not(.msk-ctx-sheet-open) #queue-view {
   flex: 0 0 auto;
   margin-left: auto;
   position: relative;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6821,7 +7687,8 @@ html:not(.msk-ctx-sheet-open) #queue-view {
   padding: 0;
   border: 0;
   background: transparent;
-  color: inherit;
+  color: var(--icon-color, #f5f5f7) !important;
+  overflow: visible;
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
@@ -6831,12 +7698,16 @@ html:not(.msk-ctx-sheet-open) #queue-view {
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
 }
-.msk-ctx-preview-idle {
+.msk-ctx-preview-idle,
+svg.msk-ctx-preview-idle {
+  display: block;
+  width: 22px !important;
+  height: 22px !important;
   font-size: 22px !important;
-  width: 22px;
-  height: 22px;
-  color: inherit !important;
+  color: var(--icon-color, #f5f5f7) !important;
+  fill: currentColor;
   opacity: 0.92;
+  overflow: visible;
 }
 .msk-ctx-preview-svg {
   display: block;
@@ -7028,4 +7899,78 @@ html.msk-vol-glass-active #now-playing-view {
   font-variant-numeric: tabular-nums;
   min-width: 3.2em;
   text-align: right;
+}
+
+/* Queue rows: the per-item menu is hidden, so the desktop -28px tuck
+ * pushes each duration past the right edge. Keep it inside the tile. */
+#queue-view .list-swipe-tile .v-list__tile {
+  max-width:100%;
+  min-width:0;
+  box-sizing:border-box;
+}
+#queue-view .v-list__tile__content {
+  min-width:0 !important;
+  flex:1 1 0% !important;
+}
+#queue-view .pq-time {
+  margin-right:0;
+  flex:0 0 auto;
+  white-space:nowrap;
+}
+#queue-view .pq-album-header {
+  width:calc(100% - 84px);
+  max-width:calc(100% - 84px);
+  box-sizing:border-box;
+}
+#queue-view .pq-album-header > .ellipsis {
+  min-width:0;
+  flex:1 1 auto;
+}
+#queue-view .pq-atime {
+  margin-right:0;
+  flex:0 0 auto;
+  white-space:nowrap;
+}
+
+/* Queue toolbar: the count line shrinks. Shuffle, repeat, and clear stay on screen. */
+#queue-view .subtoolbar > .layout {
+  flex-wrap:nowrap !important;
+  align-items:center;
+  min-width:0;
+  width:100%;
+  max-width:100%;
+}
+#queue-view .subtoolbar .link-item {
+  flex:1 1 0% !important;
+  min-width:0 !important;
+  overflow:hidden;
+}
+#queue-view .subtoolbar .toolbar-button {
+  flex:0 0 auto !important;
+}
+
+/* Device drawer over the open NP sheet.
+   The sheet is position:fixed, full viewport, composited with translate3d.
+   WKWebView hit-tests that layer above the drawer (z-index 5 vs 10040), so
+   player rows look open but never receive the tap. Children that set
+   pointer-events:auto would still win, so the whole sheet tree is off.
+   translateZ on the drawer sections is a second dead layer once the sheet
+   exists; drop it only while they overlap. Vuetify still owns the aside transform. */
+.lms-app.np-sheet-open.nd-open #np-page.np-page-mobile-sheet,
+.lms-app.np-sheet-open.nd-open #np-page.np-page-mobile-sheet * {
+ pointer-events:none !important;
+}
+.lms-app.np-sheet-open.nd-open .v-navigation-drawer.nd-glass:not(.nd-closing),
+.lms-app.np-sheet-open.nd-open .v-navigation-drawer.nd-glass:not(.nd-closing) .nd-header,
+.lms-app.np-sheet-open.nd-open .v-navigation-drawer.nd-glass:not(.nd-closing) .nd-main,
+.lms-app.np-sheet-open.nd-open .v-navigation-drawer.nd-glass:not(.nd-closing) .nd-footer,
+.lms-app.np-sheet-open.nd-open .v-navigation-drawer.nd-glass:not(.nd-closing) .v-list__tile,
+.lms-app.np-sheet-open.nd-open .v-navigation-drawer.nd-glass:not(.nd-closing) .v-btn {
+ pointer-events:auto !important;
+}
+.lms-app.np-sheet-open.nd-open .v-navigation-drawer.nd-glass .nd-header,
+.lms-app.np-sheet-open.nd-open .v-navigation-drawer.nd-glass .nd-main,
+.lms-app.np-sheet-open.nd-open .v-navigation-drawer.nd-glass .nd-footer {
+ transform:none !important;
+ -webkit-transform:none !important;
 }

@@ -1,0 +1,1321 @@
+/**
+ * LMS-Material — Glass
+ * macOS / iOS surfaces: artwork mesh, floating glass chrome, clear content.
+ *
+ * Copyright (c) 2018-2026 Craig Drummond <craig.p.drummond@gmail.com>
+ * MIT license.
+ */
+
+/* html:root beats style.css :root. Loaded only while this theme is active. */
+html:root {
+ --std-background-color:transparent;
+ --background-color:transparent;
+ --top-toolbar-color:transparent;
+ --sub-toolbar-color:transparent;
+ --bottom-toolbar-color:transparent;
+ --dialog-toolbar-color:transparent;
+ --tbar-bgnd-color:transparent;
+ --browse-header-color:transparent;
+ --background-shadow-color:transparent;
+ --subtoolbar-shadow-color:transparent;
+ --tinted-background-shadow-color:transparent;
+ --scrollbar-track-color:transparent;
+ --scrollbar-corner-color:transparent;
+ --std-popup-background-color:rgba(28, 28, 30, 0.78);
+ --popup-background-color:rgba(28, 28, 30, 0.78);
+ --text-color:#f5f5f7;
+ --light-text-color:#f5f5f7;
+ --toolbar-volume-color:#f5f5f7;
+ --icon-color:rgba(245, 245, 247, 0.92);
+ --subheader-color:rgba(245, 245, 247, 0.55);
+ --top-toolbar-text-color:#f5f5f7;
+ --sub-toolbar-text-color:#f5f5f7;
+ --bottom-toolbar-text-color:#f5f5f7;
+ --top-toolbar-border-color:transparent;
+ --sub-toolbar-border-color:transparent;
+ --bottom-toolbar-border-color:transparent;
+ --list-item-border-color:rgba(255, 255, 255, 0.08);
+ --np-bar-palette-1:#263036;
+ --np-bar-palette-2:#182024;
+ --np-bar-palette-3:#344048;
+ --np-bar-palette-4:#2c263e;
+ --np-bar-palette-5:#1c302e;
+}
+
+/* Cover tint must not paint the page back to a solid wash. */
+html.theme-glass .tinted,
+html.theme-glass.tinted {
+ --background-color:transparent;
+ --top-toolbar-color:transparent;
+ --sub-toolbar-color:transparent;
+ --bottom-toolbar-color:transparent;
+ --tbar-bgnd-color:transparent;
+ --background-shadow-color:transparent;
+ --subtoolbar-shadow-color:transparent;
+}
+
+/*
+ * Five cover colors. color-morph writes --np-bar-palette-1…5 from the
+ * current artwork; these blobs are the page.
+ */
+html.theme-glass,
+html.theme-glass body {
+ background-color:#07080c !important;
+ background-image:none !important;
+ color:var(--text-color);
+ font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", sans-serif;
+}
+/* Soft mesh: large overlapping blobs, then a blur so the five colors meet.
+   Plain stops are the default. iOS 15 has no color-mix: one invalid layer
+   drops the whole background-image and the page stays #07080c. */
+html.theme-glass body {
+ isolation:isolate;
+}
+html.theme-glass body::before {
+ content:'';
+ position:fixed;
+ /* Pixel box from JS while typing, so the iOS keyboard does not squash the mesh. */
+ left:calc(var(--msk-bg-w, 100vw) * -0.16);
+ top:calc(var(--msk-bg-h, 100vh) * -0.16);
+ width:calc(var(--msk-bg-w, 100vw) * 1.32);
+ height:calc(var(--msk-bg-h, 100vh) * 1.32);
+ z-index:-1;
+ pointer-events:none;
+ background-color:#07080c;
+ background-image:
+  radial-gradient(ellipse 92% 74% at 10% 4%, var(--np-bar-palette-1) 0%, transparent 78%),
+  radial-gradient(ellipse 88% 70% at 94% 10%, var(--np-bar-palette-2) 0%, transparent 80%),
+  radial-gradient(ellipse 90% 76% at 86% 96%, var(--np-bar-palette-3) 0%, transparent 82%),
+  radial-gradient(ellipse 84% 68% at 6% 92%, var(--np-bar-palette-4) 0%, transparent 80%),
+  radial-gradient(ellipse 78% 64% at 48% 46%, var(--np-bar-palette-5) 0%, transparent 84%);
+ filter:blur(46px) saturate(1.25);
+ -webkit-filter:blur(46px) saturate(1.25);
+}
+@supports (color: color-mix(in srgb, red, blue)) {
+ html.theme-glass body::before {
+  background-image:
+   radial-gradient(ellipse 92% 74% at 10% 4%, var(--np-bar-palette-1) 0%, color-mix(in srgb, var(--np-bar-palette-1) 48%, var(--np-bar-palette-5)) 34%, transparent 78%),
+   radial-gradient(ellipse 88% 70% at 94% 10%, var(--np-bar-palette-2) 0%, color-mix(in srgb, var(--np-bar-palette-2) 46%, var(--np-bar-palette-1)) 36%, transparent 80%),
+   radial-gradient(ellipse 90% 76% at 86% 96%, var(--np-bar-palette-3) 0%, color-mix(in srgb, var(--np-bar-palette-3) 44%, var(--np-bar-palette-4)) 38%, transparent 82%),
+   radial-gradient(ellipse 84% 68% at 6% 92%, var(--np-bar-palette-4) 0%, color-mix(in srgb, var(--np-bar-palette-4) 46%, var(--np-bar-palette-3)) 36%, transparent 80%),
+   radial-gradient(ellipse 78% 64% at 48% 46%, var(--np-bar-palette-5) 0%, color-mix(in srgb, var(--np-bar-palette-5) 40%, var(--np-bar-palette-2)) 40%, transparent 84%);
+ }
+}
+html.theme-glass .lms-app,
+html.theme-glass .application {
+ font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", sans-serif;
+}
+
+html.theme-glass .lms-app,
+html.theme-glass .application,
+html.theme-glass .lms-splitter,
+html.theme-glass .splitter-pane,
+html.theme-glass #browse-view,
+html.theme-glass #queue-view,
+html.theme-glass .bgnd-cover,
+html.theme-glass #browse-view .bgnd-cover,
+html.theme-glass #queue-view .bgnd-cover,
+html.theme-glass #browse-view.browse-home-split .browse-home-pane-list {
+ background-color:transparent !important;
+ background-image:none !important;
+ box-shadow:none !important;
+}
+
+/* Toolbars stay clear so the mesh shows through; a light blur keeps type readable. */
+html.theme-glass .lms-toolbar,
+html.theme-glass .subtoolbar,
+html.theme-glass #browse-view .browse-subheader,
+html.theme-glass #np-bar:not(.mobile):not(.np-bar-art) {
+ background-color:transparent !important;
+ background-image:none !important;
+ border-color:transparent !important;
+ box-shadow:none !important;
+ backdrop-filter:blur(18px) saturate(1.35);
+ -webkit-backdrop-filter:blur(18px) saturate(1.35);
+}
+/* Section pages without a cover (Favorites, Radio, Apps): icon sits with the title. */
+html.theme-glass #browse-view .browse-subheader .browse-section-glyph {
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ flex:0 0 auto;
+ width:28px;
+ height:28px;
+ margin:0 8px 0 0;
+ color:var(--browse-chrome-ink);
+}
+html.theme-glass #browse-view .browse-subheader .browse-section-glyph .v-icon {
+ color:var(--browse-chrome-ink) !important;
+ font-size:22px !important;
+}
+html.theme-glass #browse-view .browse-subheader .browse-section-glyph .svg-img {
+ width:22px;
+ height:22px;
+}
+
+/* One frosted sheet. Inner lists, sheet chrome, and drawer lists stay clear
+   so a second fill does not read as a dark box inside the card. */
+html.theme-glass .manage-plugins-settings-block {
+ background:rgba(28, 28, 30, 0.62);
+ background-color:rgba(28, 28, 30, 0.62);
+ color:#f5f5f7;
+ border-radius:16px;
+ border:1px solid rgba(255, 255, 255, 0.12);
+ backdrop-filter:blur(22px) saturate(1.5);
+ -webkit-backdrop-filter:blur(22px) saturate(1.5);
+ box-shadow:0 8px 28px rgba(0, 0, 0, 0.22);
+}
+html.theme-glass.theme--light .manage-plugins-settings-block {
+ background:rgba(255, 255, 255, 0.78);
+ background-color:rgba(255, 255, 255, 0.78);
+ color:#1c1c1e;
+ border-color:rgba(0, 0, 0, 0.1);
+ box-shadow:0 8px 28px rgba(0, 0, 0, 0.08);
+}
+html.theme-glass .v-dialog .v-sheet,
+html.theme-glass .v-dialog .v-card {
+ background:rgba(28, 28, 30, 0.7) !important;
+ background-color:rgba(28, 28, 30, 0.7) !important;
+ backdrop-filter:blur(16px) saturate(1.45) !important;
+ -webkit-backdrop-filter:blur(16px) saturate(1.45) !important;
+ box-shadow:0 12px 40px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+}
+/* style.css paints menus with color-mix(--background-color). Glass clears that
+   variable, so the mix is fully transparent: the Item menus dropdown never
+   shows, and the context sheet has no surface of its own. */
+html.theme-glass .v-menu__content.menuable__content__active:not(.v-autocomplete__content):not(.msk-context-sheet) {
+ background:rgba(28, 28, 30, 0.94) !important;
+ background-color:rgba(28, 28, 30, 0.94) !important;
+ color:#f5f5f7 !important;
+ backdrop-filter:blur(16px) saturate(1.45) !important;
+ -webkit-backdrop-filter:blur(16px) saturate(1.45) !important;
+ box-shadow:0 12px 40px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+}
+/* Player options is a custom popover, not a v-menu, so the rule above never
+   paints it. Keep the glass frost: the theme mesh shows through. */
+html.theme-glass .np-player-prefs-menu,
+html.theme-glass .np-player-prefs-submenu {
+ background:rgba(28, 28, 30, 0.62) !important;
+ background-color:rgba(28, 28, 30, 0.62) !important;
+ color:#f5f5f7 !important;
+ backdrop-filter:blur(22px) saturate(1.5) !important;
+ -webkit-backdrop-filter:blur(22px) saturate(1.5) !important;
+ border-color:rgba(255, 255, 255, 0.14) !important;
+ box-shadow:0 12px 40px rgba(0, 0, 0, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+}
+/* Context drawer. A backdrop-filter here loses to the np-bar's own filter and
+   translate in WebKit, so the bar paints through the sheet. Keep a solid
+   card, cover the bar, and sit above the player and the shortcuts. */
+html.theme-glass .v-menu__content.msk-context-sheet.menuable__content__active:not(.presets-editor-menu-sheet),
+html.theme-glass .v-menu__content.msk-context-popover.menuable__content__active {
+ background:rgba(28, 28, 30, 0.96) !important;
+ background-color:rgba(28, 28, 30, 0.96) !important;
+ color:#f5f5f7 !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+ z-index:12000 !important;
+}
+html.theme-glass.theme--light .v-menu__content.msk-context-sheet.menuable__content__active:not(.presets-editor-menu-sheet),
+html.theme-glass.theme--light .v-menu__content.msk-context-popover.menuable__content__active {
+ background:rgba(255, 255, 255, 0.96) !important;
+ background-color:rgba(255, 255, 255, 0.96) !important;
+ color:#1c1c1e !important;
+}
+html.theme-glass .v-menu__content.msk-context-sheet.menuable__content__active:not(.presets-editor-menu-sheet) {
+ bottom:0 !important;
+}
+html.theme-glass .v-menu__content.msk-context-sheet .msk-ctx-chrome {
+ position:relative !important;
+ z-index:8 !important;
+ flex:0 0 auto !important;
+}
+html.theme-glass .v-menu__content.msk-context-sheet .msk-ctx-header {
+ position:relative !important;
+ z-index:8 !important;
+ overflow:visible !important;
+}
+html.theme-glass .v-menu__content.msk-context-sheet .msk-ctx-preview {
+ position:relative !important;
+ z-index:9 !important;
+ display:flex !important;
+ color:#f5f5f7 !important;
+ visibility:visible !important;
+ opacity:1 !important;
+}
+html.theme-glass.theme--light .v-menu__content.msk-context-sheet .msk-ctx-preview {
+ color:#1c1c1e !important;
+}
+/* While the drawer is open, drop the player, shortcuts, and fade under it.
+   z-index only: the dock translate stays untouched. */
+html.theme-glass:has(.v-menu__content.msk-context-sheet.menuable__content__active) #np-bar.mobile,
+html.theme-glass:has(.v-menu__content.msk-context-sheet.menuable__content__active) #nav-bar.nav-shortcut-footer,
+html.theme-glass:has(.v-menu__content.msk-context-sheet.menuable__content__active) .lms-footer.nav-shortcut-footer,
+html.theme-glass:has(.v-menu__content.msk-context-sheet.menuable__content__active) .msk-bottom-fade {
+ z-index:1 !important;
+}
+html.theme-glass.msk-ctx-sheet-closing:has(.v-menu__content.msk-context-sheet.menuable__content__active) #np-bar.mobile,
+html.theme-glass.msk-ctx-sheet-closing:has(.v-menu__content.msk-context-sheet.menuable__content__active) #nav-bar.nav-shortcut-footer,
+html.theme-glass.msk-ctx-sheet-closing:has(.v-menu__content.msk-context-sheet.menuable__content__active) .lms-footer.nav-shortcut-footer,
+html.theme-glass.msk-ctx-sheet-closing:has(.v-menu__content.msk-context-sheet.menuable__content__active) .msk-bottom-fade {
+ z-index:10060 !important;
+}
+html.theme-glass .v-menu__content .v-list:not(.np-bar-details):not(.pmgr-playerlist):not(.np-info-list),
+html.theme-glass .v-menu__content .msk-ctx-body,
+html.theme-glass .v-menu__content .msk-ctx-chrome,
+html.theme-glass .v-menu__content .msk-ctx-panels,
+html.theme-glass .v-menu__content .msk-ctx-panel,
+html.theme-glass .v-menu__content .msk-ctx-info-bar,
+html.theme-glass .v-navigation-drawer .nd-list,
+html.theme-glass .v-navigation-drawer .v-list,
+html.theme-glass .nd-list {
+ background:transparent !important;
+ background-color:transparent !important;
+ background-image:none !important;
+ box-shadow:none !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+}
+/* All-players volume list inherits --top-toolbar-color, which Glass clears. */
+html.theme-glass .tb-vol-group-panel,
+html.theme-glass.theme--dark .tb-vol-group-panel,
+html.theme-glass.theme--light .tb-vol-group-panel {
+ background:rgba(28, 28, 30, 0.78) !important;
+ background-color:rgba(28, 28, 30, 0.78) !important;
+ background-image:none !important;
+ backdrop-filter:blur(16px) saturate(1.45) !important;
+ -webkit-backdrop-filter:blur(16px) saturate(1.45) !important;
+ border-bottom-color:rgba(255, 255, 255, 0.12) !important;
+ box-shadow:0 12px 32px rgba(0, 0, 0, 0.28) !important;
+}
+html.theme-glass .vol-sheet-modal,
+html.theme-glass.theme--dark .vol-sheet-modal,
+html.theme-glass.theme--light .vol-sheet-modal {
+ background:rgba(28, 28, 30, 0.78) !important;
+ background-color:rgba(28, 28, 30, 0.78) !important;
+ background-image:none !important;
+ --vol-sheet-bg:rgba(28, 28, 30, 0.86);
+ --vol-sheet-border:rgba(255, 255, 255, 0.16);
+ border-color:rgba(255, 255, 255, 0.16) !important;
+ backdrop-filter:blur(16px) saturate(1.45) !important;
+ -webkit-backdrop-filter:blur(16px) saturate(1.45) !important;
+}
+/* The toolbar stack is z-index 40 while volume is open, which would paint the
+   zone over the np-bar. Drop that context so the hit zone and the frost
+   (both z-index 3) sit above the page. The fade is also z-index 3 and later,
+   so the black shortcut band stays on top of the frost. Shortcuts stay 4,
+   the pill stays 5. The knob stays on the toolbar layer. */
+html.theme-glass .lms-app div:has(> .tb-vol-swipe-zone) {
+ z-index:auto !important;
+}
+html.theme-glass .lms-app div:has(> .tb-vol-swipe-zone) > .lms-toolbar.tb-vol-mode {
+ position:fixed !important;
+ top:0;
+ left:0;
+ right:0;
+ z-index:46 !important;
+}
+html.theme-glass .tb-vol-group-panel,
+html.theme-glass.theme--dark .tb-vol-group-panel,
+html.theme-glass.theme--light .tb-vol-group-panel {
+ z-index:45 !important;
+}
+html.theme-glass .tb-vol-expand .v-slider__thumb-container,
+html.theme-glass .tb-vol-group-panel .v-slider__thumb-container,
+html.theme-glass .tb-vol-group-slider .v-slider__thumb-container {
+ z-index:4 !important;
+}
+html.theme-glass .tb-vol-expand .v-slider__thumb,
+html.theme-glass .tb-vol-group-panel .v-slider__thumb,
+html.theme-glass .tb-vol-group-slider .v-slider__thumb,
+html.theme-glass .vol-control-1 .v-slider__thumb {
+ background:var(--toolbar-volume-color, var(--primary-color, #f5f5f7)) !important;
+ background-color:var(--toolbar-volume-color, var(--primary-color, #f5f5f7)) !important;
+ border-color:var(--toolbar-volume-color, var(--primary-color, #f5f5f7)) !important;
+ opacity:1 !important;
+}
+/* Desktop title-bar slider. The thumb was transparent (no volume color) and
+   opacity 0 until hover, so the knob never showed. */
+html.theme-glass .vol-control-1 .v-slider__thumb-container {
+ z-index:4 !important;
+}
+html.theme-glass .vol-control-1 .v-slider__thumb {
+ left:-7px !important;
+ top:50% !important;
+ width:14px !important;
+ height:14px !important;
+ margin-top:-7px !important;
+ transform:none !important;
+ box-shadow:0 1px 3px rgba(0, 0, 0, 0.35);
+}
+/* Hit box stops at the np-bar. The browse pane is a transformed layer at
+   z-index 2, so the frost has to sit at 3 to cover the page. The fade is
+   also 3 and later in the tree, so the black shortcut band stays on top. */
+html.theme-glass .tb-vol-swipe-frost {
+ display:block;
+ position:fixed;
+ left:0;
+ right:0;
+ top:calc(var(--main-toolbar-height, 48px) + var(--top-pad, 0px));
+ bottom:0;
+ z-index:3;
+ pointer-events:none;
+ box-sizing:border-box;
+ background:rgba(12, 14, 18, 0.55);
+ background-color:rgba(12, 14, 18, 0.55);
+ backdrop-filter:blur(16px) saturate(1.35);
+ -webkit-backdrop-filter:blur(16px) saturate(1.35);
+ opacity:1;
+ transition:opacity 0.22s ease, top 0.35s ease;
+}
+html.theme-glass .tb-vol-swipe-frost.tb-vol-swipe-closing {
+ opacity:0;
+}
+html.theme-glass .tb-vol-swipe-zone,
+html.theme-glass.theme--dark .tb-vol-swipe-zone,
+html.theme-glass.theme--light .tb-vol-swipe-zone,
+html.theme-glass .tb-vol-swipe-zone.tb-vol-swipe-active {
+ bottom:var(--mobile-bottom-chrome-height, var(--bottom-toolbar-height, 56px)) !important;
+ z-index:3 !important;
+ padding-bottom:0 !important;
+ box-sizing:border-box !important;
+ background:transparent !important;
+ background-color:transparent !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+}
+html.theme-glass .tb-vol-swipe-glass {
+ margin:0 !important;
+ border:none !important;
+ border-radius:0 !important;
+ box-shadow:none !important;
+ background:transparent !important;
+}
+/* Scroll NP covers the miniplayer. The frost has to sit above that sheet
+   (the shared rule keeps it at z-index 3, under the pill) and run to the
+   bottom of the screen. The toolbar stays at 46. */
+html.theme-glass .lms-app.np-sheet-open:has(#np-page.np-details-scroll) .tb-vol-swipe-frost {
+ bottom:0;
+ z-index:8;
+}
+html.theme-glass .lms-app.np-sheet-open:has(#np-page.np-details-scroll) .tb-vol-swipe-zone {
+ bottom:0 !important;
+ z-index:8 !important;
+}
+html.theme-glass .msk-vol-glass-frost {
+ display:block;
+ position:fixed;
+ left:0;
+ right:0;
+ top:calc(var(--main-toolbar-height, 48px) + var(--top-pad, 0px));
+ bottom:0;
+ z-index:3;
+ pointer-events:none;
+ background:rgba(12, 14, 18, 0.55);
+ background-color:rgba(12, 14, 18, 0.55);
+ backdrop-filter:blur(16px) saturate(1.35);
+ -webkit-backdrop-filter:blur(16px) saturate(1.35);
+ animation:msk-vol-glass-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+html.theme-glass .msk-vol-glass-root {
+ bottom:calc(var(--mobile-bottom-chrome-height, 0px) + env(safe-area-inset-bottom, 0px)) !important;
+ z-index:3 !important;
+ padding-bottom:0;
+ box-sizing:border-box;
+ background:transparent !important;
+ background-color:transparent !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+}
+html.theme-glass .msk-vol-glass-area,
+html.theme-glass.theme--light .msk-vol-glass-area {
+ margin:0 !important;
+ border:none !important;
+ border-radius:0 !important;
+ box-shadow:none !important;
+ background:transparent !important;
+ background-color:transparent !important;
+}
+html.theme-glass .msk-vol-glass-dock {
+ background:rgba(28, 28, 30, 0.78) !important;
+ background-color:rgba(28, 28, 30, 0.78) !important;
+ backdrop-filter:blur(16px) saturate(1.45) !important;
+ -webkit-backdrop-filter:blur(16px) saturate(1.45) !important;
+}
+
+/*
+ * Desktop home split: the browse surface is full bleed. The shortcut column
+ * floats over the left of that surface. The title bar stays above the column
+ * and frosts the whole page width.
+ */
+@media (min-width: 800px) {
+ html.theme-glass {
+  --album-separator-color:rgba(255, 255, 255, 0.07);
+ }
+ html.theme-glass #browse-view.browse-home-split {
+  position:relative !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .browse-main-pane {
+  position:absolute !important;
+  top:0 !important;
+  right:0 !important;
+  bottom:0 !important;
+  left:0 !important;
+  width:auto !important;
+  height:auto !important;
+  flex:none !important;
+  z-index:auto !important;
+ }
+ /* Shared left edge: card inset (12px) + card width + 32px gutter. */
+ html.theme-glass #browse-view.browse-home-split {
+  --glass-split-content-x:calc(var(--browse-home-pane-w) + 44px);
+ }
+ /* Header text sits above the card. The bar itself stays clear so the card shows through. */
+ html.theme-glass #browse-view.browse-home-split .browse-main-pane > .browse-subheader-wrap {
+  left:0 !important;
+  right:0 !important;
+  width:100% !important;
+  z-index:6 !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .browse-subheader.browse-subheader-glass {
+  width:100% !important;
+  box-sizing:border-box !important;
+  padding-left:0 !important;
+  background:transparent !important;
+  background-image:none !important;
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+  -webkit-mask-image:none !important;
+  mask-image:none !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .browse-home-pane {
+  position:absolute !important;
+  top:10px !important;
+  bottom:10px !important;
+  left:12px !important;
+  width:var(--browse-home-pane-w) !important;
+  height:auto !important;
+  margin:0 !important;
+  flex:none !important;
+  /* Under the header text, over the page, so the card covers the header bar. */
+  z-index:5 !important;
+  border-radius:20px !important;
+  background-color:rgba(20, 20, 24, 0.36) !important;
+  background-image:none !important;
+  backdrop-filter:blur(16px) saturate(1.55);
+  -webkit-backdrop-filter:blur(16px) saturate(1.55);
+  box-shadow:0 12px 40px rgba(0, 0, 0, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.16) !important;
+  overflow:hidden !important;
+  /* WKWebView does not clip descendants of a backdrop-filter. Keep labels inside the card. */
+  clip-path:inset(0 round 20px);
+ }
+ /* Title, cover, and list share one left edge. Back/home sit to the right of the shortcut card. */
+ html.theme-glass #browse-view.browse-home-split .browse-subheader > .layout {
+  position:relative !important;
+  padding-left:var(--glass-split-content-x) !important;
+  box-sizing:border-box !important;
+  pointer-events:none !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .browse-subheader > .layout > .toolbar-nobtn-pad {
+  display:none !important;
+  width:0 !important;
+ }
+ /* Card right edge is pane width + 12px. The chevron starts 4px past that. */
+ html.theme-glass #browse-view.browse-home-split .browse-subheader > .layout > #back-button,
+ html.theme-glass #browse-view.browse-home-split .browse-subheader > .layout > .back-button {
+  position:absolute !important;
+  left:calc(var(--browse-home-pane-w) + 16px) !important;
+  top:50% !important;
+  margin:0 !important;
+  transform:translateY(-50%);
+  z-index:8;
+  pointer-events:auto !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .browse-subheader > .layout > #home-button {
+  position:absolute !important;
+  left:calc(var(--browse-home-pane-w) + 56px) !important;
+  top:50% !important;
+  margin:0 !important;
+  transform:translateY(-50%);
+  z-index:3;
+  pointer-events:auto !important;
+ }
+ /* Shortcut page: no chevron, so the home button takes its place. */
+ html.theme-glass #browse-view.browse-home-split.browse-on-shortcut .browse-subheader > .layout > #home-button {
+  left:calc(var(--browse-home-pane-w) + 16px) !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .browse-subheader > .layout:has(> #back-button),
+ html.theme-glass #browse-view.browse-home-split .browse-subheader > .layout:has(> .back-button) {
+  padding-left:calc(var(--browse-home-pane-w) + 64px) !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .browse-subheader > .layout:has(> #home-button) {
+  padding-left:calc(var(--browse-home-pane-w) + 104px) !important;
+ }
+ html.theme-glass #browse-view.browse-home-split.browse-on-shortcut .browse-subheader > .layout:has(> #home-button) {
+  padding-left:calc(var(--browse-home-pane-w) + 64px) !important;
+ }
+ /* Simple pages: one header line. The count sits beside the title, and the
+    right-hand button shares that line. Catalog and detailed headers stay tall. */
+ html.theme-glass #browse-view.browse-home-split:not(.browse-catalog):not(.detailed-sub) .browse-subheader > .layout.browse-subheader-row {
+  flex-wrap:nowrap !important;
+  align-items:center !important;
+  height:var(--sub-toolbar-height) !important;
+  min-height:var(--sub-toolbar-height) !important;
+  max-height:var(--sub-toolbar-height) !important;
+ }
+ html.theme-glass #browse-view.browse-home-split:not(.browse-catalog):not(.detailed-sub) .browse-subheader .browse-title {
+  flex-direction:row !important;
+  flex-wrap:nowrap !important;
+  align-items:baseline !important;
+  justify-content:flex-start !important;
+  margin:0 !important;
+  padding:0 !important;
+  height:auto !important;
+  min-width:0;
+ }
+ html.theme-glass #browse-view.browse-home-split:not(.browse-catalog):not(.detailed-sub) .browse-subheader .browse-title > .flex {
+  flex:0 1 auto !important;
+  width:auto !important;
+  max-width:70% !important;
+ }
+ html.theme-glass #browse-view.browse-home-split:not(.browse-catalog):not(.detailed-sub) .browse-subheader .browse-title .subtoolbar-title,
+ html.theme-glass #browse-view.browse-home-split:not(.browse-catalog):not(.detailed-sub) .browse-subheader .browse-title .subtoolbar-title-single {
+  margin-top:0 !important;
+  margin-bottom:0 !important;
+  height:auto !important;
+  line-height:1.2 !important;
+ }
+ html.theme-glass #browse-view.browse-home-split:not(.browse-catalog):not(.detailed-sub) .browse-subheader .browse-title .subtoolbar-subtitle {
+  display:block !important;
+  flex:0 1 auto !important;
+  width:auto !important;
+  max-width:46% !important;
+  margin:0 0 0 8px !important;
+  font-size:13px !important;
+  line-height:1.2 !important;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+ }
+ html.theme-glass #browse-view.browse-home-split:not(.browse-catalog):not(.detailed-sub) .browse-subheader .browse-commands {
+  align-self:center !important;
+  height:auto !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .browse-home-pane-resizer {
+  right:0 !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .browse-home-pane-resizer::after,
+ .msk-is-non-touch html.theme-glass #browse-view.browse-home-split .browse-home-pane-resizer:hover::after,
+ html.theme-glass.browse-home-pane-resizing #browse-view.browse-home-split .browse-home-pane-resizer::after {
+  background:transparent !important;
+  width:0 !important;
+ }
+ /* Left lexicon sits just past the shortcut card. Right lexicon stays on the right. */
+ html.theme-glass:not(.jl-side-right) #browse-view.browse-home-split .browse-main-pane > .lms-list.bgnd-cover > .lms-jumplist,
+ html.theme-glass:not(.jl-side-right) #browse-view.browse-home-split .lms-jumplist {
+  left:calc(var(--browse-home-pane-w) + 20px) !important;
+  right:auto !important;
+ }
+ html.theme-glass.jl-side-right #browse-view.browse-home-split .browse-main-pane > .lms-list.bgnd-cover > .lms-jumplist,
+ html.theme-glass.jl-side-right #browse-view.browse-home-split .lms-jumplist {
+  left:auto !important;
+  right:8px !important;
+ }
+ /* Lists that are not a horizontal swipe stay clear of the column. */
+ html.theme-glass #browse-view.browse-home-split:not(.browse-at-home) .browse-main-pane > .lms-list.bgnd-cover > #browse-list {
+  padding-left:calc(var(--glass-split-content-x) - 16px) !important;
+  box-sizing:border-box;
+ }
+ /* My Music and Playlists, list mode: same content edge as the title. */
+ html.theme-glass #browse-view.browse-home-split.browse-list-mode:is(.browse-mymusic, .browse-playlists) .browse-main-pane > .lms-list.bgnd-cover > #browse-list {
+  padding-left:var(--glass-split-content-x) !important;
+ }
+ html.theme-glass #browse-view.browse-home-split.browse-list-mode:is(.browse-mymusic, .browse-playlists) #browse-list .v-list__tile {
+  padding-left:8px !important;
+ }
+ /* Applications and the other non-home lists. Lexicon pages below keep the wider inset. */
+ html.theme-glass #browse-view.browse-home-split.browse-list-mode:not(.browse-at-home) .browse-main-pane > .lms-list.bgnd-cover > #browse-list {
+  padding-left:var(--glass-split-content-x) !important;
+ }
+ /* Title inset, further right than the card gutter. Back and home grow it. */
+ html.theme-glass #browse-view.browse-home-split:not(.browse-at-home):has(#back-button) .browse-main-pane > .lms-list.bgnd-cover > #browse-list,
+ html.theme-glass #browse-view.browse-home-split:has(#back-button) .lib-fusion-host > .lib-fusion {
+  padding-left:calc(var(--browse-home-pane-w) + 64px) !important;
+ }
+ html.theme-glass #browse-view.browse-home-split:not(.browse-at-home):has(#back-button):has(#home-button) .browse-main-pane > .lms-list.bgnd-cover > #browse-list,
+ html.theme-glass #browse-view.browse-home-split:has(#back-button):has(#home-button) .lib-fusion-host > .lib-fusion {
+  padding-left:calc(var(--browse-home-pane-w) + 104px) !important;
+ }
+ html.theme-glass #browse-view.browse-home-split.browse-on-shortcut:not(.browse-at-home):has(#home-button) .browse-main-pane > .lms-list.bgnd-cover > #browse-list,
+ html.theme-glass #browse-view.browse-home-split.browse-on-shortcut:has(#home-button) .lib-fusion-host > .lib-fusion {
+  padding-left:calc(var(--browse-home-pane-w) + 64px) !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .browse-list-ihe-strip .v-list__tile > div {
+  margin-left:0 !important;
+ }
+ html.theme-glass #browse-view.browse-home-split:has(.browse-list-ihe-strip) #browse-list .v-list__tile {
+  padding-left:0 !important;
+ }
+ /* Card gutter is not the lexicon. Album covers and favorites start after the rail.
+    :has keeps this ahead of the title-inset rule, which also matches #back-button. */
+ html.theme-glass:not(.jl-side-right) #browse-view.browse-home-split:not(.browse-at-home) .browse-main-pane > .lms-list.bgnd-cover > #browse-list.lms-list-jump,
+ html.theme-glass:not(.jl-side-right) #browse-view.browse-home-split:not(.browse-at-home) .browse-main-pane > .lms-list.bgnd-cover > #browse-list.lms-image-grid-jump,
+ html.theme-glass:not(.jl-side-right) #browse-view.browse-home-split:not(.browse-at-home):has(#back-button) .browse-main-pane > .lms-list.bgnd-cover > #browse-list.lms-list-jump,
+ html.theme-glass:not(.jl-side-right) #browse-view.browse-home-split:not(.browse-at-home):has(#back-button) .browse-main-pane > .lms-list.bgnd-cover > #browse-list.lms-image-grid-jump,
+ html.theme-glass:not(.jl-side-right) #browse-view.browse-home-split:not(.browse-at-home):has(#home-button) .browse-main-pane > .lms-list.bgnd-cover > #browse-list.lms-list-jump,
+ html.theme-glass:not(.jl-side-right) #browse-view.browse-home-split:not(.browse-at-home):has(#home-button) .browse-main-pane > .lms-list.bgnd-cover > #browse-list.lms-image-grid-jump {
+  padding-left:calc(var(--browse-home-pane-w) + 20px + var(--jump-list-width, 32px) + 16px) !important;
+ }
+ html.theme-glass.jl-side-right #browse-view.browse-home-split:not(.browse-at-home) .browse-main-pane > .lms-list.bgnd-cover > #browse-list.lms-list-jump,
+ html.theme-glass.jl-side-right #browse-view.browse-home-split:not(.browse-at-home) .browse-main-pane > .lms-list.bgnd-cover > #browse-list.lms-image-grid-jump {
+  padding-right:calc(8px + var(--jump-list-width, 32px) + 16px) !important;
+ }
+ html.theme-glass #browse-view.browse-home-split:is(.browse-mymusic, .browse-playlists) .browse-header.v-list__tile,
+ html.theme-glass #browse-view.browse-home-split:is(.browse-mymusic, .browse-playlists) .grid-header.v-list__tile {
+  align-items:center !important;
+  height:auto !important;
+  min-height:40px !important;
+  padding-top:0 !important;
+  padding-bottom:0 !important;
+ }
+ html.theme-glass #browse-view.browse-home-split:is(.browse-mymusic, .browse-playlists) .v-list__tile__title {
+  height:auto !important;
+  margin-top:0 !important;
+  line-height:1.25 !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .lib-fusion-host > .lib-fusion {
+  padding-left:var(--glass-split-content-x);
+  box-sizing:border-box;
+ }
+ /* Search sits in the glass card, same inset as the rows under it. */
+ html.theme-glass #browse-view.browse-home-split .browse-home-pane-search {
+  margin:8px 8px 2px 8px !important;
+  padding:0 10px !important;
+  min-height:34px !important;
+  gap:8px !important;
+  border:none !important;
+  border-radius:calc(20px - 8px) !important;
+  background:rgba(0, 0, 0, 0.22) !important;
+  box-shadow:inset 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+  opacity:1 !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .browse-home-pane-search:hover {
+  background:rgba(255, 255, 255, 0.08) !important;
+  opacity:1 !important;
+ }
+ html.theme-glass #browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-search {
+  width:36px !important;
+  height:36px !important;
+  min-width:36px !important;
+  min-height:36px !important;
+  margin:8px auto 4px auto !important;
+  padding:0 !important;
+  border-radius:calc(20px - 8px) !important;
+ }
+ html.theme-glass #browse-view.browse-home-split .browse-home-pane .lms-list-item,
+ html.theme-glass #browse-view.browse-home-split .browse-home-pane .vue-recycle-scroller__item-view {
+  border-bottom-color:transparent !important;
+ }
+ html.theme-glass #browse-view .vue-recycle-scroller__item-view,
+ html.theme-glass #browse-view .lms-list-item,
+ html.theme-glass #queue-view .vue-recycle-scroller__item-view,
+ html.theme-glass #queue-view .lms-list-item {
+  border-bottom-color:rgba(255, 255, 255, 0.04) !important;
+ }
+}
+
+/*
+ * Section bar. A fixed neutral frost, not the cover palette and not a black
+ * plate. The lower portion fades out so rows pass under glass.
+ * Home split keeps the shortcut card clear: the frost starts just to its right.
+ */
+html.theme-glass #browse-view .browse-subheader.browse-subheader-glass {
+ position:relative;
+ background:transparent !important;
+ background-image:none !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+ -webkit-mask-image:none !important;
+ mask-image:none !important;
+}
+html.theme-glass #browse-view .browse-subheader.browse-subheader-glass::before {
+ content:"";
+ position:absolute;
+ z-index:-1;
+ top:0;
+ right:0;
+ bottom:0;
+ left:0;
+ background:linear-gradient(to bottom,
+  rgba(120, 120, 128, 0.28) 0%,
+  rgba(90, 90, 98, 0.16) 70%,
+  rgba(70, 70, 78, 0.05) 88%,
+  transparent 100%);
+ backdrop-filter:blur(18px) saturate(1.4);
+ -webkit-backdrop-filter:blur(18px) saturate(1.4);
+ -webkit-mask-image:linear-gradient(to bottom, #000 0%, #000 70%, transparent 100%);
+ mask-image:linear-gradient(to bottom, #000 0%, #000 70%, transparent 100%);
+ box-shadow:none;
+ opacity:1;
+ pointer-events:none;
+}
+html.theme-glass.theme--light #browse-view .browse-subheader.browse-subheader-glass::before {
+ background:linear-gradient(to bottom,
+  rgba(255, 255, 255, 0.62) 0%,
+  rgba(255, 255, 255, 0.34) 68%,
+  rgba(255, 255, 255, 0.1) 86%,
+  transparent 100%);
+ box-shadow:none;
+}
+@media (min-width: 800px) {
+ html.theme-glass #browse-view.browse-home-split .browse-subheader.browse-subheader-glass::before {
+  left:calc(var(--browse-home-pane-w, 180px) + 16px);
+ }
+ /* Catalog plate meets the shortcut card. One frost, from the card's right edge. */
+ html.theme-glass #browse-view.browse-home-split.browse-catalog .browse-subheader.browse-subheader-glass::before {
+  left:calc(12px + var(--browse-home-pane-w, 180px));
+  background:linear-gradient(to bottom,
+   color-mix(in srgb, var(--browse-catalog-p1, #2c2c2e) 55%, rgba(28, 28, 30, 0.45)) 0%,
+   color-mix(in srgb, var(--browse-catalog-p2, #2c2c2e) 28%, transparent) 72%,
+   transparent 100%);
+ }
+ html.theme-glass #browse-view.browse-home-split.browse-catalog .browse-catalog-hero::before {
+  content:none;
+  display:none;
+ }
+}
+/* Player drawer on desktop: the glass is the inset card, not a full-bleed slab. */
+html.theme-glass .v-navigation-drawer.nd-glass:not(.v-navigation-drawer--is-mobile) {
+ background:transparent !important;
+ border-radius:0 !important;
+ box-shadow:none !important;
+ padding:12px 10px 12px 12px !important;
+ box-sizing:border-box !important;
+}
+/* Blur lives on the drawer itself. A filter on ::before does not show through
+   Vuetify's slide transform, so the menu looked like a flat plate.
+   Desktop stays a clear padding box; the inset card is the ::before. */
+html.theme-glass .v-navigation-drawer.nd-glass {
+ backdrop-filter:blur(22px) saturate(1.5) !important;
+ -webkit-backdrop-filter:blur(22px) saturate(1.5) !important;
+}
+html.theme-glass .v-navigation-drawer.nd-glass.v-navigation-drawer--is-mobile {
+ background-color:rgba(22, 22, 26, 0.55) !important;
+}
+html.theme-glass .v-navigation-drawer.nd-glass:not(.v-navigation-drawer--is-mobile)::before {
+ top:12px !important;
+ bottom:12px !important;
+ left:12px !important;
+ right:10px !important;
+ border-radius:22px !important;
+ background-color:rgba(22, 22, 26, 0.4) !important;
+ backdrop-filter:blur(22px) saturate(1.5) !important;
+ -webkit-backdrop-filter:blur(22px) saturate(1.5) !important;
+ box-shadow:0 16px 48px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.16) !important;
+}
+/* Header and footer share the drawer frost. Their own filter samples that
+   already-blurred layer and paints a darker plate than the list. */
+html.theme-glass .v-navigation-drawer.nd-glass .nd-top,
+html.theme-glass .v-navigation-drawer.nd-glass .nd-header,
+html.theme-glass .v-navigation-drawer.nd-glass .nd-footer {
+ background:transparent !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+ box-shadow:none !important;
+}
+
+/*
+ * Shortcuts stay a full-width strip on the fade. The floating pill is the
+ * now-playing bar: side gap, rounded glass, above the fade. Dock lift and
+ * the bar's translate are unchanged (left/right inset only).
+ * Real element so a finger dock can translate3d it with the bar. A ::after
+ * cannot take an inline transform, and a custom property inside transform
+ * does not interpolate on iOS 15.
+ */
+html.theme-glass .msk-bottom-fade {
+ display:none;
+}
+html.theme-glass .lms-app:has(#nav-bar) .msk-bottom-fade {
+ display:block;
+ position:fixed;
+ left:0;
+ right:0;
+ bottom:0;
+ height:calc(var(--mobile-npbar-height, 48px) + var(--np-bar-dock-lift, 52px));
+ /* Clear above the pill. Solid black from the pill's lower edge through the shortcuts. */
+ background:linear-gradient(to bottom,
+  rgba(0, 0, 0, 0) 0,
+  rgba(0, 0, 0, 0.72) calc(var(--mobile-npbar-height, 48px) * 0.42),
+  #000 var(--mobile-npbar-height, 48px),
+  #000 100%);
+ pointer-events:none;
+ z-index:3;
+ transform:translate3d(0, 0, 0);
+ /* Height tracks a pinch-resize of the strip. Collapse uses the longer ease below. */
+ transition:transform 0.22s linear, height 0.22s linear;
+}
+/* Same 0.22s linear as the np-bar and the shortcut strip. A longer ease here
+   finished after the bar and read as a second, bouncing move. */
+html.theme-glass .lms-app.nav-shortcut-collapse-motion:has(#nav-bar) .msk-bottom-fade {
+ transition:transform 0.22s linear, height 0.22s linear;
+}
+/* Drop with the miniplayer. Downward travel matches the bar: range - homeRest. */
+html.theme-glass .lms-app.nav-shortcuts-auto-collapsed:not(.np-bar-docked):not(.np-sheet-open):has(#nav-bar) .msk-bottom-fade,
+html.theme-glass .lms-app.np-bar-docked:has(#nav-bar) .msk-bottom-fade {
+ transform:translate3d(0, calc(var(--np-bar-dock-lift, 52px) - var(--np-home-rest, 0px)), 0);
+}
+html.theme-glass .lms-app.np-bar-dock-noanim:has(#nav-bar) .msk-bottom-fade {
+ transition:none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+ html.theme-glass .lms-app:has(#nav-bar) .msk-bottom-fade {
+  transition:none !important;
+ }
+}
+html.theme-glass .lms-app.np-sheet-open .msk-bottom-fade {
+ opacity:0;
+}
+
+html.theme-glass #nav-bar,
+html.theme-glass #nav-bar.nav-shortcut-footer,
+html.theme-glass #nav-bar .nav-shortcut-fixed,
+html.theme-glass #nav-bar.nav-shortcut-footer .nav-shortcut-bar,
+html.theme-glass #nav-bar .lms-bottom-nav {
+ background:transparent !important;
+ background-color:transparent !important;
+ box-shadow:none !important;
+ border:none !important;
+ border-radius:0 !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+}
+
+html.theme-glass #np-bar.mobile,
+html.theme-glass #np-bar.mobile.np-bar-dockable,
+html.theme-glass #np-bar.mobile.np-bar-dockable.np-bar-docked,
+html.theme-glass.theme--dark #np-bar.mobile.np-bar-dockable,
+html.theme-glass.theme--light #np-bar.mobile.np-bar-dockable {
+ left:10px !important;
+ right:10px !important;
+ width:auto !important;
+ margin-left:0 !important;
+ margin-right:0 !important;
+ border-radius:22px !important;
+ overflow:hidden !important;
+ /* Drop shadow only. The hairline is a layer above the frost, not an inset shadow under it. */
+ box-shadow:0 4px 12px rgba(0, 0, 0, 0.14) !important;
+}
+html.theme-glass #np-bar.mobile::before {
+ content:"";
+ position:absolute;
+ inset:0;
+ border-radius:inherit;
+ box-shadow:inset 0 0 0 0.5px rgba(255, 255, 255, 0.55);
+ pointer-events:none;
+ z-index:7;
+}
+html.theme-glass #np-bar.mobile:not(.np-bar-art),
+html.theme-glass #np-bar:not(.mobile):not(.np-bar-art) {
+ background-color:rgba(18, 18, 22, 0.72) !important;
+ background-image:linear-gradient(to bottom, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.1)) !important;
+ backdrop-filter:blur(16px) saturate(1.5) !important;
+ -webkit-backdrop-filter:blur(16px) saturate(1.5) !important;
+}
+html.theme-glass #np-bar.mobile.np-bar-pressed:not(.np-bar-art),
+html.theme-glass.theme--dark #np-bar.mobile.np-bar-pressed:not(.np-bar-art),
+html.theme-glass.theme--light #np-bar.mobile.np-bar-pressed:not(.np-bar-art) {
+ background-color:rgba(28, 28, 34, 0.92) !important;
+}
+/* Title and the next-track morph share one tight stack. */
+html.theme-glass #np-bar .np-bar-details .v-list__tile__title,
+html.theme-glass #np-bar .np-bar-details .np-bar-marquee-text,
+html.theme-glass #np-bar .np-bar-details .np-bar-text-line,
+html.theme-glass #np-bar .np-bar-text-layer .v-list__tile__title,
+html.theme-glass #np-bar.np-bar-mob-nav .np-bar-details .np-bar-text-layer .v-list__tile__title,
+html.theme-glass #np-bar.np-bar-mob-nav .np-bar-details .np-bar-marquee .v-list__tile__title,
+html.theme-glass #np-bar.np-bar-mob-thick .np-bar-details .np-bar-text-layer .v-list__tile__title,
+html.theme-glass #np-bar.np-bar-mob-thick .np-bar-details .np-bar-marquee .v-list__tile__title,
+html.theme-glass #np-bar .np-bar-details-mobile,
+html.theme-glass #np-bar .np-bar-details-mobile .np-bar-text-line {
+ letter-spacing:-0.03em !important;
+ line-height:1.08 !important;
+}
+html.theme-glass #np-bar .np-bar-details .v-list__tile__sub-title,
+html.theme-glass #np-bar .np-bar-text-layer .v-list__tile__sub-title,
+html.theme-glass #np-bar.np-bar-mob-nav .np-bar-details .np-bar-text-layer .v-list__tile__sub-title,
+html.theme-glass #np-bar.np-bar-mob-thick .np-bar-details .np-bar-text-layer .v-list__tile__sub-title,
+html.theme-glass #np-bar:not(.mobile) .np-bar-details .v-list__tile__sub-title,
+html.theme-glass #np-bar:not(.mobile) .np-bar-details .np-bar-text-layer .v-list__tile__sub-title {
+ letter-spacing:-0.02em !important;
+ line-height:1.08 !important;
+ margin-top:0 !important;
+}
+html.theme-glass #np-bar .np-bar-text-layer,
+html.theme-glass #np-bar .np-bar-slide-in,
+html.theme-glass #np-bar .np-bar-rest-stack,
+html.theme-glass #np-bar .np-bar-text-morph-host,
+html.theme-glass #np-bar.np-bar-mob-nav .np-bar-details .np-bar-text-morph-host,
+html.theme-glass #np-bar.np-bar-mob-thick .np-bar-details .np-bar-text-layer,
+html.theme-glass #np-bar:not(.mobile) .np-bar-details .np-bar-text-layer {
+ gap:0 !important;
+ row-gap:0 !important;
+ min-height:0 !important;
+ align-self:start !important;
+ justify-content:flex-start !important;
+}
+
+/*
+ * Section titles share the section surface. Home titles are a display line,
+ * flush with the artwork row. Other headers stay on the standard row.
+ */
+html.theme-glass .browse-header,
+html.theme-glass .grid-header,
+html.theme-glass .v-list .v-subheader,
+html.theme-glass .lms-list .grid-header.v-list__tile,
+html.theme-glass .lms-list .browse-header.v-list__tile {
+ background:transparent !important;
+ background-color:transparent !important;
+ box-shadow:none !important;
+}
+html.theme-glass #browse-view:not(.browse-at-home) .grid-header.v-list__tile,
+html.theme-glass #browse-view:not(.browse-at-home) .browse-header.v-list__tile,
+html.theme-glass #browse-view:not(.browse-at-home) .grid-header .v-list__tile,
+html.theme-glass #browse-view:not(.browse-at-home) .browse-header .v-list__tile {
+ height:auto !important;
+ min-height:44px !important;
+ align-items:center !important;
+ padding-top:0 !important;
+ padding-bottom:0 !important;
+}
+html.theme-glass #browse-view:not(.browse-at-home) .browse-header .v-list__tile__title,
+html.theme-glass #browse-view:not(.browse-at-home) .grid-header .v-list__tile__title,
+html.theme-glass .v-list .v-subheader {
+ color:rgba(245, 245, 247, 0.78) !important;
+ font-size:16px !important;
+ font-weight:600 !important;
+ letter-spacing:-0.01em !important;
+ line-height:1.2 !important;
+}
+
+html.theme-glass #browse-view.browse-at-home {
+ --glass-home-row-inset:20px;
+}
+html.theme-glass #browse-view.browse-at-home.browse-home-split {
+ --glass-home-row-inset:var(--glass-split-content-x, calc(var(--browse-home-pane-w) + 44px));
+}
+html.theme-glass #browse-view.browse-at-home .grid-header.v-list__tile,
+html.theme-glass #browse-view.browse-at-home .browse-header.v-list__tile,
+html.theme-glass #browse-view.browse-at-home .grid-header .v-list__tile,
+html.theme-glass #browse-view.browse-at-home .browse-header .v-list__tile {
+ height:auto !important;
+ min-height:40px !important;
+ align-items:center !important;
+ padding-top:0 !important;
+ padding-bottom:0 !important;
+ padding-left:var(--glass-home-row-inset) !important;
+}
+html.theme-glass #browse-view.browse-at-home .grid-header .v-list__tile__avatar,
+html.theme-glass #browse-view.browse-at-home .browse-header .v-list__tile__avatar {
+ display:none !important;
+}
+html.theme-glass #browse-view.browse-at-home .grid-header .v-list__tile__title,
+html.theme-glass #browse-view.browse-at-home .browse-header .v-list__tile__title {
+ color:rgba(245, 245, 247, 0.96) !important;
+ font-size:22px !important;
+ font-weight:700 !important;
+ letter-spacing:-0.022em !important;
+ line-height:1.15 !important;
+ height:auto !important;
+ margin-top:0 !important;
+}
+/* Icon rows (Favorites, Radios, Explore): heart/glyph stays, title a step quieter. */
+html.theme-glass #browse-view.browse-at-home .grid-header.grid-header-noart.v-list__tile,
+html.theme-glass #browse-view.browse-at-home .browse-header.browse-header-noart.v-list__tile,
+html.theme-glass #browse-view.browse-at-home .grid-header.grid-header-noart .v-list__tile,
+html.theme-glass #browse-view.browse-at-home .browse-header.browse-header-noart .v-list__tile {
+ min-height:40px !important;
+ padding-top:0 !important;
+ padding-bottom:0 !important;
+}
+/* Explorer list: the section title shares the column edge with the rows.
+   Grid mode keeps the wider inset so the title stays with the cards. */
+html.theme-glass #browse-view.browse-at-home.browse-home-split.browse-explore-list .grid-header.explore-section-header.v-list__tile {
+ padding-left:calc(var(--browse-home-pane-w) + 28px) !important;
+}
+html.theme-glass #browse-view.browse-at-home .grid-header.grid-header-noart .v-list__tile__avatar,
+html.theme-glass #browse-view.browse-at-home .browse-header.browse-header-noart .v-list__tile__avatar {
+ display:inline-flex !important;
+ align-items:center !important;
+ justify-content:center !important;
+ flex:0 0 32px !important;
+ min-width:32px !important;
+ width:32px !important;
+ height:32px !important;
+ margin-right:10px !important;
+}
+html.theme-glass #browse-view.browse-at-home .grid-header.grid-header-noart .v-list__tile__avatar .v-avatar,
+html.theme-glass #browse-view.browse-at-home .browse-header.browse-header-noart .v-list__tile__avatar .v-avatar {
+ width:32px !important;
+ height:32px !important;
+ min-width:32px !important;
+}
+html.theme-glass #browse-view.browse-at-home .grid-header.grid-header-noart .v-icon,
+html.theme-glass #browse-view.browse-at-home .browse-header.browse-header-noart .v-icon {
+ color:rgba(245, 245, 247, 0.92) !important;
+ font-size:22px !important;
+}
+html.theme-glass #browse-view.browse-at-home .grid-header.grid-header-noart .svg-list-img,
+html.theme-glass #browse-view.browse-at-home .browse-header.browse-header-noart .svg-list-img {
+ width:22px !important;
+ height:22px !important;
+}
+html.theme-glass #browse-view.browse-at-home .grid-header.grid-header-noart .v-list__tile__title,
+html.theme-glass #browse-view.browse-at-home .browse-header.browse-header-noart .v-list__tile__title {
+ font-size:20px !important;
+ font-weight:600 !important;
+ letter-spacing:-0.018em !important;
+}
+/* Horizontal swipe is edge to edge. Resting cards share the title's left edge
+   and slide under the shortcut column as the row moves. */
+html.theme-glass #browse-view.browse-at-home .grid-scroll,
+html.theme-glass #browse-view.browse-at-home .browse-list-ihe-strip {
+ padding-left:calc(var(--glass-home-row-inset) - 4px) !important;
+ scroll-padding-left:calc(var(--glass-home-row-inset) - 4px);
+ box-sizing:border-box;
+}
+html.theme-glass #browse-view.browse-at-home.browse-home-split .cstats-home-section,
+html.theme-glass #browse-view.browse-at-home.browse-home-split .image-grid-full-width:not(.grid-scroll):not(:has(.grid-header)) {
+ padding-left:var(--glass-home-row-inset) !important;
+ box-sizing:border-box;
+}
+/* Home list rows (Explorer, and the same layout for a list-style section):
+   the shortcut column fills the left. Do not keep a second inset. */
+html.theme-glass #browse-view.browse-at-home.browse-home-split .image-grid-full-width.explore-list-host {
+ padding-left:calc(var(--browse-home-pane-w) + 28px) !important;
+}
+html.theme-glass #browse-view.browse-at-home.browse-home-split .explore-list-row.v-list__tile {
+ padding-left:8px !important;
+}
+html.theme-glass #browse-view.browse-at-home.browse-home-split .explore-list-row .v-list__tile__title {
+ height:auto !important;
+ margin-top:0 !important;
+ line-height:1.25 !important;
+ font-weight:600 !important;
+}
+
+/* My Music sections (Artistes, Albums, Autre): iOS large titles, no glyph, no row. */
+html.theme-glass #browse-view.browse-home-split.browse-mymusic .browse-header.v-list__tile,
+html.theme-glass #browse-view.browse-home-split.browse-mymusic .grid-header.v-list__tile,
+html.theme-glass #browse-view.browse-home-split.browse-mymusic .browse-header .v-list__tile,
+html.theme-glass #browse-view.browse-home-split.browse-mymusic .grid-header .v-list__tile {
+ min-height:0 !important;
+ height:auto !important;
+ margin-top:18px !important;
+ padding-top:6px !important;
+ padding-bottom:2px !important;
+ border:none !important;
+ background:transparent !important;
+ box-shadow:none !important;
+}
+html.theme-glass #browse-view.browse-home-split.browse-mymusic .browse-header .v-list__tile__avatar,
+html.theme-glass #browse-view.browse-home-split.browse-mymusic .grid-header .v-list__tile__avatar,
+html.theme-glass #browse-view.browse-home-split.browse-mymusic .browse-header .browse-action,
+html.theme-glass #browse-view.browse-home-split.browse-mymusic .grid-header .browse-action {
+ display:none !important;
+}
+html.theme-glass #browse-view.browse-home-split.browse-mymusic .browse-header .v-list__tile__title,
+html.theme-glass #browse-view.browse-home-split.browse-mymusic .grid-header .v-list__tile__title {
+ color:rgba(245, 245, 247, 0.96) !important;
+ font-size:22px !important;
+ font-weight:700 !important;
+ letter-spacing:-0.022em !important;
+ line-height:1.15 !important;
+ height:auto !important;
+ margin-top:0 !important;
+}
+
+html.theme-glass .lib-fusion-col,
+html.theme-glass .lib-fusion-tracks,
+html.theme-glass .lib-fusion-scroller {
+ background:transparent !important;
+ background-color:transparent !important;
+}
+html.theme-glass .lib-fusion-col-head,
+html.theme-glass .lib-fusion-tab-head {
+ background:transparent !important;
+ background-color:transparent !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+ border-bottom:none !important;
+ text-transform:none !important;
+ letter-spacing:-0.01em !important;
+ font-size:13px !important;
+ font-weight:600 !important;
+ color:rgba(245, 245, 247, 0.62) !important;
+}
+/* Sticky album and artist headers. Tracks scroll under them, so the plate
+   stays opaque. Column and tab labels above stay clear. */
+html.theme-glass .lib-fusion-detail-head {
+ background:rgba(18, 18, 20, 0.98) !important;
+ background-color:rgba(18, 18, 20, 0.98) !important;
+ background-image:none !important;
+ backdrop-filter:blur(18px) saturate(1.35) !important;
+ -webkit-backdrop-filter:blur(18px) saturate(1.35) !important;
+ border-bottom:1px solid rgba(255, 255, 255, 0.1) !important;
+ color:#f5f5f7 !important;
+}
+html.theme-glass.theme--light .lib-fusion-detail-head {
+ background:rgba(250, 250, 252, 0.98) !important;
+ background-color:rgba(250, 250, 252, 0.98) !important;
+ color:#1c1c1e !important;
+ border-bottom-color:rgba(0, 0, 0, 0.08) !important;
+}
+
+/*
+ * Keyboard cursor. The old highlight mixes --active-color into
+ * --background-color. Glass clears that variable, so the row becomes a
+ * faint wash and the inset shadow sits under the tile. Paint a solid
+ * plate and a ring above the row content.
+ */
+html.theme-glass .lms-list .browse-kb-select,
+html.theme-glass .lms-list .browse-kb-select .v-list__tile,
+html.theme-glass .lms-list .search-highlight,
+html.theme-glass .lms-list .search-highlight .v-list__tile,
+html.theme-glass .lms-list .list-swipe-tile.highlight,
+html.theme-glass .lms-list .list-swipe-tile.highlight .v-list__tile,
+html.theme-glass .lms-list .browse-header.browse-kb-select.v-list__tile,
+html.theme-glass .lms-list .grid-header.browse-kb-select.v-list__tile,
+html.theme-glass .lms-list .browse-header.search-highlight.v-list__tile,
+html.theme-glass .lms-list .grid-header.search-highlight.v-list__tile,
+html.theme-glass #browse-view.browse-home-split .browse-home-pane-kb,
+html.theme-glass #browse-view.browse-home-split .browse-home-pane-kb .v-list__tile {
+ background-color:color-mix(in srgb, var(--active-color, #e3fdc4) 34%, rgb(18, 18, 22)) !important;
+ background-image:none !important;
+}
+html.theme-glass .lms-list .browse-kb-select.image-grid-item,
+html.theme-glass .lms-list .search-highlight.image-grid-item {
+ background-color:transparent !important;
+ background-image:none !important;
+}
+html.theme-glass .lms-list .list-swipe-row.browse-kb-select,
+html.theme-glass .lms-list .browse-kb-select.image-grid-item,
+html.theme-glass .lms-list .browse-kb-select.text-grid-item,
+html.theme-glass .lms-list .search-highlight.image-grid-item,
+html.theme-glass .lms-list .search-highlight.text-grid-item,
+html.theme-glass .lms-list .lms-list-item.browse-kb-select:not(.list-swipe-tile),
+html.theme-glass .lms-list .list-swipe-tile.highlight,
+html.theme-glass #browse-view.browse-home-split .browse-home-pane-kb {
+ position:relative;
+}
+html.theme-glass .lms-list .list-swipe-row.browse-kb-select::after,
+html.theme-glass .lms-list .browse-kb-select.image-grid-item::after,
+html.theme-glass .lms-list .browse-kb-select.text-grid-item::after,
+html.theme-glass .lms-list .search-highlight.image-grid-item::after,
+html.theme-glass .lms-list .search-highlight.text-grid-item::after,
+html.theme-glass .lms-list .lms-list-item.browse-kb-select:not(.list-swipe-tile)::after,
+html.theme-glass .lms-list .list-swipe-tile.highlight::after,
+html.theme-glass #browse-view.browse-home-split .browse-home-pane-kb::after {
+ content:"";
+ position:absolute;
+ inset:1px;
+ border:2px solid var(--active-color, var(--primary-color, #e3fdc4));
+ border-radius:8px;
+ pointer-events:none;
+ z-index:6;
+}
+
+/* Unify browse: Artists / Albums / Songs as pill buttons. */
+html.theme-glass .lib-fusion-tabs {
+ background:transparent !important;
+ background-image:none !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+ box-shadow:none !important;
+ border-bottom:none !important;
+}
+html.theme-glass .lib-fusion-seg {
+ align-items:center !important;
+ justify-content:center !important;
+ gap:8px !important;
+ padding:0 !important;
+ border-radius:0 !important;
+ background:transparent !important;
+ box-shadow:none !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+ min-height:36px;
+}
+html.theme-glass .lib-fusion-seg-pill {
+ display:none !important;
+}
+html.theme-glass .lib-fusion-tab {
+ text-transform:none !important;
+ letter-spacing:-0.012em !important;
+ font-size:14px !important;
+ font-weight:600 !important;
+ padding:7px 12px !important;
+ border-radius:999px !important;
+ border:1px solid rgba(255, 255, 255, 0.42) !important;
+ opacity:1 !important;
+ color:rgba(245, 245, 247, 0.92) !important;
+ background:transparent !important;
+ box-shadow:none !important;
+ box-sizing:border-box;
+}
+html.theme-glass .lib-fusion-tab:hover {
+ opacity:1 !important;
+ background:transparent !important;
+}
+html.theme-glass .lib-fusion-tab-active,
+html.theme-glass .lib-fusion-tab-active:hover {
+ opacity:1 !important;
+ color:#1c1c1e !important;
+ background:#f5f5f7 !important;
+ border-color:#f5f5f7 !important;
+ font-weight:600 !important;
+}
+html.theme-glass.theme--light .lib-fusion-tab {
+ border-color:rgba(0, 0, 0, 0.28) !important;
+ color:rgba(28, 28, 30, 0.9) !important;
+}
+html.theme-glass.theme--light .lib-fusion-tab-active,
+html.theme-glass.theme--light .lib-fusion-tab-active:hover {
+ background:#1c1c1e !important;
+ color:#f5f5f7 !important;
+ border-color:#1c1c1e !important;
+}
+
+/* Artist row: rounded macOS/iOS selection, not a Material left bar. */
+html.theme-glass .lib-fusion-artist-row {
+ border-left:0 !important;
+ border-radius:12px !important;
+ margin:2px 10px !important;
+ height:48px !important;
+ width:auto !important;
+ box-sizing:border-box;
+}
+html.theme-glass .lib-fusion-artist-row:hover {
+ background:rgba(255, 255, 255, 0.07) !important;
+}
+html.theme-glass .lib-fusion-artist-row.lib-fusion-row-active,
+html.theme-glass .lib-fusion-artist-row.lib-fusion-kb {
+ background:rgba(255, 255, 255, 0.16) !important;
+ color:#f5f5f7 !important;
+ outline:none !important;
+ box-shadow:inset 0 0 0 0.5px rgba(255, 255, 255, 0.22);
+ font-weight:600 !important;
+}
+html.theme-glass .lib-fusion-list-head {
+ position:static !important;
+ text-transform:none !important;
+ letter-spacing:-0.01em !important;
+ font-size:13px !important;
+ font-weight:600 !important;
+ color:rgba(245, 245, 247, 0.55) !important;
+ background:transparent !important;
+ background-image:none !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+ border:none !important;
+ box-shadow:none !important;
+ padding:10px 16px 4px !important;
+}

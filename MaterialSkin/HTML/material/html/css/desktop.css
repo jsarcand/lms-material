@@ -121,9 +121,8 @@
  height:calc(var(--100vh) - (var(--main-toolbar-height) + (var(--sub-toolbar-height)*3) + var(--desktop-npbar-height)))!important;
 }
 
-.lms-image-grid-jump, .lms-list-jump {
- margin-left:var(--jump-list-width);
-}
+/* A–Z gutter is padding on #browse-list (style.css). A margin here stacked
+   on that padding and made the lexicon inset about twice the rail. */
 
 /*
  * .browse-main-pane is always in the DOM (home-split support).
@@ -179,20 +178,17 @@
  touch-action:none;
  background:transparent;
 }
-#browse-view.browse-home-split .browse-home-pane-resizer::after {
+#browse-view.browse-home-split .browse-home-pane-resizer::after,
+.msk-is-non-touch #browse-view.browse-home-split .browse-home-pane-resizer:hover::after,
+html.browse-home-pane-resizing #browse-view.browse-home-split .browse-home-pane-resizer::after {
  content:'';
  position:absolute;
  top:0;
  bottom:0;
  left:3px;
- width:1px;
- background:var(--list-item-border-color, rgba(128,128,128,0.35));
-}
-.msk-is-non-touch #browse-view.browse-home-split .browse-home-pane-resizer:hover::after,
-html.browse-home-pane-resizing #browse-view.browse-home-split .browse-home-pane-resizer::after {
- background:var(--primary-color);
- width:2px;
- left:2px;
+ width:0;
+ background:transparent;
+ pointer-events:none;
 }
 html.browse-home-pane-resizing {
  cursor:col-resize !important;
@@ -203,13 +199,18 @@ html.browse-home-pane-resizing * {
  user-select:none !important;
 }
 
-/* Home column list: flex-fill, never global .lms-list 100vh height */
+/* Home column list: flex-fill, never global .lms-list 100vh height.
+   overflow-x stays hidden so nowrap labels cannot scroll the rail sideways. */
 #browse-view.browse-home-split .browse-home-pane-list.lms-list {
  flex:1 1 auto !important;
  height:auto !important;
  max-height:none !important;
  min-height:0 !important;
- overflow:auto !important;
+ min-width:0 !important;
+ width:100% !important;
+ max-width:100% !important;
+ overflow-x:hidden !important;
+ overflow-y:auto !important;
 }
 
 #browse-view.browse-home-split .browse-main-pane {
@@ -261,6 +262,64 @@ html.browse-home-pane-resizing * {
  scroll-padding-top:calc(var(--sub-toolbar-height) - var(--browse-subheader-offset, 0px) + 20px) !important;
 }
 
+/* Desktop list mode: several left-aligned columns instead of one stretched row */
+#browse-list.browse-list-cols {
+ --browse-list-col-min:300px;
+}
+#browse-list.browse-list-cols-flow:not(.lms-image-grid) {
+ display:grid;
+ grid-template-columns:repeat(auto-fill, minmax(var(--browse-list-col-min), 1fr));
+ justify-content:start;
+ justify-items:stretch;
+ align-content:start;
+ align-items:start;
+}
+#browse-list.browse-list-cols-flow > .browse-scroll-tools,
+#browse-list.browse-list-cols-flow > .cstats-home-hello,
+#browse-list.browse-list-cols-flow > .cstats-home-section,
+#browse-list.browse-list-cols-flow > .browse-list-ihe-strip,
+#browse-list.browse-list-cols-flow > .grid-scroll,
+#browse-list.browse-list-cols-flow > .browse-html,
+#browse-list.browse-list-cols-flow > .lms-list-item.browse-header,
+#browse-list.browse-list-cols-flow > .lms-list-item.browse-text,
+#browse-list.browse-list-cols-flow > .browse-inline-search {
+ grid-column:1 / -1;
+}
+#browse-list.browse-list-cols-flow > .lms-list-item,
+#browse-list.browse-list-cols-flow > .list-swipe-row,
+#browse-list.browse-list-cols-flow > [class*="list-swipe"] {
+ min-width:0;
+ max-width:100%;
+ text-align:left;
+}
+#browse-list.browse-list-cols .browse-list-col-row {
+ display:grid;
+ grid-template-columns:repeat(var(--browse-list-cols, 2), minmax(0, 1fr));
+ justify-items:stretch;
+ align-items:stretch;
+ width:100%;
+}
+#browse-list.browse-list-cols .browse-list-col-cell {
+ min-width:0;
+ max-width:100%;
+ text-align:left;
+}
+#browse-list.browse-list-cols .browse-list-col-cell.list-swipe-row {
+ position:relative;
+ overflow:hidden;
+}
+#browse-list.browse-list-cols .browse-list-col-cell .v-list__tile,
+#browse-list.browse-list-cols .browse-list-col-cell .lms-list-item {
+ text-align:left;
+}
+#browse-list.browse-list-cols .browse-list-col-cell .v-list__tile__title,
+#browse-list.browse-list-cols .browse-list-col-cell .v-list__tile__sub-title {
+ text-align:left;
+}
+#browse-list.browse-list-cols .vue-recycle-scroller__item-view {
+ width:100% !important;
+}
+
 /* Trackstats: small extra air so play control clears glass edge on desktop */
 #browse-list.cstats-home-active > .cstats-home-section {
  padding-top:12px;
@@ -287,12 +346,6 @@ html.browse-home-pane-resizing * {
 #browse-view.browse-catalog.browse-home-split .browse-main-pane > .lms-list.bgnd-cover > #browse-list {
  padding-top:calc(var(--browse-catalog-height) - var(--browse-subheader-offset, 0px) + 16px) !important;
  scroll-padding-top:calc(var(--browse-catalog-height) - var(--browse-subheader-offset, 0px) + 16px) !important;
-}
-
-#browse-view.browse-home-split .browse-main-pane > .lms-list.bgnd-cover > #browse-list.lms-list-jump,
-#browse-view.browse-home-split .browse-main-pane > .lms-list.bgnd-cover > #browse-list.lms-image-grid-jump {
- margin-left:var(--jump-list-width) !important;
- width:calc(100% - var(--jump-list-width)) !important;
 }
 
 #browse-view.browse-home-split .browse-main-pane > .lms-list.bgnd-cover > .lms-jumplist {
@@ -726,11 +779,12 @@ html.browse-home-pane-resizing * {
 }
 
 /*
- * Detached frosted queue control — right of time/tech meta (desktop).
- * Matches mobile narrow-bar chip language (round + frosted glass).
+ * Desktop np-bar chips (repeat / shuffle), same round frosted language
+ * as the old queue control. Opacity stays free so .dimmed can fade the off state.
  */
-.np-bar:not(.mobile) .np-bar-queue {
- margin:0 0 0 8px !important;
+.np-bar:not(.mobile) .np-bar-queue,
+.np-bar:not(.mobile) .np-bar-mode {
+ margin:0 !important;
  height:36px !important;
  width:36px !important;
  min-width:36px !important;
@@ -744,24 +798,28 @@ html.browse-home-pane-resizing * {
  backdrop-filter:blur(12px) saturate(1.25) !important;
  -webkit-backdrop-filter:blur(12px) saturate(1.25) !important;
  box-shadow:0 1px 3px rgba(0,0,0,0.22), inset 0 0 0 1px rgba(255,255,255,0.08) !important;
- opacity:1 !important;
 }
-.theme--light .np-bar:not(.mobile) .np-bar-queue {
+.theme--light .np-bar:not(.mobile) .np-bar-queue,
+.theme--light .np-bar:not(.mobile) .np-bar-mode {
  background:color-mix(in srgb, var(--bottom-toolbar-color, #fafafa) 55%, transparent) !important;
  box-shadow:0 1px 3px rgba(0,0,0,0.12), inset 0 0 0 1px rgba(0,0,0,0.08) !important;
 }
-.np-bar:not(.mobile).np-bar-art.np-bar-dark .np-bar-queue {
+.np-bar:not(.mobile).np-bar-art.np-bar-dark .np-bar-queue,
+.np-bar:not(.mobile).np-bar-art.np-bar-dark .np-bar-mode {
  background:rgba(0,0,0,0.28) !important;
  box-shadow:0 1px 4px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.12) !important;
 }
-.np-bar:not(.mobile).np-bar-art.np-bar-light .np-bar-queue {
+.np-bar:not(.mobile).np-bar-art.np-bar-light .np-bar-queue,
+.np-bar:not(.mobile).np-bar-art.np-bar-light .np-bar-mode {
  background:rgba(255,255,255,0.42) !important;
  box-shadow:0 1px 4px rgba(0,0,0,0.12), inset 0 0 0 1px rgba(0,0,0,0.08) !important;
 }
-.np-bar:not(.mobile) .np-bar-queue:before {
+.np-bar:not(.mobile) .np-bar-queue:before,
+.np-bar:not(.mobile) .np-bar-mode:before {
  display:none !important;
 }
-.np-bar:not(.mobile) .np-bar-queue .v-btn__content {
+.np-bar:not(.mobile) .np-bar-queue .v-btn__content,
+.np-bar:not(.mobile) .np-bar-mode .v-btn__content {
  margin:0 !important;
  width:100%;
  height:100%;
@@ -769,11 +827,14 @@ html.browse-home-pane-resizing * {
  align-items:center !important;
  justify-content:center !important;
 }
-.np-bar:not(.mobile) .np-bar-queue:hover {
+.np-bar:not(.mobile) .np-bar-queue:hover,
+.np-bar:not(.mobile) .np-bar-mode:hover {
  background:color-mix(in srgb, var(--primary-color, #1976d2) 22%, transparent) !important;
 }
 .np-bar:not(.mobile) .np-bar-queue .v-icon,
-.np-bar:not(.mobile) .np-bar-queue .svg-img {
+.np-bar:not(.mobile) .np-bar-queue .svg-img,
+.np-bar:not(.mobile) .np-bar-mode .v-icon,
+.np-bar:not(.mobile) .np-bar-mode .svg-img {
  width:22px !important;
  height:22px !important;
  font-size:22px !important;
@@ -840,14 +901,18 @@ html.browse-home-pane-resizing * {
  overflow-y:auto;
  z-index:10050;
  background:var(--popup-background-color, var(--background-color, #303030));
+ background-color:var(--popup-background-color, var(--background-color, #303030));
  color:var(--text-color, #eee);
  box-shadow:0 8px 28px rgba(0,0,0,0.45);
  border:1px solid color-mix(in srgb, var(--list-item-border-color, rgba(128,128,128,0.4)) 80%, transparent);
  border-radius:12px;
+ backdrop-filter:blur(20px) saturate(1.45);
+ -webkit-backdrop-filter:blur(20px) saturate(1.45);
  -webkit-overflow-scrolling:touch;
 }
 .theme--light .np-player-prefs-menu {
  background:var(--popup-background-color, #fff);
+ background-color:var(--popup-background-color, #fff);
  box-shadow:0 8px 28px rgba(0,0,0,0.18);
 }
 .np-player-prefs-scrim {
@@ -886,10 +951,41 @@ html.browse-home-pane-resizing * {
  margin:10px auto 4px;
  flex-shrink:0;
 }
+.np-player-prefs-drawer-title-row {
+ display:flex;
+ align-items:center;
+ gap:2px;
+ min-width:0;
+ padding:0 8px 6px 6px;
+}
 .np-player-prefs-drawer-title {
- padding:4px 18px 10px;
+ flex:1 1 auto;
+ min-width:0;
+ padding:4px 10px 4px 8px;
  font-weight:var(--bold-weight, 600);
  font-size:1.05em;
+}
+.np-player-prefs-back {
+ flex:0 0 auto;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ width:36px;
+ height:36px;
+ margin:0;
+ padding:0;
+ border:0;
+ border-radius:50%;
+ background:transparent;
+ color:inherit;
+ cursor:pointer;
+ appearance:none;
+ -webkit-appearance:none;
+}
+.np-player-prefs-back:active,
+.np-player-prefs-back:focus {
+ background:color-mix(in srgb, var(--primary-color, #1976d2) 14%, transparent);
+ outline:none;
 }
 .np-player-prefs-inner {
  display:flex;
@@ -929,13 +1025,17 @@ html.browse-home-pane-resizing * {
  outline:none;
 }
 .np-player-prefs-section-title {
- flex:0 0 auto;
- font-size:0.72rem;
- font-weight:var(--bold-weight, 700);
- letter-spacing:0.06em;
- text-transform:uppercase;
- color:var(--primary-color, #1976d2);
+ flex:1 1 auto;
+ min-width:0;
+ font-size:var(--std-font-size, 0.95rem);
+ font-weight:var(--std-weight, 400);
+ letter-spacing:0;
+ text-transform:none;
+ color:inherit;
  line-height:1.3;
+}
+.np-player-prefs-section-head.np-player-prefs-section-open {
+ background:color-mix(in srgb, var(--primary-color, #1976d2) 14%, transparent);
 }
 .np-player-prefs-section-current {
  flex:1 1 auto;
@@ -1002,6 +1102,57 @@ html.browse-home-pane-resizing * {
  font-size:18px !important;
  color:var(--primary-color, #1976d2) !important;
  opacity:1 !important;
+}
+.np-player-prefs-host {
+ position:static;
+}
+.np-player-prefs-divider {
+ height:1px;
+ margin:6px 12px;
+ background:color-mix(in srgb, var(--list-item-border-color, rgba(128,128,128,0.35)) 85%, transparent);
+}
+.np-player-prefs-action-icn {
+ flex:0 0 auto;
+ width:22px !important;
+ height:22px !important;
+ font-size:20px !important;
+ margin-right:2px;
+ color:inherit !important;
+ opacity:0.9;
+}
+.np-player-prefs-submenu {
+ box-sizing:border-box;
+ min-width:220px;
+ width:max-content;
+ max-width:min(320px, calc(100vw - 16px));
+ max-height:min(58vh, 520px);
+ overflow-x:hidden;
+ overflow-y:auto;
+ z-index:10051;
+ padding:4px 0 8px;
+ background:var(--popup-background-color, var(--background-color, #303030));
+ background-color:var(--popup-background-color, var(--background-color, #303030));
+ color:var(--text-color, #eee);
+ box-shadow:0 8px 28px rgba(0,0,0,0.45);
+ border:1px solid color-mix(in srgb, var(--list-item-border-color, rgba(128,128,128,0.4)) 80%, transparent);
+ border-radius:12px;
+ backdrop-filter:blur(20px) saturate(1.45);
+ -webkit-backdrop-filter:blur(20px) saturate(1.45);
+ -webkit-overflow-scrolling:touch;
+}
+.theme--light .np-player-prefs-submenu {
+ background:var(--popup-background-color, #fff);
+ background-color:var(--popup-background-color, #fff);
+ box-shadow:0 8px 28px rgba(0,0,0,0.18);
+}
+.np-player-prefs-sub-title {
+ padding:8px 14px 4px;
+ font-size:0.72rem;
+ font-weight:var(--bold-weight, 700);
+ letter-spacing:0.06em;
+ text-transform:uppercase;
+ color:var(--primary-color, #1976d2);
+ line-height:1.3;
 }
 /* Physical-style numbered pills (WiiM presets 1–6) */
 .np-player-prefs-pills {
@@ -1380,7 +1531,7 @@ html.browse-home-pane-resizing * {
 
 .np-bar:not(.mobile) .np-bar-time-row {
  display:flex;
- align-items:baseline;
+ align-items:center;
  justify-content:flex-end;
  flex-wrap:nowrap;
  gap:0;
@@ -1575,7 +1726,8 @@ html.browse-home-pane-resizing * {
  position:fixed;
  right:0px;
  top:calc(var(--main-toolbar-height) - 1px);
- z-index:5;
+ /* Above the glass section frost (z-index 6). The overlay used to sit under that full-width gradient. */
+ z-index:7;
  min-width:var(--queue-minwidth);
  max-width:100vw;
  width:var(--pq-unpinned-width);
@@ -1642,6 +1794,29 @@ html.browse-home-pane-resizing * {
 .unpinned-queue-visible div[role=listitem] .menu-btn:hover {
  position:absolute;
  right:calc(var(--pq-unpinned-width) + 8px)!important;
+}
+/* Column cells are narrower than the queue overlay. That offset pulls the ⋮
+   out of the cell, so Ma musique (and other non-track lists) lose the menu. */
+.unpinned-queue-visible #browse-list.browse-list-cols div[role=listitem] .menu-btn,
+.unpinned-queue-visible #browse-list.browse-list-cols div[role=listitem] .menu-btn:hover {
+ position:static;
+ right:auto !important;
+}
+.unpinned-queue-visible #browse-list.browse-list-cols .list-btns {
+ right:28px !important;
+}
+/* Column lists: the ⋮ stays in the cell. Touch still hides it with display:none. */
+body.msk-is-non-touch #browse-list.browse-list-cols .menu-btn,
+body.msk-is-non-touch #browse-list.browse-list-cols .menu-btn:hover,
+body.msk-is-non-touch.unpinned-queue-visible #browse-list.browse-list-cols div[role=listitem] .menu-btn,
+body.msk-is-non-touch.unpinned-queue-visible #browse-list.browse-list-cols div[role=listitem] .menu-btn:hover {
+ position:static !important;
+ right:auto !important;
+ left:auto !important;
+ top:auto !important;
+ opacity:0.9 !important;
+ pointer-events:auto !important;
+ visibility:visible !important;
 }
 
 @keyframes pqSlideIn {
@@ -1722,6 +1897,16 @@ html.browse-home-pane-resizing * {
  background-color:rgba(32, 32, 32, 0.42) !important;
  backdrop-filter:var(--toolbar-filter, blur(24px) saturate(160%));
  -webkit-backdrop-filter:var(--toolbar-filter, blur(24px) saturate(160%));
+}
+/* Queue column inset. The shared tile padding is 10px and the title sat at 7px. */
+#queue-view > .subtoolbar {
+ padding-left:16px !important;
+}
+#queue-view > .subtoolbar.list-details {
+ margin-left:0 !important;
+}
+#queue-view #queue-list .v-list__tile {
+ padding-left:16px !important;
 }
 .theme--light #queue-view .subtoolbar.list-details {
  background-color:rgba(250, 250, 250, 0.52) !important;
@@ -2444,6 +2629,69 @@ html.np-info-panel-resizing {
  z-index:10 !important;
 }
 
+/* Desktop section header: title sits with the back chevron.
+   Apple desktop used a negative margin that pulled the title into the icon.
+   Mobile already overrides that in mobile.css. */
+html.msk-is-apple #browse-view .browse-subheader #back-button,
+html.msk-is-apple #browse-view .browse-subheader .back-button,
+#browse-view .browse-subheader #back-button {
+ margin:0 16px 0 2px !important;
+ width:auto !important;
+ min-width:36px !important;
+}
+/* Apple glyph rule in style.css pulls the title in with a negative icon margin. */
+html.msk-is-apple #browse-view .browse-subheader #back-button .v-icon,
+html.msk-is-apple #browse-view .browse-subheader .back-button .v-icon,
+#browse-view .browse-subheader #back-button .v-icon {
+ margin-left:0 !important;
+ margin-right:0 !important;
+}
+#browse-view .browse-subheader #home-button {
+ margin-right:8px !important;
+}
+#browse-view .browse-subheader .browse-subheader-row {
+ align-items:center !important;
+}
+#browse-view .browse-subheader .browse-title {
+ display:flex !important;
+ flex-direction:column;
+ justify-content:center;
+ align-self:center !important;
+ min-width:0;
+ flex:1 1 auto !important;
+ height:auto !important;
+ margin:0 !important;
+}
+#browse-view .browse-subheader .browse-title .subtoolbar-title,
+#browse-view .browse-subheader .browse-title .subtoolbar-title-single,
+#browse-view .browse-subheader .browse-title div:first-of-type,
+#browse-view .browse-subheader .browse-title div:only-of-type {
+ margin-top:0 !important;
+ margin-bottom:0 !important;
+ height:auto !important;
+ line-height:1.25 !important;
+}
+/* Album / playlist artwork: grow the bar to the cover and keep the title centered. */
+#browse-view .browse-subheader.subtoolbar:has(.sub-cover) {
+ height:auto !important;
+ min-height:var(--sub-toolbar-height);
+ display:flex !important;
+ align-items:center !important;
+ overflow:visible !important;
+}
+#browse-view.detailed-sub .browse-subheader.subtoolbar:has(.sub-cover) {
+ min-height:calc(var(--sub-toolbar-height) * 2);
+}
+#browse-view .browse-subheader .sub-cover {
+ align-self:center;
+ flex:0 0 auto;
+ margin-top:0;
+ margin-bottom:0;
+}
+.v-menu__content.nd-player-ctx {
+ z-index:400 !important;
+}
+
 /* Expanded info above browse; now-playing bar stays on top */
 .lms-app.info-open-expanded .np-info {
  z-index:6 !important;
@@ -2656,6 +2904,13 @@ html.np-info-panel-resizing {
   top: calc(var(--100vh) - var(--desktop-npbar-height) + var(--np-bar-progress-clearance) + var(--np-bar-art-margin-v)) !important;
   height: var(--np-bar-art-size) !important;
 }
+/* Wordmark is ~5:1. Widen only while restarting; track alignment stays put. */
+#np-bar.np-bar-restarting:not(.mobile) .np-bar-image {
+  width:148px !important;
+}
+#np-bar.np-bar-restarting:not(.mobile) .np-bar-details {
+  left:320px !important;
+}
 .np-bar:not(.mobile) .np-bar-controls {
   top: calc(var(--100vh) - var(--desktop-npbar-height) + var(--np-bar-progress-clearance) + var(--np-bar-art-margin-v)) !important;
   height: var(--np-bar-art-size) !important;
@@ -2718,6 +2973,7 @@ html.np-info-panel-resizing {
   justify-items: stretch !important;
   align-self: center !important;
   overflow: hidden !important;
+  position: relative !important;
 }
 /* Resting (non-morph) title + subtitle each occupy their own row */
 .np-bar:not(.mobile) .np-bar-details .np-bar-text-morph-host > .np-bar-marquee {
@@ -2729,6 +2985,14 @@ html.np-info-panel-resizing {
   min-width: 0 !important;
   /* Same gap as resting title/sub stack (sub margin-top: 2px) */
   gap: 2px !important;
+}
+/* Morph reuses the marquee line boxes. On desktop keep them full-width so ellipsis stays. */
+.np-bar:not(.mobile) .np-bar-details .np-bar-text-layer > .np-bar-marquee,
+.np-bar:not(.mobile) .np-bar-details .np-bar-text-layer > .np-bar-marquee > .np-bar-marquee-track {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  line-height: inherit;
 }
 .np-bar:not(.mobile) .np-bar-details .np-bar-text-layer .v-list__tile__title {
   /* Match resting title (larger line-height than body) */
@@ -2773,13 +3037,144 @@ html.np-info-panel-resizing {
 .np-bar:not(.mobile) .np-bar-details .v-list__tile__sub-title {
   margin-top: 2px !important;
 }
+/* Desktop track change: the incoming pair covers the resting pair, same origin and line box. */
+#np-bar:not(.mobile) .np-bar-details .np-bar-slide-in {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  grid-area: 1 / 1;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  align-self: start;
+  gap: 2px;
+  pointer-events: none;
+  z-index: 2;
+}
+#np-bar:not(.mobile) .np-bar-details .np-bar-rest-stack .np-bar-marquee,
+#np-bar:not(.mobile) .np-bar-details .np-bar-slide-in .np-bar-marquee {
+  line-height: inherit;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  width: 100%;
+}
+#np-bar:not(.mobile) .np-bar-details .np-bar-rest-stack .v-list__tile__sub-title obj,
+#np-bar:not(.mobile) .np-bar-details .np-bar-slide-in .v-list__tile__sub-title obj {
+  display: inline;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  vertical-align: baseline;
+  margin: 0;
+  padding: 0;
+}
+#np-bar:not(.mobile).np-bar-sliding .np-bar-text-morph-host {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+#np-bar:not(.mobile).np-bar-sliding .np-bar-rest-stack,
+#np-bar:not(.mobile).np-bar-sliding .np-bar-slide-in,
+#np-bar:not(.mobile).np-bar-sliding .np-cover-current,
+#np-bar:not(.mobile).np-bar-sliding .np-cover-drag {
+  animation: none !important;
+  will-change: transform;
+}
+#np-bar:not(.mobile) .np-bar-image .np-bar-cover-stack {
+  overflow: hidden;
+}
+#np-bar:not(.mobile) .np-cover-drag {
+  z-index: 3;
+}
+#np-bar:not(.mobile).np-bar-sliding .np-cover-current,
+#np-bar:not(.mobile).np-bar-sliding .np-cover-drag {
+  transition: none;
+}
+/* Park the next cover until the finger writes an inline translate. No !important, so that translate wins. */
+#np-bar:not(.mobile).np-bar-sliding .np-cover-drag {
+  transform: translate3d(100%, 0, 0);
+}
+#np-bar:not(.mobile) .np-bar-text-out.np-bar-text-fwd {
+  animation-name: npBarTextOutFullFwd;
+}
+#np-bar:not(.mobile) .np-bar-text-in.np-bar-text-fwd {
+  animation-name: npBarTextInFullFwd;
+}
+#np-bar:not(.mobile) .np-bar-text-out.np-bar-text-rev {
+  animation-name: npBarTextOutFullRev;
+}
+#np-bar:not(.mobile) .np-bar-text-in.np-bar-text-rev {
+  animation-name: npBarTextInFullRev;
+}
+@keyframes npBarTextOutFullFwd {
+  from { transform: translate3d(0, 0, 0); opacity: 1; }
+  to { transform: translate3d(-100%, 0, 0); opacity: 1; }
+}
+@keyframes npBarTextInFullFwd {
+  from { transform: translate3d(100%, 0, 0); opacity: 1; }
+  to { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+@keyframes npBarTextOutFullRev {
+  from { transform: translate3d(0, 0, 0); opacity: 1; }
+  to { transform: translate3d(100%, 0, 0); opacity: 1; }
+}
+@keyframes npBarTextInFullRev {
+  from { transform: translate3d(-100%, 0, 0); opacity: 1; }
+  to { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+#np-bar:not(.mobile) .np-bar-image .np-cover-current.np-cover-fade-in {
+  opacity: 1;
+}
+#np-bar:not(.mobile) .np-bar-image .np-cover-stack.np-cover-fading.np-cover-fade-fwd .np-cover-prev {
+  animation: npBarCoverOutFull 0.32s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+#np-bar:not(.mobile) .np-bar-image .np-cover-stack.np-cover-fading.np-cover-fade-fwd .np-cover-current.np-cover-fade-in {
+  animation: npBarCoverInFull 0.32s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+#np-bar:not(.mobile) .np-bar-image .np-cover-stack.np-cover-fading.np-cover-fade-rev .np-cover-prev {
+  animation: npBarCoverOutFullRev 0.32s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+#np-bar:not(.mobile) .np-bar-image .np-cover-stack.np-cover-fading.np-cover-fade-rev .np-cover-current.np-cover-fade-in {
+  animation: npBarCoverInFullRev 0.32s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+@keyframes npBarCoverOutFull {
+  from { opacity: 1; transform: translate3d(0, 0, 0); filter: none; }
+  to { opacity: 1; transform: translate3d(-100%, 0, 0); filter: none; }
+}
+@keyframes npBarCoverInFull {
+  from { opacity: 1; transform: translate3d(100%, 0, 0); filter: none; }
+  to { opacity: 1; transform: translate3d(0, 0, 0); filter: none; }
+}
+@keyframes npBarCoverOutFullRev {
+  from { opacity: 1; transform: translate3d(0, 0, 0); filter: none; }
+  to { opacity: 1; transform: translate3d(100%, 0, 0); filter: none; }
+}
+@keyframes npBarCoverInFullRev {
+  from { opacity: 1; transform: translate3d(-100%, 0, 0); filter: none; }
+  to { opacity: 1; transform: translate3d(0, 0, 0); filter: none; }
+}
+#np-bar:not(.mobile) .np-bar-marquee-flat,
+#np-bar:not(.mobile) .np-bar-details .np-bar-text-morph-host:has(.np-bar-marquee-flat) {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+#np-bar:not(.mobile) .np-bar-marquee-flat .np-bar-marquee-track {
+  animation: none !important;
+  will-change: transform;
+}
 /* Tile flush to viewport right — no trailing margin eating the right edge */
 .np-bar:not(.mobile) .np-bar-details .v-list__tile,
 .np-bar:not(.mobile) .np-bar-details .v-list__tile--two-line {
   margin-right: 0 !important;
   padding-right: 0 !important;
 }
-/* Right cluster: meta (time/tech) + frosted queue — hard flush far right */
+/* Right cluster: meta (time/tech) + repeat/shuffle — hard flush far right */
 .np-bar:not(.mobile) .np-bar-details .v-list__tile__action.np-bar-action-cluster,
 .np-bar:not(.mobile) .np-bar-details .np-bar-action-cluster {
   margin-left: auto !important;
@@ -2808,26 +3203,41 @@ html.np-info-panel-resizing {
   font-size: inherit !important;
   min-height: 0 !important;
 }
-.np-bar:not(.mobile) .np-bar-action-cluster .np-bar-queue {
+.np-bar:not(.mobile) .np-bar-action-cluster .np-bar-modes {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 6px !important;
   margin: 0 0 0 10px !important;
+  flex: 0 0 auto !important;
+}
+.np-bar:not(.mobile) .np-bar-action-cluster .np-bar-mode {
+  margin: 0 !important;
   align-self: center !important;
+}
+.np-bar:not(.mobile) .np-bar-mode:not(.dimmed),
+.theme--light .np-bar:not(.mobile) .np-bar-mode:not(.dimmed),
+.np-bar:not(.mobile).np-bar-art.np-bar-dark .np-bar-mode:not(.dimmed),
+.np-bar:not(.mobile).np-bar-art.np-bar-light .np-bar-mode:not(.dimmed) {
+  background: color-mix(in srgb, var(--primary-color, #1976d2) 32%, transparent) !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.22), inset 0 0 0 1px color-mix(in srgb, var(--primary-color, #1976d2) 55%, transparent) !important;
 }
 .np-bar:not(.mobile) .np-bar-action-cluster .np-bar-player-prefs {
   margin: 0 0 0 8px !important;
   align-self: center !important;
 }
-/* Meta two-liner mirrors title/subtitle: same line-height & gap, optical center match */
+/* Meta two-liner mirrors title/subtitle. Quality badge sits to the right of that group. */
 .np-bar:not(.mobile) .np-bar-meta-group {
   display: flex !important;
-  flex-direction: column !important;
-  align-items: flex-end !important;
-  justify-content: center !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
   min-width: 0 !important;
-  max-width: min(42vw, 280px) !important;
+  max-width: min(56vw, 520px) !important;
   flex: 0 0 auto !important;
   text-align: right !important;
   line-height: 1.25 !important;
-  gap: 2px !important; /* match .v-list__tile__sub-title margin-top */
+  gap: 10px !important;
   align-self: center !important;
   margin: 0 !important;
   padding: 0 !important;
@@ -2836,10 +3246,18 @@ html.np-info-panel-resizing {
   font-weight: var(--std-weight) !important;
   height: auto !important;
 }
+.np-bar:not(.mobile) .np-bar-meta-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+}
 .np-bar:not(.mobile) .np-bar-meta-group .np-bar-time-row {
   display: flex !important;
   justify-content: flex-end !important;
-  align-items: baseline !important;
+  align-items: center !important;
   width: auto !important;
   max-width: 100% !important;
   margin: 0 !important;
@@ -2879,6 +3297,43 @@ html.np-info-panel-resizing {
 .np-bar:not(.mobile) .np-bar-meta-radio .np-bar-time-only {
   line-height: 1.25 !important;
   font-variant-numeric: tabular-nums;
+}
+.np-bar:not(.mobile) .np-bar-quality {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex: 0 0 auto;
+  gap: 1px;
+  margin: 0;
+  padding: 3px 8px 2px;
+  min-width: 52px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(0, 0, 0, 0.22);
+  box-sizing: border-box;
+  font-family: Futura, "Avenir Next", "Century Gothic", "Trebuchet MS", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.05;
+  text-align: center;
+  white-space: nowrap;
+  color: inherit;
+  -webkit-font-smoothing: antialiased;
+  cursor: default;
+}
+.np-bar:not(.mobile) .np-bar-quality-kind {
+  font-size: 11px;
+}
+.np-bar:not(.mobile) .np-bar-quality-rate {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.78;
+}
+.theme--light .np-bar:not(.mobile) .np-bar-quality {
+  border-color: rgba(0, 0, 0, 0.28);
+  background: rgba(255, 255, 255, 0.72);
 }
 
 /* === Volume expand — shared (mobile + narrow desktop layoutcss) === */
