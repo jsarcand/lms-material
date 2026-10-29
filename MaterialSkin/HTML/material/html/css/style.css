@@ -39,6 +39,7 @@
  --pq-album-track:35px;
  --image-grid-factor:0;
  --browse-zoom:1;
+ --browse-zoom-explore:1;
  --browse-text-zoom:1;
  --browse-banner-zoom:1;
  --dialog-list-max-width:1000px;
@@ -434,6 +435,15 @@ html, .mini-player {
  background-color:var(--bottom-toolbar-color) !important;
  overflow:hidden!important;
 }
+/* Library search: keep the mini player off the results. Do not move the bar. */
+html.msk-lib-search #np-bar,
+html.msk-lib-search #np-bar * {
+ visibility:hidden !important;
+ pointer-events:none !important;
+}
+html.msk-lib-search #np-bar {
+ opacity:0 !important;
+}
 
 .dialog-toolbar {
  padding-top:var(--top-pad);
@@ -544,7 +554,7 @@ html, .mini-player {
  width:100%;
 }
 
-/* back | logo (center flex) | info (far right) */
+/* back | logo (centered in the free space) | info cluster (menu + info, far right) */
 .nd-header > .v-list__tile,
 .nd-header > div[role="listitem"],
 .nd-header .nd-header-tile,
@@ -608,22 +618,35 @@ html, .mini-player {
  top:auto !important;
  transform:none !important;
  z-index:6 !important;
- flex:0 0 48px !important;
- min-width:48px !important;
- max-width:48px !important;
- width:48px !important;
- height:48px !important;
+ flex:0 0 auto !important;
+ min-width:0 !important;
+ max-width:none !important;
+ width:auto !important;
+ height:100% !important;
  margin:0 !important;
  margin-left:auto !important;
+ padding:0 !important;
  display:flex !important;
+ flex-direction:row !important;
  align-items:center !important;
- justify-content:center !important;
+ justify-content:flex-end !important;
+ gap:0 !important;
  pointer-events:auto !important;
  order:3 !important;
+}
+.nd-header .nd-header-info > .v-menu {
+ position:relative !important;
+ right:auto !important;
+ left:auto !important;
+ display:flex !important;
+ align-items:center !important;
+ flex:0 0 auto !important;
 }
 .nd-header .nd-header-info .v-btn,
 .nd-header .nd-header-back .v-btn {
  pointer-events:auto !important;
+ margin:0 !important;
+ flex:0 0 auto !important;
 }
 
 .nd-header .v-avatar {
@@ -641,8 +664,11 @@ html, .mini-player {
  flex-direction:column !important;
  /* Transparent body — frosted glass comes from ::before + section chrome */
  background-color:transparent !important;
- height:var(--100vh, 100vh) !important;
- max-height:var(--100vh, 100vh) !important;
+ /* Fill the screen. --100vh can be shorter than the webview and left a gap. */
+ top:0 !important;
+ bottom:0 !important;
+ height:auto !important;
+ max-height:none !important;
  overflow:hidden !important;
  /* Slide only — no opacity fade (that delayed header/footer paint) */
  transition:transform 0.28s cubic-bezier(0.32, 0.72, 0, 1) !important;
@@ -1185,6 +1211,13 @@ div.v-subheader {
  border-bottom: 1px solid var(--list-item-border-color);
 }
 
+/* WKWebView keeps a composited layer per recycled row (the scroller sets
+   will-change:transform). That layer is moved before its contents update,
+   so the previous row flashes at the new position on every list, not only home. */
+.vue-recycle-scroller.ready .vue-recycle-scroller__item-view {
+ will-change:auto;
+}
+
 .browse-html {
  border-bottom: none!important;
 }
@@ -1268,6 +1301,64 @@ div.v-subheader {
  width:100%;
  display:flex;
  justify-content:space-evenly;
+}
+/* Column count comes from layoutGrid (--browse-grid-cols). Fixed pixel
+   widths plus space-evenly overlapped once a row hit 3 columns. */
+.lms-image-grid .image-grid-full-width:not(.grid-scroll) {
+ display:grid;
+ grid-template-columns:repeat(var(--browse-grid-cols, 4), minmax(0, 1fr));
+ justify-content:stretch;
+ justify-items:center;
+ align-items:start;
+ width:100%;
+ box-sizing:border-box;
+}
+.lms-image-grid .image-grid-full-width:not(.grid-scroll) > .grid-header,
+.lms-image-grid .image-grid-full-width:not(.grid-scroll) > .browse-scroll-block-gap,
+.lms-image-grid .image-grid-full-width:not(.grid-scroll) > .browse-home-extra-ph {
+ grid-column:1 / -1;
+ width:100%;
+ max-width:100%;
+}
+.lms-image-grid .image-grid-full-width:not(.grid-scroll) > div {
+ min-width:0;
+ max-width:100%;
+}
+/* Home Explorer list: own columns, left aligned. Not the album-grid tracks. */
+.lms-image-grid .image-grid-full-width.explore-list-host:not(.grid-scroll) {
+ display:grid !important;
+ grid-template-columns:repeat(var(--explore-list-cols, 1), minmax(0, 1fr));
+ justify-content:start;
+ justify-items:stretch;
+ align-items:stretch;
+ width:100%;
+}
+.lms-image-grid .image-grid-full-width.explore-list-host > .explore-list-row {
+ width:100% !important;
+ max-width:100% !important;
+ min-width:0;
+ margin:0 !important;
+ justify-self:stretch !important;
+ text-align:left !important;
+}
+.lms-image-grid .explore-list-row .v-list__tile {
+ width:100%;
+ justify-content:flex-start;
+ text-align:left;
+}
+.lms-image-grid .explore-list-row .v-list__tile__content {
+ text-align:left;
+}
+.lms-image-grid .explore-list-row .v-list__tile__title,
+.lms-image-grid .explore-list-row .v-list__tile__sub-title {
+ text-align:left !important;
+}
+.lms-image-grid .image-grid-item,
+.lms-image-grid .text-grid-item,
+.lms-image-grid .image-grid-item-img,
+.lms-image-grid .image-grid-text {
+ max-width:100% !important;
+ box-sizing:border-box;
 }
 
 .image-grid-few {
@@ -1438,6 +1529,10 @@ div.v-subheader {
  color:var(--text-color);
 }
 
+.explore-zoom-scope {
+ --browse-zoom:var(--browse-zoom-explore, 1);
+ --browse-text-zoom:min(var(--browse-zoom-explore, 1), 1);
+}
 .image-grid-item {
  position:relative;
  padding:2px 0px 0px 0px;
@@ -1513,6 +1608,42 @@ div.v-subheader {
  padding:4px 8px 3px 8px;
  opacity:var(--sub-opacity);
 }
+.browse-preset-menu-head {
+ display:flex;
+ align-items:center;
+ gap:12px;
+ padding:10px 12px 8px 16px;
+ min-width:240px;
+}
+.browse-preset-menu-title {
+ flex:1 1 auto;
+ min-width:0;
+ font-weight:var(--bold-weight, 600);
+}
+.msk-ctx-preset-edit,
+.browse-preset-menu-head .browse-more,
+.np-player-prefs-modify {
+ margin-left:auto;
+ margin-right:0 !important;
+ flex:0 0 auto;
+ display:flex;
+ align-items:center;
+ padding:0;
+}
+.np-player-prefs-sub-head {
+ display:flex;
+ align-items:center;
+ gap:8px;
+}
+.np-player-prefs-sub-head > span {
+ flex:1 1 auto;
+ min-width:0;
+}
+.np-player-prefs-sub-head .browse-more > div,
+.np-player-prefs-drawer-title-row .browse-more > div {
+ text-transform:none;
+ letter-spacing:normal;
+}
 
 .msk-is-non-touch .browse-more > div:hover {
  border:1px solid var(--active-color);
@@ -1534,7 +1665,7 @@ div.v-subheader {
 .image-grid-btn, .image-grid-btn:hover {
  position:absolute;
  bottom:calc((9px - var(--grid-menu-offset)) * var(--browse-zoom, 1)) !important;
- right:calc(-10px * var(--browse-zoom, 1)) !important;
+ right:calc(2px * var(--browse-zoom, 1)) !important;
  z-index:2;
 }
 
@@ -1544,6 +1675,22 @@ div.v-subheader {
 
 .lms-list .grid-scroll-s .image-grid-btn, .msk-is-non-touch .lms-list .grid-scroll-s .image-grid-btn:hover {
  bottom:calc(var(--grid-menu-offset) * var(--browse-zoom, 1)) !important;
+}
+
+/* Radio strip: the menu disc sits on the artwork and stays hidden until hover. */
+.browse-list-ihe-strip .image-grid-item > .image-grid-btn.menu-btn {
+ top:calc(6px * var(--browse-zoom, 1)) !important;
+ right:calc(6px * var(--browse-zoom, 1)) !important;
+ bottom:auto !important;
+ opacity:0;
+ pointer-events:none;
+ transition:opacity 0.12s ease;
+}
+.browse-list-ihe-strip .image-grid-item:hover > .image-grid-btn.menu-btn,
+.browse-list-ihe-strip .image-grid-item > .image-grid-btn.menu-btn:hover,
+.browse-list-ihe-strip .image-grid-item:focus-within > .image-grid-btn.menu-btn {
+ opacity:1;
+ pointer-events:auto;
 }
 
 @media (max-width: 440px) {
@@ -1559,7 +1706,7 @@ div.v-subheader {
  height:calc(26px * var(--browse-zoom, 1))!important;
  width:calc(26px * var(--browse-zoom, 1))!important;
  bottom:calc((15px - var(--grid-menu-offset)) * var(--browse-zoom, 1)) !important;
- right:calc(-6px * var(--browse-zoom, 1)) !important;
+ right:calc(2px * var(--browse-zoom, 1)) !important;
 }
 
 .image-grid-with-sub .image-grid-btn, .image-grid-with-sub .image-grid-btn:hover {
@@ -2890,7 +3037,8 @@ div.v-subheader {
  to { opacity:1; transform:scale(1); filter:brightness(1); }
 }
 
-/* Idle covers must not keep swipe transforms after the fade class drops */
+/* Idle covers must not keep swipe transforms after the fade class drops.
+   No !important: a live swipe writes an inline transform that has to win. */
 .np-cover-stack:not(.np-cover-fading) .np-cover-current {
  transform:none;
  filter:none;
@@ -3549,6 +3697,27 @@ div.v-subheader {
  width:38px !important;
  height:38px !important;
 }
+/* Shuffle sits at the right edge. Its glyph was smaller than the slot, so taps
+   landed beside the icon. The hit box is the button, not the image. */
+.np-page .np-playback .np-shuffle-btn {
+ position:relative;
+ z-index:5;
+ width:44px !important;
+ height:44px !important;
+ min-width:44px !important;
+ margin:0 !important;
+}
+.np-page .np-playback .np-shuffle-btn::after {
+ content:"";
+ position:absolute;
+ inset:-8px -6px;
+}
+.np-page .np-playback .np-shuffle-btn .svg-img,
+.np-page .np-playback .np-shuffle-btn .v-icon,
+.np-page .np-playback .np-shuffle-btn .media-icon,
+.np-page .np-playback .np-shuffle-btn .btn-img {
+ pointer-events:none;
+}
 
 @media (max-width:360px) {
  .np-std-button {
@@ -4202,6 +4371,16 @@ html.msk-is-ios .msk-vol-glass-root {
 .list-swipe-row {
  will-change:transform;
 }
+/* Shortcut column: a click sets will-change:all inline (Sortable). That
+ * promotes a new layer and the row leaves the shared left edge. */
+#browse-view.browse-home-split .browse-home-pane-row,
+#browse-view.browse-home-split .browse-home-pane-item,
+#browse-view.browse-home-split .browse-home-pane-home {
+ will-change:auto !important;
+}
+#browse-view.browse-home-split .browse-home-pane-row.msk-sortable-chosen:not(.msk-sortable-ghost) {
+ opacity:1 !important;
+}
 .browse-home-pane-row,
 .browse-home-list-row {
  display:block;
@@ -4236,6 +4415,9 @@ html.msk-is-ios .msk-vol-glass-root {
  margin:10px 10px 6px 10px;
  padding:8px 12px;
  min-height:40px;
+ min-width:0;
+ max-width:100%;
+ overflow:hidden;
  box-sizing:border-box;
  /* Square box with rounded corners (not a full pill) */
  border-radius:10px;
@@ -4329,12 +4511,33 @@ html.msk-is-ios .msk-vol-glass-root {
 }
 #browse-view.browse-home-split .browse-home-pane-list {
  flex:1 1 auto;
- overflow:auto;
+ overflow-x:hidden;
+ overflow-y:auto;
  -webkit-overflow-scrolling:touch;
  min-height:0;
+ min-width:0;
+ max-width:100%;
+ width:100%;
  padding-bottom:var(--scroll-block-gap);
  scroll-padding-bottom:var(--scroll-block-gap);
  order:1; /* list below Search */
+}
+/* Labels stay in the row. They must not set the rail's min-content width. */
+#browse-view.browse-home-split .browse-home-pane-row,
+#browse-view.browse-home-split .browse-home-pane-item,
+#browse-view.browse-home-split .browse-home-pane-home,
+#browse-view.browse-home-split .browse-home-pane .v-list__tile,
+#browse-view.browse-home-split .browse-home-pane .v-list__tile__content,
+#browse-view.browse-home-split .browse-home-pane .v-list__tile__title,
+#browse-view.browse-home-split .browse-home-pane .v-list__tile__sub-title {
+ min-width:0;
+ max-width:100%;
+}
+#browse-view.browse-home-split .browse-home-pane-row,
+#browse-view.browse-home-split .browse-home-pane .v-list__tile__content,
+#browse-view.browse-home-split .browse-home-pane .v-list__tile__title,
+#browse-view.browse-home-split .browse-home-pane .v-list__tile__sub-title {
+ overflow:hidden;
 }
 
 /* Pinned/added entries: X on hover (desktop) or after left-swipe (touch).
@@ -4399,10 +4602,23 @@ html.msk-is-ios .msk-vol-glass-root {
  margin-left:-2px !important;
 }
 
-/* Icon-only home pane (narrow resize) */
+/* Icon rail: labels stay in the row, but take no box so the first letter cannot show. */
 #browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-search-label,
 #browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-item .v-list__tile__content,
 #browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-home .v-list__tile__content,
+#browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-item .v-list__tile__title,
+#browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-home .v-list__tile__title,
+#browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-item .v-list__tile__sub-title,
+#browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-home .v-list__tile__sub-title {
+ flex:0 0 0px !important;
+ width:0 !important;
+ min-width:0 !important;
+ max-width:0 !important;
+ margin:0 !important;
+ padding:0 !important;
+ overflow:hidden !important;
+ visibility:hidden !important;
+}
 #browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-remove {
  display:none !important;
 }
@@ -4420,10 +4636,13 @@ html.msk-is-ios .msk-vol-glass-root {
 #browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-search-icon {
  margin:0;
 }
+#browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-item.v-list__tile,
+#browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-home.v-list__tile,
 #browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-item .v-list__tile,
 #browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-home .v-list__tile {
- justify-content:center;
- padding:0 4px !important;
+ justify-content:center !important;
+ padding:0 !important;
+ overflow:hidden !important;
 }
 #browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-item .v-list__tile__avatar,
 #browse-view.browse-home-split.browse-home-pane-icons-only .browse-home-pane-home .v-list__tile__avatar {
@@ -4529,19 +4748,31 @@ html.jl-side-right #browse-view.browse-home-split .browse-main-pane > .lms-list.
  grid-area:1 / 1;
  min-width:0;
  width:100%;
+ align-self:start;
 }
 .np-bar-rest-stack {
  display:flex;
  flex-direction:column;
- justify-content:center;
+ justify-content:flex-start;
  gap:2px;
  align-items:stretch;
 }
 .np-bar-morph-stack {
  display:grid;
  grid-template-columns:minmax(0, 1fr);
- align-items:center;
+ align-items:start;
  justify-items:stretch;
+}
+.np-bar-morph-stack > .np-bar-text-out,
+.np-bar-morph-stack > .np-bar-text-in {
+ grid-area:1 / 1;
+ width:100%;
+ min-width:0;
+ max-width:100%;
+ box-sizing:border-box;
+ margin:0;
+ padding:0;
+ text-align:left;
 }
 
 /* Hidden measurement clone */
@@ -4749,6 +4980,19 @@ html.jl-side-right #browse-view.browse-home-split .browse-main-pane > .lms-list.
  top:8px!important;
  left:32px !important;
 }
+#browse-list .browse-current-indicator.nd-vu-meter,
+#browse-list .browse-current-indicator-playlist.nd-vu-meter {
+ display:inline-flex !important;
+ width:14px !important;
+ height:16px !important;
+ top:50% !important;
+ margin-top:-8px;
+ align-items:center;
+ justify-content:center;
+}
+#browse-list .nd-vu-meter .nd-vu-bar {
+ height:12px;
+}
 
 .lms-list3 .pq-current-indicator {
  top:8px !important;
@@ -4861,6 +5105,24 @@ html.jl-side-right #browse-view.browse-home-split .browse-main-pane > .lms-list.
  font-weight:var(--std-weight) !important;
  opacity:var(--sub-opacity);
  margin-bottom:0px;
+}
+.settings-slider-tile {
+ display:block !important;
+ height:auto !important;
+ min-height:0 !important;
+ padding:8px 16px 4px !important;
+}
+.settings-slider-tile .v-list__tile__content {
+ height:auto !important;
+}
+.uisettings-shortcut-size {
+ margin:4px 4px 0 0;
+}
+.uisettings-shortcut-size-ticks {
+ display:flex;
+ justify-content:space-between;
+ padding:0 12px 4px 4px;
+ opacity:0.65;
 }
 
 /* UI settings — Defaults buttons: wrap on narrow widths (no horizontal scrollbar) */
@@ -5840,14 +6102,19 @@ button.manage-plugins-action-btn .v-icon {
  align-items:center;
  gap:0;
  padding:8px 12px 8px 12px !important;
+ height:auto !important;
  min-height:56px;
- overflow:hidden;
+ overflow:visible;
 }
 .manage-plugins-row-desc .v-list__tile {
  align-items:flex-start;
  min-height:72px;
  padding-top:10px !important;
  padding-bottom:10px !important;
+}
+.manage-plugins-row .v-list__tile__content {
+ height:auto !important;
+ overflow:visible;
 }
 .manage-plugins-avatar {
  flex:0 0 40px !important;
@@ -5872,14 +6139,14 @@ button.manage-plugins-action-btn .v-icon {
  max-height:36px !important;
  object-fit:contain;
  border-radius:6px;
- background:transparent;
+ /* Light plate so transparent glyphs stay readable. Do not invert: color icons keep their colors. */
+ background:rgba(255, 255, 255, 0.92);
+ padding:3px;
+ box-sizing:border-box;
  display:block;
 }
-.theme--dark .manage-plugins-icon.manage-plugins-icon-mono {
- filter:invert(1) brightness(1.05);
-}
-.theme--dark .manage-plugins-icon.manage-plugins-icon-mono[src$=".svg"] {
- filter:invert(1) brightness(1.12);
+.theme--light .manage-plugins-icon {
+ background:rgba(0, 0, 0, 0.06);
 }
 .manage-plugins-row .v-list__tile__avatar {
  margin-right:0 !important;
@@ -5902,13 +6169,14 @@ button.manage-plugins-action-btn .v-icon {
 .manage-plugins-desc {
  display:-webkit-box !important;
  -webkit-box-orient:vertical;
- -webkit-line-clamp:2;
- line-clamp:2;
+ -webkit-line-clamp:4;
+ line-clamp:4;
  overflow:hidden !important;
  text-overflow:ellipsis;
  white-space:normal !important;
+ height:auto !important;
+ max-height:none !important;
  line-height:1.35 !important;
- max-height:calc(1.35em * 2);
  margin-top:2px !important;
  opacity:var(--sub-opacity);
  word-break:break-word;
@@ -6008,12 +6276,39 @@ button.manage-plugins-action-btn .v-icon {
  align-self:flex-start;
  margin-top:4px !important;
 }
+.manage-plugins-settings-block {
+ margin:4px 8px 12px;
+}
+.manage-plugins-repo-row .v-list__tile {
+ display:flex !important;
+ align-items:center;
+ height:auto !important;
+ gap:4px;
+}
 .manage-plugins-repo-row {
  padding-top:0 !important;
  padding-bottom:0 !important;
 }
 .manage-plugins-repo-field {
- width:100%;
+ flex:1 1 auto;
+ width:auto;
+ min-width:0;
+}
+.manage-plugins-repo-remove {
+ flex:0 0 auto;
+ display:inline-flex;
+ align-items:center;
+ justify-content:center;
+ width:32px;
+ height:32px;
+ margin:0;
+ padding:0;
+ border:0;
+ border-radius:50%;
+ background:transparent;
+ color:inherit;
+ cursor:pointer;
+ opacity:0.7;
 }
 .manage-plugins-repos-header .v-list__tile__content {
  padding-bottom:4px;
@@ -6059,6 +6354,65 @@ body.msk-sortable-active .msk-sortable-drag,
 body.msk-sortable-active .sortable-fallback {
  z-index:10000 !important;
  pointer-events:none !important;
+}
+/* Fallback is moved to body, outside the icon-rail rules. Keep its label,
+   locked to the rail width so nowrap text cannot slide across the page. */
+body > .sortable-fallback.browse-home-pane-row {
+ overflow:hidden !important;
+ width:var(--browse-home-pane-w, 180px) !important;
+ max-width:var(--browse-home-pane-w, 180px) !important;
+ min-width:0 !important;
+ box-sizing:border-box;
+}
+body > .sortable-fallback.browse-home-pane-row .v-list__tile,
+body > .sortable-fallback.browse-home-pane-row .v-list__tile__content,
+body > .sortable-fallback.browse-home-pane-row .v-list__tile__title,
+body > .sortable-fallback.browse-home-pane-row .v-list__tile__sub-title {
+ min-width:0 !important;
+ max-width:100% !important;
+ overflow:hidden !important;
+}
+html.browse-home-pane-icons-only body > .sortable-fallback.browse-home-pane-row .v-list__tile__content,
+html.browse-home-pane-icons-only body > .sortable-fallback.browse-home-pane-row .v-list__tile__title,
+html.browse-home-pane-icons-only body > .sortable-fallback.browse-home-pane-row .v-list__tile__sub-title {
+ flex:0 0 0px !important;
+ width:0 !important;
+ max-width:0 !important;
+ padding:0 !important;
+ visibility:hidden !important;
+}
+body.browse-home-pane-cloud-armed > .sortable-fallback {
+ opacity:0 !important;
+}
+.browse-home-pane-cloud {
+ position:fixed;
+ z-index:10060;
+ width:48px;
+ height:48px;
+ margin:0;
+ padding:0;
+ border-radius:14px;
+ pointer-events:none;
+ display:none;
+ align-items:center;
+ justify-content:center;
+ transform:translate3d(-50%, -50%, 0);
+ -webkit-transform:translate3d(-50%, -50%, 0);
+ background:color-mix(in srgb, var(--background-color, #1c1c1e) 90%, transparent);
+ box-shadow:0 10px 28px rgba(0,0,0,0.35);
+}
+.browse-home-pane-cloud .v-icon {
+ font-size:26px !important;
+ width:26px !important;
+ height:26px !important;
+ color:var(--text-color, #fff) !important;
+ opacity:1 !important;
+}
+html.theme-glass .browse-home-pane-cloud {
+ background:rgba(28, 28, 30, 0.82);
+ backdrop-filter:blur(16px) saturate(1.4);
+ -webkit-backdrop-filter:blur(16px) saturate(1.4);
+ box-shadow:0 12px 32px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.16);
 }
 
 .v-dialog .v-list__tile__sub-title {
@@ -7424,12 +7778,43 @@ html.msk-is-ios.msk-ios-field #browse-list,
 html.msk-is-ios.msk-ios-field #queue-list {
  -webkit-overflow-scrolling:auto !important;
 }
+/* The rule above also clears the parked pane's translate3d. Queue rows then
+   paint through the focused filter. Mobile CSS puts that pane back off-screen. */
 .lms-list-item.browse-inline-search,
 .lms-list-item.browse-inline-search *,
 .v-dialog .lms-search,
 .v-dialog .v-text-field,
 .v-dialog input,
 .v-dialog textarea {
+ -webkit-touch-callout:default !important;
+ -webkit-user-select:text !important;
+ user-select:text !important;
+}
+/* iOS long-press on a row must not open the system Copy menu. */
+html.msk-is-ios .lms-list-item,
+html.msk-is-ios .lms-list-item *:not(input):not(textarea):not(select),
+html.msk-is-ios .image-grid-item,
+html.msk-is-ios .image-grid-item *:not(input):not(textarea):not(select),
+html.msk-is-ios .list-swipe-row,
+html.msk-is-ios .list-swipe-row *:not(input):not(textarea):not(select),
+html.msk-is-ios .list-swipe-tile,
+html.msk-is-ios .list-swipe-tile *:not(input):not(textarea):not(select),
+html.msk-is-ios #browse-list .v-list__tile__title,
+html.msk-is-ios #browse-list .v-list__tile__sub-title,
+html.msk-is-ios #queue-list .v-list__tile__title,
+html.msk-is-ios #queue-list .v-list__tile__sub-title {
+ -webkit-touch-callout:none !important;
+ -webkit-user-select:none !important;
+ user-select:none !important;
+}
+html.msk-is-ios .browse-inline-search,
+html.msk-is-ios .browse-inline-search input,
+html.msk-is-ios .browse-text,
+html.msk-is-ios .browse-text *,
+html.msk-is-ios .browse-html,
+html.msk-is-ios .browse-html *,
+html.msk-is-ios .lms-list-item input,
+html.msk-is-ios .lms-list-item textarea {
  -webkit-touch-callout:default !important;
  -webkit-user-select:text !important;
  user-select:text !important;
@@ -7823,7 +8208,10 @@ html.msk-is-ios.msk-ios-field #queue-list {
  margin-left:12px;
  z-index:5;
  opacity:var(--sub-opacity);
- background:rgba(32, 32, 32, 0.75);
+ background:color-mix(in srgb, #141414 46%, transparent);
+ backdrop-filter:blur(14px) saturate(1.45);
+ -webkit-backdrop-filter:blur(14px) saturate(1.45);
+ box-shadow:0 1px 4px rgba(0,0,0,0.28), inset 0 0 0 1px rgba(255,255,255,0.16);
  padding-bottom: 3px;
  width: 32px;
  height: 32px;
@@ -8178,6 +8566,41 @@ body.mobile .queue-action {
  margin-right:8px;
 }
 
+/* Hover play / add / shuffle chips. Glyphs are bare; the disc is frosted glass. */
+.grid-btns .grid-btn,
+.list-btns .grid-btn,
+.image-grid-item > .image-grid-btn.menu-btn,
+.ps-btn {
+ background:color-mix(in srgb, #141414 46%, transparent) !important;
+ backdrop-filter:blur(14px) saturate(1.45);
+ -webkit-backdrop-filter:blur(14px) saturate(1.45);
+ box-shadow:0 1px 4px rgba(0,0,0,0.28), inset 0 0 0 1px rgba(255,255,255,0.16);
+}
+.theme--light .list-btns .grid-btn {
+ background:color-mix(in srgb, #f7f7f7 64%, transparent) !important;
+ box-shadow:0 1px 3px rgba(0,0,0,0.14), inset 0 0 0 1px rgba(0,0,0,0.08);
+}
+.image-grid-item > .image-grid-btn.menu-btn {
+ color:#fff !important;
+}
+.grid-btns .other-btn,
+.grid-btns .main-btn,
+.list-btns .other-btn,
+.list-btns .main-btn {
+ opacity:0.94;
+}
+@supports not (color: color-mix(in srgb, red, blue)) {
+ .grid-btns .grid-btn,
+ .list-btns .grid-btn,
+ .image-grid-item > .image-grid-btn.menu-btn,
+ .ps-btn {
+  background:rgba(20, 20, 20, 0.5) !important;
+ }
+ .theme--light .list-btns .grid-btn {
+  background:rgba(247, 247, 247, 0.72) !important;
+ }
+}
+
 /*@media (hover: hover) and (pointer: fine) {*/
 .msk-is-non-touch .other-btn:hover, .msk-is-non-touch .main-btn:hover,
 .msk-is-non-touch .np-emblem:hover {
@@ -8446,7 +8869,9 @@ body.mobile .queue-action {
  margin:0 !important;
  box-shadow:none;
 }
-.list-swipe-row.list-swipe-enabled {
+.list-swipe-row.list-swipe-enabled,
+.list-swipe-row.list-swipe-enabled .list-swipe-tile,
+.list-swipe-row.list-swipe-enabled .v-list__tile {
  touch-action:pan-y;
 }
 .list-swipe-bg {
@@ -8508,6 +8933,12 @@ body.mobile .queue-action {
  filter:brightness(1.08);
  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.18);
 }
+/* Latched browse action: only the revealed side accepts the tap. */
+.list-swipe-row.list-swipe-open.list-swipe-right .list-swipe-bg-add,
+.list-swipe-row.list-swipe-open.list-swipe-left .list-swipe-bg-next {
+ pointer-events:auto;
+ cursor:pointer;
+}
 .list-swipe-tile {
  position:relative !important;
  z-index:1;
@@ -8546,6 +8977,10 @@ body.mobile .queue-action {
 }
 body.msk-is-non-touch .list-swipe-bg {
  display:none;
+}
+body.msk-is-non-touch .list-swipe-row.list-swipe-open.list-swipe-right .list-swipe-bg-add,
+body.msk-is-non-touch .list-swipe-row.list-swipe-open.list-swipe-left .list-swipe-bg-next {
+ display:flex;
 }
 body.msk-is-non-touch .list-swipe-row.list-swipe-enabled {
  touch-action:auto;
@@ -9341,8 +9776,8 @@ body.msk-is-non-touch .list-swipe-row.list-swipe-enabled {
  top:calc(var(--top-pad) + 8px);
 }
 
-/* Device drawer: logo in normal flex flow (centered between back + info).
- * True pill: both ends fully round (border-radius 999px), equal H/V padding. */
+/* Device drawer: logo in the flex gap between the back chevron and the
+ * right-hand buttons (⋮ menu + info). Pill: both ends fully round. */
 .v-navigation-drawer.nd-glass .lyrion-logo,
 .nd-header .lyrion-logo {
  position:relative !important;
@@ -9536,6 +9971,49 @@ body.msk-is-non-touch .list-swipe-row.list-swipe-enabled {
  border-radius: 0px;
 }
 
+/* Restart: wordmark sits in the art slot. Not .lyrion-logo — that rule is position:fixed. */
+#np-bar .np-bar-restart-logo {
+ position:absolute;
+ inset:0;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+}
+#np-bar .np-bar-restart-logo img {
+ position:relative;
+ display:block;
+ width:100%;
+ height:100%;
+ max-width:none;
+ max-height:none;
+ min-width:0;
+ margin:0;
+ padding:2px 4px;
+ border:0;
+ box-sizing:border-box;
+ object-fit:contain;
+ object-position:center;
+ opacity:0.92;
+}
+#np-bar.np-bar-restarting .np-bar-slider {
+ pointer-events:none;
+}
+#np-bar .np-bar-restart-details {
+ display:flex !important;
+ align-items:center !important;
+ justify-content:flex-start !important;
+}
+#np-bar.np-bar-restarting:not(.mobile) .np-bar-restart-details {
+ flex-direction:column !important;
+ align-items:stretch !important;
+ justify-content:center !important;
+}
+#np-bar .np-bar-restart-label {
+ white-space:nowrap;
+ overflow:hidden;
+ text-overflow:ellipsis;
+}
+
 .np-bar-text-morph-host {
  position:relative;
  overflow:hidden !important;
@@ -9543,12 +10021,70 @@ body.msk-is-non-touch .list-swipe-row.list-swipe-enabled {
  /* Stack out/in layers in one cell so current + next track share origin */
  display:grid;
  grid-template-columns:minmax(0, 1fr);
- align-items:center;
+ align-items:start;
+ align-content:start;
  justify-items:stretch;
 }
 
 .np-bar-details .np-bar-text-morph-host {
  min-height:2.4em;
+}
+
+/* Diffusion notice. Sits in the desktop meta cluster, or on the mobile subtitle line. */
+#np-bar .np-diffuse {
+ display:inline-flex;
+ align-items:center;
+ gap:6px;
+ max-width:200px;
+ height:26px;
+ margin:0 8px 0 0;
+ padding:0 8px 0 10px;
+ border-radius:13px;
+ border:1px solid rgba(255, 255, 255, 0.28);
+ background:rgba(0, 0, 0, 0.28);
+ color:inherit;
+ font:inherit;
+ font-size:12px;
+ line-height:1;
+ cursor:pointer;
+ flex:0 1 auto;
+ min-width:0;
+ box-sizing:border-box;
+}
+.theme--light #np-bar .np-diffuse {
+ border-color:rgba(0, 0, 0, 0.22);
+ background:rgba(255, 255, 255, 0.82);
+}
+#np-bar .np-diffuse-text {
+ overflow:hidden;
+ text-overflow:ellipsis;
+ white-space:nowrap;
+ min-width:0;
+}
+#np-bar .np-diffuse-reset {
+ flex:0 0 auto;
+ font-weight:600;
+}
+#np-bar.mobile .np-bar-text-morph-host > .np-diffuse {
+ position:absolute;
+ right:0;
+ bottom:0;
+ z-index:3;
+ max-width:46%;
+ margin:0;
+}
+#np-bar.mobile .np-bar-has-diffuse > .np-bar-rest-stack > .np-bar-marquee:last-child {
+ padding-right:48%;
+ box-sizing:border-box;
+}
+#np-bar .np-diffuse-fallback {
+ position:absolute;
+ left:50%;
+ top:50%;
+ transform:translate(-50%, -50%);
+ z-index:6;
+ max-width:min(280px, 72vw);
+ margin:0;
 }
 
 .np-bar-text-layer {
@@ -9586,15 +10122,20 @@ body.msk-is-non-touch .list-swipe-row.list-swipe-enabled {
  margin-top:0 !important;
 }
 
-.np-bar-text-out {
+.np-bar-text-out,
+.np-bar-text-in {
+ grid-area:1 / 1;
  position:relative;
- left:auto;
- right:auto;
+ left:0;
+ right:0;
  top:auto;
+ width:100%;
+ min-width:0;
  pointer-events:none;
 }
 
 .np-bar-text-line {
+ display:block !important;
  width:100%;
  white-space:nowrap;
  overflow:hidden;
@@ -10155,8 +10696,10 @@ body.mobile .cstats-home-card-title {
  justify-content:center;
  border-radius:6px;
  margin:0 0 0 auto;
- background:color-mix(in srgb, var(--background-color, #121212) 72%, transparent) !important;
- box-shadow:none !important;
+ background:color-mix(in srgb, var(--background-color, #121212) 42%, transparent) !important;
+ backdrop-filter:blur(14px) saturate(1.45);
+ -webkit-backdrop-filter:blur(14px) saturate(1.45);
+ box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14) !important;
  padding:0;
  opacity:0;
  pointer-events:none;
@@ -10264,6 +10807,17 @@ body.mobile .cstats-home-card-title {
 .cstats-home-card.cstats-home-card-entering .cstats-home-card-inner {
  opacity: 0;
 }
+/* Device switch: shell (shape, wash) stays; only the inner row crossfades. */
+.cstats-home-card.cstats-home-inner-out,
+.cstats-home-card.cstats-home-inner-in {
+ opacity:1;
+ transform:none;
+ filter:none;
+}
+.cstats-home-card.cstats-home-inner-out .cstats-home-card-inner,
+.cstats-home-card.cstats-home-inner-in .cstats-home-card-inner {
+ opacity:0;
+}
 
 
 /* === Browse contextual menus — fusion dropdown style === */
@@ -10276,8 +10830,9 @@ body.mobile .cstats-home-card-title {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
-/* Desktop popovers (no msk-context-sheet): height follows content, not mobile sheet vh */
-.v-menu__content.menuable__content__active:not(.msk-context-sheet):not(.v-autocomplete__content) {
+/* Desktop popovers (no msk-context-sheet): height follows content, not mobile sheet vh.
+   Settings dropdowns keep Vuetify's own left/top/width. */
+.v-menu__content.menuable__content__active:not(.msk-context-sheet):not(.msk-settings-menu):not(.v-autocomplete__content) {
   height: auto !important;
   max-height: min(70vh, calc(var(--100vh, 100vh) - 32px)) !important;
   display: block !important;
@@ -10391,10 +10946,13 @@ body.mobile .cstats-home-card-title {
 .tb-nav-morph.is-chevron-up {
  transform:rotate(180deg);
 }
+.tb-nav-morph.is-chevron-active {
+ opacity:1;
+}
 
 .lms-toolbar.tb-vol-mode .tb-player-title {
  pointer-events: none !important;
- transition: opacity 0.32s ease !important;
+ transition: none !important;
 }
 .lms-toolbar.tb-vol-mode-open .tb-player-title,
 .lms-toolbar.tb-vol-mode .tb-player-title.tb-player-title-out {
@@ -10477,7 +11035,6 @@ body.mobile .cstats-home-card-title {
  box-sizing: border-box;
 }
 
-/* Slider: tight to icon; more gap before % */
 .tb-vol-expand-slider {
  flex:1 1 auto !important;
  min-width:40px !important;
@@ -10486,16 +11043,11 @@ body.mobile .cstats-home-card-title {
  padding:0 !important;
  overflow:visible !important;
  opacity:1;
- transform-origin: left center;
- transition:
-  max-width 0.48s cubic-bezier(0.22,1,0.36,1),
-  min-width 0.48s cubic-bezier(0.22,1,0.36,1),
-  flex 0.48s cubic-bezier(0.22,1,0.36,1),
-  margin 0.4s ease,
-  opacity 0.28s ease 0.1s;
-}
-.tb-vol-expand.tb-vol-expand-closing .tb-vol-expand-slider {
- transform-origin: right center !important;
+ -webkit-transform:translate3d(0,0,0);
+ transform:translate3d(0,0,0);
+ will-change:transform;
+ -webkit-backface-visibility:hidden;
+ backface-visibility:hidden;
 }
 .tb-vol-expand-slider.v-input,
 .tb-vol-expand-slider .v-input__control {
@@ -10566,43 +11118,10 @@ body.mobile .cstats-home-card-title {
 .tb-vol-expand .v-slider__track-container,
 .tb-vol-expand .v-slider__track,
 .tb-vol-expand .v-slider__track-fill {
- transition: opacity 0.3s ease 0.08s;
+ transition: none;
 }
-
-/* Pre-open: bar collapsed at left of strip; icon will fly in from home */
-.tb-vol-expand:not(.tb-vol-expand-open):not(.tb-vol-expand-closing) .tb-vol-expand-slider {
- max-width:0 !important;
- min-width:0 !important;
- flex:0 0 0 !important;
- margin:0 !important;
- opacity:0;
-}
-.tb-vol-expand:not(.tb-vol-expand-open):not(.tb-vol-expand-closing) .v-slider__thumb {
- transform: scale(0) !important;
- opacity:0 !important;
-}
-.tb-vol-expand:not(.tb-vol-expand-open):not(.tb-vol-expand-closing) .tb-vol-expand-pct {
- opacity:0;
-}
-
-/* Closing: collapse bar layout (no flex-end), knob→0, % fades but keeps width until unmount */
 .tb-vol-expand.tb-vol-expand-closing .tb-vol-expand-slider {
- max-width:0 !important;
- min-width:0 !important;
- flex:0 0 0 !important;
- margin:0 !important;
- opacity:0 !important;
- transform: none !important;
  pointer-events:none !important;
-}
-.tb-vol-expand.tb-vol-expand-closing .v-slider__thumb {
- transform: scale(0) !important;
- opacity:0 !important;
-}
-.tb-vol-expand.tb-vol-expand-closing .v-slider__track-container,
-.tb-vol-expand.tb-vol-expand-closing .v-slider__track,
-.tb-vol-expand.tb-vol-expand-closing .v-slider__track-fill {
- opacity:0 !important;
 }
 .tb-vol-expand.tb-vol-expand-closing .tb-vol-expand-icon {
  opacity:1 !important;
@@ -11121,6 +11640,11 @@ html.msk-is-apple .browse-title div:only-of-type {
 .presets-editor-sort-row.msk-sortable-ghost {
  opacity:0.28;
 }
+.presets-editor-row--remote .presets-editor-pill {
+ background:transparent;
+ color:inherit;
+ box-shadow:inset 0 0 0 1.5px currentColor;
+}
 .presets-editor-pill {
  flex:0 0 36px;
  width:36px;
@@ -11135,6 +11659,11 @@ html.msk-is-apple .browse-title div:only-of-type {
  background:var(--primary-color, #1976d2);
  color:#fff;
  box-shadow:0 2px 6px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.18);
+}
+/* Home preset menu is portaled to body, outside #browse-view. */
+.v-menu__content .presets-editor-pill.browse-home-preset-on,
+.presets-editor-pill.browse-home-preset-on {
+ box-shadow:0 0 0 2px #fff, 0 2px 8px rgba(0,0,0,0.35);
 }
 .presets-editor-avatar {
  margin-right:4px !important;
@@ -11662,8 +12191,8 @@ html.presets-picker-dark .v-menu__content.presets-editor-menu .v-list__tile__tit
  flex:1 1 auto;
  width:auto;
  min-width:0;
- height:100%;
- padding:0;
+ height:auto;
+ padding:6px 0;
  position:relative;
  z-index:2;
  box-sizing:border-box;
@@ -11671,7 +12200,7 @@ html.presets-picker-dark .v-menu__content.presets-editor-menu .v-list__tile__tit
 .browse-catalog-hero::before {
  content:"";
  position:absolute;
- inset:-6px -10px 0 -10px;
+ inset:-6px 0 0 0;
  z-index:-1;
  pointer-events:none;
  background:
@@ -11753,36 +12282,51 @@ html.presets-picker-dark .v-menu__content.presets-editor-menu .v-list__tile__tit
 .browse-catalog-actions {
  display:flex;
  align-items:center;
- gap:6px;
- margin-top:6px;
+ gap:2px;
+ margin-top:4px;
  min-width:0;
+ flex-wrap:nowrap;
 }
-.browse-catalog-play,
-.browse-catalog-shuffle {
- text-transform:none !important;
- font-weight:650 !important;
- letter-spacing:-0.01em !important;
- height:34px !important;
- min-width:0 !important;
- padding:0 14px !important;
- border-radius:17px !important;
+.browse-catalog-play.v-btn,
+.browse-catalog-shuffle.v-btn {
+ width:40px !important;
+ height:40px !important;
+ min-width:40px !important;
+ max-width:40px !important;
+ margin:0 !important;
+ padding:0 !important;
+ flex:0 0 40px;
+ box-shadow:none !important;
 }
-.browse-catalog-play {
+.browse-catalog-play.v-btn {
+ border-radius:50% !important;
  background:color-mix(in srgb, var(--browse-catalog-p1, var(--primary-color)) 88%, #fff) !important;
  color:#fff !important;
 }
-.theme--light .browse-catalog-play {
+.theme--light .browse-catalog-play.v-btn {
  background:color-mix(in srgb, var(--browse-catalog-p1, var(--primary-color)) 86%, #000) !important;
  color:#fff !important;
 }
-.browse-catalog-shuffle {
- background:color-mix(in srgb, var(--browse-catalog-p2, var(--sub-toolbar-color)) 28%, transparent) !important;
+.browse-catalog-shuffle.v-btn {
+ border-radius:0 !important;
+ background:transparent !important;
+ background-color:transparent !important;
 }
 .theme--dark .browse-catalog-shuffle { color:rgba(245,245,247,0.92) !important; }
 .theme--light .browse-catalog-shuffle { color:#1c1c1e !important; }
-.browse-catalog-play .v-icon,
+/* Beat the glass subheader ink rule (.v-btn .v-icon uses --browse-chrome-ink). */
+#browse-view .browse-subheader.browse-subheader-glass .browse-catalog-play .v-btn__content .v-icon,
+#browse-view .browse-subheader.browse-subheader-glass .browse-catalog-play .v-btn__content > i,
+#browse-view .browse-catalog-play .v-btn__content .v-icon {
+ color:#fff !important;
+ fill:#fff !important;
+ margin:0 !important;
+ font-size:26px !important;
+}
 .browse-catalog-shuffle .svg-img {
- margin-right:4px;
+ width:22px;
+ height:22px;
+ margin:0 !important;
 }
 
 #browse-view.browse-catalog .browse-subheader-wrap {
@@ -11845,6 +12389,85 @@ html.presets-picker-dark .v-menu__content.presets-editor-menu .v-list__tile__tit
 .browse-subheader-row {
  position:relative;
  align-items:center !important;
+}
+#browse-view .browse-subheader > .layout > #back-button,
+#browse-view .browse-subheader > .layout > .back-button {
+ position:relative;
+ z-index:8;
+}
+.browse-catalog-art,
+.browse-catalog-art img,
+.browse-catalog-art-fallback,
+.browse-catalog-kicker,
+.browse-catalog-desc,
+.browse-catalog-title,
+.browse-catalog-actions,
+.browse-catalog-meta {
+ transition:width 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+  height 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+  flex-basis 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+  opacity 0.22s ease,
+  max-height 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+  margin 0.28s ease;
+}
+.browse-catalog-hero.is-collapsed {
+ gap:8px;
+ padding:0;
+ min-height:0;
+}
+.browse-catalog-hero.is-collapsed .browse-catalog-art,
+.browse-catalog-hero.is-collapsed .browse-catalog-art img,
+.browse-catalog-hero.is-collapsed .browse-catalog-art-fallback {
+ width:36px !important;
+ height:36px !important;
+ flex:0 0 36px !important;
+ border-radius:6px;
+}
+.browse-catalog-hero.is-collapsed .browse-catalog-art-fallback {
+ font-size:18px !important;
+}
+.browse-catalog-hero.is-collapsed .browse-catalog-kicker {
+ max-height:0;
+ opacity:0;
+ margin:0;
+ overflow:hidden;
+ pointer-events:none;
+}
+.browse-catalog-hero.is-collapsed .browse-catalog-meta {
+ display:grid;
+ grid-template-columns:minmax(0, 1fr) auto;
+ grid-template-rows:auto auto;
+ column-gap:8px;
+ row-gap:0;
+ align-items:center;
+}
+.browse-catalog-hero.is-collapsed .browse-catalog-title {
+ grid-column:1;
+ grid-row:1;
+ min-width:0;
+}
+.browse-catalog-hero.is-collapsed .browse-catalog-desc {
+ grid-column:1;
+ grid-row:2;
+ display:block;
+ max-height:1.3em;
+ opacity:0.72;
+ margin:0;
+ white-space:nowrap;
+ overflow:hidden;
+ text-overflow:ellipsis;
+ -webkit-line-clamp:1;
+}
+.browse-catalog-hero.is-collapsed .browse-catalog-actions {
+ grid-column:2;
+ grid-row:1 / span 2;
+ margin:0 0 0 auto;
+ animation:catalogActsIn 0.32s ease;
+}
+@keyframes catalogActsIn {
+ 0% { opacity:0; }
+ 40% { opacity:0; }
+ 100% { opacity:1; }
 }
 .browse-title-has-play {
  padding-right:96px;
@@ -12009,11 +12632,14 @@ html.presets-picker-dark .v-menu__content.presets-editor-menu .v-list__tile__tit
  z-index:12;
  background:var(--sub-toolbar-color, var(--background-color));
  color:var(--sub-toolbar-text-color, inherit);
- opacity:1;
+ opacity:1 !important;
+ visibility:visible;
 }
 .browse-lib-search-host:not(.active) {
- /* Keep a sliver of opacity so iOS WKWebView can still focus the field. */
- opacity:0.02;
+ /* Hidden unless library search is open. An inline opacity must not keep the bar up. */
+ opacity:0 !important;
+ visibility:hidden;
+ pointer-events:none !important;
 }
 .browse-lib-search-host .lms-search-field {
  flex:1 1 auto;
