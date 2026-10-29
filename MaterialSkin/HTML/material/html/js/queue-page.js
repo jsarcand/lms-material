@@ -314,15 +314,15 @@ var lmsQueue = Vue.component("lms-queue", {
    </v-layout>
    <v-spacer></v-spacer>
    <v-btn @click.stop="actionsMenu($event)" flat icon class="toolbar-button" :title="trans.actions" v-if="otherActions.length>0"><v-icon>more_vert</v-icon></v-btn>
-   <v-btn :title="trans.randomMix" flat icon v-if="(desktopLayout || wide>0) && playerStatus.randomplay===1" class="toolbar-button" v-bind:class="{'disabled':noPlayer}" v-longpress="repeatClicked"><img class="svg-img media-icon" :src="'dice-multiple' | svgIcon(darkUi)"></img></v-btn>
-   <v-btn :title="trans.repeatOne" flat icon v-else-if="(desktopLayout || wide>0) && playerStatus.repeat===1" class="toolbar-button" v-bind:class="{'disabled':noPlayer}" v-longpress="repeatClicked"><v-icon>repeat_one</v-icon></v-btn>
-   <v-btn :title="trans.repeatAll" flat icon v-else-if="(desktopLayout || wide>0) && playerStatus.repeat===2" class="toolbar-button" v-bind:class="{'disabled':noPlayer}" v-longpress="repeatClicked"><v-icon>repeat</v-icon></v-btn>
-   <v-btn :title="trans.dstm" flat icon v-else-if="(desktopLayout || wide>0) && dstm" class="toolbar-button" v-bind:class="{'disabled':noPlayer}" v-longpress="repeatClicked"><v-icon>all_inclusive</v-icon></v-btn>
-   <v-btn :title="trans.repeatOff" flat icon v-else-if="desktopLayout || wide>0" class="toolbar-button dimmed" v-bind:class="{'disabled':noPlayer}" v-longpress="repeatClicked"><img class="svg-img media-icon" :src="'repeat-off' | svgIcon(darkUi)"></img></v-btn>
+   <v-btn :title="trans.randomMix" flat icon v-if="(!desktopLayout || wide>0) && playerStatus.randomplay===1" class="toolbar-button" v-bind:class="{'disabled':noPlayer}" v-longpress="repeatClicked"><img class="svg-img media-icon" :src="'dice-multiple' | svgIcon(darkUi)"></img></v-btn>
+   <v-btn :title="trans.repeatOne" flat icon v-else-if="(!desktopLayout || wide>0) && playerStatus.repeat===1" class="toolbar-button" v-bind:class="{'disabled':noPlayer}" v-longpress="repeatClicked"><v-icon>repeat_one</v-icon></v-btn>
+   <v-btn :title="trans.repeatAll" flat icon v-else-if="(!desktopLayout || wide>0) && playerStatus.repeat===2" class="toolbar-button" v-bind:class="{'disabled':noPlayer}" v-longpress="repeatClicked"><v-icon>repeat</v-icon></v-btn>
+   <v-btn :title="trans.dstm" flat icon v-else-if="(!desktopLayout || wide>0) && dstm" class="toolbar-button" v-bind:class="{'disabled':noPlayer}" v-longpress="repeatClicked"><v-icon>all_inclusive</v-icon></v-btn>
+   <v-btn :title="trans.repeatOff" flat icon v-else-if="!desktopLayout || wide>0" class="toolbar-button dimmed" v-bind:class="{'disabled':noPlayer}" v-longpress="repeatClicked"><img class="svg-img media-icon" :src="'repeat-off' | svgIcon(darkUi)"></img></v-btn>
 
-   <v-btn :title="trans.shuffleAlbums" flat icon v-if="(desktopLayout || wide>0) && playerStatus.shuffle===2" class="toolbar-button" v-bind:class="{'disabled':noPlayer}" @click="shuffleClicked"><img class="svg-img media-icon" :src="'shuffle-albums' | svgIcon(darkUi)"></v-btn>
-   <v-btn :title="trans.shuffleAll" flat icon v-else-if="(desktopLayout || wide>0) && playerStatus.shuffle===1" class="toolbar-button" v-bind:class="{'disabled':noPlayer}" @click="shuffleClicked"><v-icon >shuffle</v-icon></v-btn>
-   <v-btn :title="trans.shuffleOff" flat icon v-else-if="desktopLayout || wide>0" class="toolbar-button dimmed" v-bind:class="{'disabled':noPlayer}" @click="shuffleClicked"><img class="svg-img media-icon" :src="'shuffle-off' | svgIcon(darkUi)"></img></v-btn>
+   <v-btn :title="trans.shuffleAlbums" flat icon v-if="(!desktopLayout || wide>0) && playerStatus.shuffle===2" class="toolbar-button" v-bind:class="{'disabled':noPlayer}" @click="shuffleClicked"><img class="svg-img media-icon" :src="'shuffle-albums' | svgIcon(darkUi)"></v-btn>
+   <v-btn :title="trans.shuffleAll" flat icon v-else-if="(!desktopLayout || wide>0) && playerStatus.shuffle===1" class="toolbar-button" v-bind:class="{'disabled':noPlayer}" @click="shuffleClicked"><v-icon >shuffle</v-icon></v-btn>
+   <v-btn :title="trans.shuffleOff" flat icon v-else-if="!desktopLayout || wide>0" class="toolbar-button dimmed" v-bind:class="{'disabled':noPlayer}" @click="shuffleClicked"><img class="svg-img media-icon" :src="'shuffle-off' | svgIcon(darkUi)"></img></v-btn>
    <v-btn :title="ACTIONS[PQ_SAVE_ACTION].title | tooltip(LMS_SAVE_QUEUE_KEYBOARD,keyboardControl)" flat icon @click="save()" class="toolbar-button" v-bind:class="{'disabled':items.length<1}" v-if="(!LMS_KIOSK_MODE || !HIDE_FOR_KIOSK.has(PQ_SAVE_ACTION)) && !queryParams.party && wide>1"><v-icon>save</v-icon></v-btn>
    <v-btn :title="trans.clear | tooltip(LMS_CLEAR_QUEUE_KEYBOARD,keyboardControl)" flat icon v-longpress="clear" class="toolbar-button" v-bind:class="{'disabled':items.length<1}"v-if="!queryParams.party"><img class="svg-list-img" :src="'queue-clear' | svgIcon(darkUi)"></img></v-btn>
   </v-layout>
@@ -406,10 +406,10 @@ var lmsQueue = Vue.component("lms-queue", {
   </div>
  </div>
 
- <div v-if="menu.show && !desktopLayout" class="msk-context-scrim" @click="ctxSheetClose()" @touchend="ctxSheetScrimTouchEnd($event)" @touchmove.prevent=""></div>
- <v-menu offset-y v-model="menu.show" :position-x="menu.x" :position-y="menu.y" :content-class="!desktopLayout ? 'msk-context-sheet' : undefined" absolute :close-on-content-click="desktopLayout" :close-on-click="desktopLayout">
+ <div v-if="menu.show && useContextSheet" class="msk-context-scrim" @click="ctxSheetClose()" @touchend="ctxSheetScrimTouchEnd($event)" @touchmove.prevent=""></div>
+ <v-menu offset-y v-model="menu.show" :key="useContextSheet ? 'ctx-sheet' : 'ctx-pop'" :position-x="menu.x" :position-y="menu.y" :content-class="useContextSheet ? 'msk-context-sheet' : 'msk-context-popover'" absolute :close-on-content-click="!useContextSheet" :close-on-click="!useContextSheet">
   <!-- Mobile sheet chrome: drag handle + sticky item header -->
-  <div class="msk-ctx-chrome" v-if="!desktopLayout"
+  <div class="msk-ctx-chrome" v-if="useContextSheet"
        @touchstart.passive="ctxSheetTouchStart"
        @pointerdown="ctxSheetTouchStart"
        @mousedown="ctxSheetTouchStart">
@@ -427,8 +427,8 @@ var lmsQueue = Vue.component("lms-queue", {
     </div>
    </div>
   </div>
-  <div v-bind:class="{'msk-ctx-panels': !desktopLayout, 'msk-ctx-panels-info': !desktopLayout && menu.info && menu.info.open}">
-  <div v-bind:class="{'msk-ctx-panel': !desktopLayout, 'msk-ctx-body': !desktopLayout}"
+  <div v-bind:class="{'msk-ctx-panels': useContextSheet, 'msk-ctx-panels-info': useContextSheet && menu.info && menu.info.open}">
+  <div v-bind:class="{'msk-ctx-panel': useContextSheet, 'msk-ctx-body': useContextSheet}"
        @scroll.passive="ctxSheetOnBodyScroll"
        @touchstart.passive="ctxSheetBodyTouchStart"
        @touchmove="ctxSheetBodyTouchMove"
@@ -494,7 +494,7 @@ var lmsQueue = Vue.component("lms-queue", {
    </template>
   </v-list>
   </div><!-- msk-ctx-panel actions -->
-  <div v-if="!desktopLayout" class="msk-ctx-panel msk-ctx-panel-info">
+  <div v-if="useContextSheet" class="msk-ctx-panel msk-ctx-panel-info">
    <div class="msk-ctx-info-bar">
     <v-btn icon flat small @click.stop="ctxSheetInfoBack" :title="i18n('Back')"><v-icon>{{BACK_ICON}}</v-icon></v-btn>
     <div class="msk-ctx-info-title">{{menu.info && menu.info.title ? menu.info.title : ''}}</div>
@@ -552,6 +552,9 @@ var lmsQueue = Vue.component("lms-queue", {
     computed: {
         darkUi () {
             return this.$store.state.darkUi
+        },
+        useContextSheet() {
+            return typeof contextMenuUseSheet==='function' ? contextMenuUseSheet(this) : !this.desktopLayout;
         },
         queueListItemSize() {
             let base = this.threeLines ? LMS_LIST_3LINE_ELEMENT_SIZE : LMS_LIST_ELEMENT_SIZE;
@@ -1492,7 +1495,13 @@ var lmsQueue = Vue.component("lms-queue", {
             }
             if (PQ_PLAY_NOW_ACTION===act) {
                 this.clearSelection();
-                bus.$emit('playerCommand', ["playlist", "index", index]);
+                let qpid = this.$store.state.player ? this.$store.state.player.id : undefined;
+                lmsCommand(qpid, ["playlist", "index", index]).then(function() {
+                    bus.$emit('refreshStatus');
+                    if (typeof browseSeekTrackStart==='function') {
+                        browseSeekTrackStart(qpid);
+                    }
+                });
             } else if (PQ_PLAY_NEXT_ACTION===act) {
                 if (index!==this.currentIndex) {
                     this.clearSelection();
@@ -2631,12 +2640,19 @@ var lmsQueue = Vue.component("lms-queue", {
         }
     },
     watch: {
+        '$store.state.page': function(page) {
+            if ('queue'!==page && this.searchActive) {
+                this.searchActive = false;
+            }
+        },
         'menu.show': function(newVal) {
             this.$store.commit('menuVisible', {name:'queue', shown:newVal});
             if (newVal) {
                 this.cancelCloseTimer();
-                if (typeof this.ctxSheetPrepareOpen==='function' && !this.desktopLayout) {
+                if (typeof this.ctxSheetPrepareOpen==='function' && this.useContextSheet) {
                     this.ctxSheetPrepareOpen();
+                } else if (!this.useContextSheet && typeof mskPlaceContextPopover==='function') {
+                    this.$nextTick(function() { mskPlaceContextPopover(); });
                 }
             } else {
                 if (typeof this.ctxSheetResetStyles==='function') {

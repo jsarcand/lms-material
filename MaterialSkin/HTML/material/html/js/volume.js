@@ -10,6 +10,7 @@ Vue.component('lms-volume', {
     template: `
 <div>
  <!-- ===== Mobile: glass browse surface + swipe volume + player dock ===== -->
+ <div v-if="show && mobileLayout" class="msk-vol-glass-frost" aria-hidden="true"></div>
  <div v-if="show && mobileLayout" class="msk-vol-glass-root noselect" @click.self="close">
   <div class="msk-vol-glass-area"
        @touchstart.passive="glassTouchStart"
