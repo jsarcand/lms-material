@@ -219,6 +219,120 @@ function formatTechInfo(item, source, isCurrent) {
     return technical.length>0 ? technical.join(', ') : undefined;
 }
 
+/* Desktop np-bar vignette, two lines: "Ogg" / "320kbps", "Lossless" / "44.1", "Lossless" / "96kHz". */
+var NP_QUALITY_LOSSLESS = { flc:1, flac:1, alc:1, alac:1, wav:1, wave:1, aif:1, aiff:1, ape:1, wv:1, wvp:1, tta:1, shn:1, dff:1, dsf:1, dsd:1 };
+var NP_QUALITY_DSD = { dff:1, dsf:1, dsd:1 };
+var NP_QUALITY_LOSSY = {
+    mp3:"MP3", mp2:"MP2", mp1:"MP1",
+    aac:"AAC", mp4:"AAC", m4a:"AAC", m4b:"AAC",
+    ogg:"Ogg", oga:"Ogg",
+    opus:"Opus", wma:"WMA", asf:"WMA",
+    mpc:"MPC", mpp:"MPC", spx:"Speex", ac3:"AC3", eac3:"AC3"
+};
+
+function npQualityRateLabel(hz) {
+    if (!(hz > 100)) {
+        return "";
+    }
+    if (hz >= 1000000) {
+        return (Math.round(hz / 100000) / 10) + "MHz";
+    }
+    let khz = Math.round(hz / 100) / 10;
+    if (Math.abs(khz - Math.round(khz)) < 0.001) {
+        return Math.round(khz) + "kHz";
+    }
+    return khz + "kHz";
+}
+
+function npQualityKbps(brRaw) {
+    if (!brRaw) {
+        return 0;
+    }
+    let m = String(brRaw).match(/(\d+(?:\.\d+)?)\s*k/i);
+    if (m) {
+        return Math.round(parseFloat(m[1]));
+    }
+    let n = parseInt(brRaw, 10);
+    if (n > 1000) {
+        return Math.round(n / 1000);
+    }
+    return n > 1 ? n : 0;
+}
+
+function npQualityClassify(typeRaw, brRaw) {
+    let t = (typeRaw || "").trim();
+    let low = t.toLowerCase();
+    let code = low.split(/[\s(/]/)[0];
+    if (NP_QUALITY_DSD[code] || /\bdsd\b|\bdff\b|\bdsf\b/.test(low) || /\bdsd\b|\bdff\b|\bdsf\b/i.test(brRaw)) {
+        return { lossless:true, dsd:true };
+    }
+    if (NP_QUALITY_LOSSLESS[code]) {
+        return { lossless:true };
+    }
+    if (NP_QUALITY_LOSSY[code]) {
+        return { lossless:false, label:NP_QUALITY_LOSSY[code], transcoded:/converti|transcod|converted/i.test(t) };
+    }
+    let transcoded = /converti|transcod|converted/i.test(t);
+    if (/vorbis|\bogg\b/.test(low)) {
+        return { lossless:false, label:"Ogg", transcoded:transcoded };
+    }
+    if (/\bmp3\b|\bmpeg\b/.test(low)) {
+        return { lossless:false, label:"MP3", transcoded:transcoded };
+    }
+    if (/\baac\b|\bm4a\b/.test(low)) {
+        return { lossless:false, label:"AAC", transcoded:transcoded };
+    }
+    if (/opus/.test(low)) {
+        return { lossless:false, label:"Opus", transcoded:transcoded };
+    }
+    if (/\bwma\b/.test(low)) {
+        return { lossless:false, label:"WMA", transcoded:transcoded };
+    }
+    if (/\bmpc\b|musepack/.test(low)) {
+        return { lossless:false, label:"MPC", transcoded:transcoded };
+    }
+    if (/flac|\balac\b|\balc\b|wavpack|\baiff\b|\bwav\b|\bape\b/.test(low) || /flac|alac|aiff|\bwav\b|wavpack/i.test(brRaw)) {
+        return { lossless:true };
+    }
+    if (/\bmp3\b/i.test(brRaw)) {
+        return { lossless:false, label:"MP3" };
+    }
+    return undefined;
+}
+
+function formatNpQuality(item) {
+    if (!item) {
+        return undefined;
+    }
+    let typeRaw = item.type ? String(item.type) : "";
+    let brRaw = (undefined!=item.bitrate && String(item.bitrate)!=="0") ? String(item.bitrate) : "";
+    let rate = parseInt(item.samplerate, 10);
+    if (!(rate > 100)) {
+        rate = 0;
+    }
+    let kind = npQualityClassify(typeRaw, brRaw);
+    if (!kind) {
+        return undefined;
+    }
+    let secondary = "";
+    if (kind.lossless) {
+        if (kind.dsd) {
+            secondary = npQualityRateLabel(rate);
+        } else if (rate > 48000) {
+            secondary = npQualityRateLabel(rate);
+        } else if (rate > 100) {
+            let khz = Math.round(rate / 100) / 10;
+            secondary = (Math.abs(khz - Math.round(khz)) < 0.001) ? String(Math.round(khz)) : String(khz);
+        }
+        return { kind: kind.dsd ? "DSD" : "Lossless", rate: secondary };
+    }
+    let kbps = npQualityKbps(brRaw);
+    if (kbps > 1) {
+        secondary = kbps + "kbps";
+    }
+    return { kind: kind.label, rate: secondary };
+}
+
 function volumeLevelIcon(volume, muted) {
     if (muted) {
         return 'volume_off';
@@ -719,8 +833,10 @@ function setTheme(theme, color, clearColorVars) {
         try {
             let isMojave = /Mojave/i.test(themeName) || /Mojave/i.test(theme);
             document.documentElement.classList.toggle('theme-mojave', isMojave);
+            document.documentElement.classList.toggle('theme-glass', themeName==='glass');
             if (document.body) {
                 document.body.classList.toggle('theme-mojave', isMojave);
+                document.body.classList.toggle('theme-glass', themeName==='glass');
             }
         } catch (e) {}
         emitTextColor();
@@ -902,6 +1018,16 @@ function commandGridKey(command, item) {
 }
 
 const USE_LIST_VIEW_BY_DEFAULT=new Set(["podcasts-grid", "youtube-grid", "playhistory-grid", "rndmix-grid"]);
+
+function getHomeGridUse() {
+    if (undefined!=getLocalStorageVal('home-grid', undefined)) {
+        return getLocalStorageBool('home-grid', true);
+    }
+    return getLocalStorageBool('grid', true);
+}
+function setHomeGridUse(use) {
+    setLocalStorageVal('home-grid', !!use);
+}
 
 function isSetToUseGrid(command, item) {
     var key = commandGridKey(command, item);
@@ -1211,6 +1337,73 @@ function focusEntry(ui) {
 let _searchKbGhost = null;
 let _searchKbArmed = false;
 
+/** iOS QuickType bar. type=search keeps the suggestion strip even with autocorrect off. */
+function mskSilenceIosKeyboardSuggest(el) {
+    if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) {
+        return;
+    }
+    let type = (el.getAttribute('type') || 'text').toLowerCase();
+    if (type === 'password' || type === 'number' || type === 'range' || type === 'checkbox' ||
+        type === 'radio' || type === 'file' || type === 'email' || type === 'url' ||
+        type === 'tel' || type === 'date' || type === 'time' || type === 'hidden') {
+        return;
+    }
+    if (type === 'search' && document.activeElement !== el) {
+        el.setAttribute('type', 'text');
+        if (!el.getAttribute('inputmode')) {
+            el.setAttribute('inputmode', 'search');
+        }
+        if (!el.getAttribute('enterkeyhint')) {
+            el.setAttribute('enterkeyhint', 'search');
+        }
+    }
+    el.setAttribute('autocomplete', 'off');
+    el.setAttribute('autocorrect', 'off');
+    el.setAttribute('autocapitalize', 'none');
+    el.setAttribute('spellcheck', 'false');
+    try { el.spellcheck = false; } catch (e) {}
+}
+
+function mskInstallIosKeyboardSuggestGuard() {
+    if (mskInstallIosKeyboardSuggestGuard.done) {
+        return;
+    }
+    if (typeof IS_IOS === 'undefined' || !IS_IOS) {
+        return;
+    }
+    mskInstallIosKeyboardSuggestGuard.done = true;
+    let fixTarget = function(node) {
+        if (!node || !node.closest) {
+            return;
+        }
+        let input = (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') ? node : null;
+        if (!input) {
+            let host = node.closest('input, textarea, .v-input, .lms-search, .lib-fusion-filter, .browse-inline-search');
+            if (host && (host.tagName === 'INPUT' || host.tagName === 'TEXTAREA')) {
+                input = host;
+            } else if (host && host.querySelector) {
+                input = host.querySelector('input, textarea');
+            }
+        }
+        if (input) {
+            mskSilenceIosKeyboardSuggest(input);
+        }
+    };
+    document.addEventListener('touchstart', function(ev) {
+        fixTarget(ev && ev.target);
+    }, true);
+    document.addEventListener('focusin', function(ev) {
+        fixTarget(ev && ev.target);
+    }, true);
+}
+if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', mskInstallIosKeyboardSuggestGuard);
+    } else {
+        mskInstallIosKeyboardSuggestGuard();
+    }
+}
+
 function releaseSearchKeyboard() {
     _searchKbArmed = false;
     if (!_searchKbGhost) {
@@ -1237,10 +1430,12 @@ function armSearchKeyboard() {
         if (!_searchKbGhost) {
             let g = document.createElement('input');
             g.id = 'lms-search-kb-ghost';
-            g.type = 'search';
+            g.type = 'text';
+            g.setAttribute('inputmode', 'search');
+            g.setAttribute('enterkeyhint', 'search');
             g.autocomplete = 'off';
             g.autocorrect = 'off';
-            g.autocapitalize = 'off';
+            g.autocapitalize = 'none';
             g.spellcheck = false;
             g.setAttribute('aria-hidden', 'true');
             g.tabIndex = -1;
@@ -1270,21 +1465,38 @@ function takeOverSearchKeyboard(ui) {
 
 function focusBrowseSearchInput() {
     let host = document.querySelector('.browse-lib-search-host');
-    if (host) {
+    // Only paint the overlay for a real open. A later focus() while the
+    // field is already focused does not emit onFocus, so this must not
+    // force the bar back onto a page that left search.
+    let paint = false;
+    try {
+        paint = !!window._mskLibSearchArm || document.documentElement.classList.contains('msk-lib-search');
+    } catch (ePaint) {}
+    if (host && paint) {
         host.classList.add('active');
         try {
             host.style.pointerEvents = 'auto';
-            host.style.opacity = '1';
+            host.style.removeProperty('opacity');
         } catch (eHost) {}
+    } else if (host) {
+        host.classList.remove('active');
+        try {
+            host.style.removeProperty('pointer-events');
+            host.style.removeProperty('opacity');
+        } catch (eHostOff) {}
     }
     let el = document.getElementById('browse-search-input');
     if (!el) {
         return false;
     }
+    if (!paint) {
+        try { if (el.blur) { el.blur(); } } catch (eBlur) {}
+        return false;
+    }
     try {
         el.removeAttribute('readonly');
         el.style.pointerEvents = 'auto';
-        el.style.opacity = '1';
+        el.style.removeProperty('opacity');
         el.style.webkitUserSelect = 'text';
         el.style.userSelect = 'text';
     } catch (eStyle) {}
@@ -1726,6 +1938,74 @@ function numScrollItems(view, elem) {
         numItems = MAX_HOME_EXTRA_ROW;
     }
     return numItems;
+}
+
+/**
+ * Mobile context popover: keep it above the mini player and the shortcut bar.
+ * Vuetify anchors at the press point, so a menu near the bottom slides under that chrome.
+ */
+/**
+ * Desktop browse popovers are position:absolute. The home-split pane and the
+ * fusion host both clip that, so the menu never shows on a list row.
+ * Pin every popover to the viewport at the press point. Sheets stay bottom-anchored.
+ */
+function mskLiftContextMenu(x, y) {
+    let place = function() {
+        let menus = document.querySelectorAll('.v-menu__content.msk-context-popover.menuable__content__active');
+        for (let i = 0, len = menus.length; i < len; ++i) {
+            let el = menus[i];
+            if (el.classList.contains('msk-context-sheet') || el.classList.contains('msk-settings-menu')) {
+                continue;
+            }
+            el.style.position = 'fixed';
+            el.style.zIndex = '10050';
+            el.style.right = 'auto';
+            el.style.bottom = 'auto';
+            if (typeof x !== 'number' || typeof y !== 'number') {
+                continue;
+            }
+            let w = el.offsetWidth || 220;
+            let h = el.offsetHeight || 160;
+            let vw = window.innerWidth || 800;
+            let vh = window.innerHeight || 600;
+            let left = Math.max(8, Math.min(x, vw - w - 8));
+            let top = Math.max(8, Math.min(y, vh - Math.min(h, Math.floor(vh * 0.7)) - 8));
+            el.style.left = left + 'px';
+            el.style.top = top + 'px';
+        }
+    };
+    place();
+    setTimeout(place, 40);
+}
+
+function mskPlaceContextPopover() {
+    let np = document.getElementById('np-bar');
+    if (!np || !np.classList.contains('mobile')) {
+        return;
+    }
+    let limit = window.innerHeight;
+    let npRect = np.getBoundingClientRect();
+    if (npRect.height > 8 && npRect.top < limit) {
+        limit = npRect.top;
+    }
+    let nav = document.getElementById('nav-bar');
+    if (nav) {
+        let navRect = nav.getBoundingClientRect();
+        if (navRect.height > 8 && navRect.top < limit && navRect.bottom > 0) {
+            limit = navRect.top;
+        }
+    }
+    limit = Math.max(48, limit - 8);
+    let menus = document.querySelectorAll('.v-menu__content.msk-context-popover.menuable__content__active');
+    for (let i = 0, len = menus.length; i < len; ++i) {
+        let el = menus[i];
+        el.style.zIndex = '10050';
+        let rect = el.getBoundingClientRect();
+        if (rect.bottom > limit) {
+            let top = Math.max(8, limit - rect.height);
+            el.style.top = top + 'px';
+        }
+    }
 }
 
 /**
@@ -2252,12 +2532,14 @@ var contextSheetMethods = {
         }
         el.classList.remove('msk-context-sheet-dragging');
         el.classList.add('msk-context-sheet-closing');
-        // Ensure we animate from current place (no residual half-height snap fight)
-        el.style.transition = 'transform 0.28s cubic-bezier(0.4, 0, 1, 1), opacity 0.22s ease';
-        // Force reflow so transition runs
+        // Shrink onto the chrome line. A translateY slides the sheet over the np-bar,
+        // which only reappears when the menu is removed at the end of the animation.
+        try { document.documentElement.classList.add('msk-ctx-sheet-closing'); } catch (eCls) {}
+        el.style.transition = 'height 0.28s cubic-bezier(0.4, 0, 1, 1), max-height 0.28s cubic-bezier(0.4, 0, 1, 1)';
+        el.style.setProperty('transform', 'none', 'important');
         try { void el.offsetHeight; } catch (e) {}
-        el.style.transform = 'translateY(110%)';
-        el.style.opacity = '0';
+        el.style.setProperty('height', '0px', 'important');
+        el.style.setProperty('max-height', '0px', 'important');
         if (scrim) {
             scrim.style.transition = 'opacity 0.26s ease';
             try { void scrim.offsetHeight; } catch (e2) {}
@@ -2322,7 +2604,10 @@ var contextSheetMethods = {
         document.addEventListener('mouseup', this._ctxDocEnd, true);
     },
     ctxSheetTouchStart(ev) {
-        if (this.desktopLayout || !this.menu || !this.menu.show || this._ctxSheetClosing) {
+        if (!this.menu || !this.menu.show || this._ctxSheetClosing) {
+            return;
+        }
+        if (this.useContextSheet===false || (this.useContextSheet==null && this.desktopLayout)) {
             return;
         }
         // Already tracking (touchstart + pointerdown both fire on many devices)
@@ -2403,9 +2688,25 @@ var contextSheetMethods = {
         if (this._ctxDrag.mode !== 'resize') {
             return;
         }
-        // Finger up (rawDy < 0) grows; finger down shrinks — clamped at half
+        // Finger up grows toward full. Finger down shrinks to half, then
+        // follows the finger off-screen so the sheet can be dismissed.
+        let limits = this.ctxSheetHeights();
         let newH = this._ctxDrag.h0 - rawDy;
-        this.ctxSheetSetHeight(newH, false);
+        if (newH < limits.half) {
+            this.ctxSheetSetHeight(limits.half, false);
+            let over = limits.half - newH;
+            this._ctxDrag.dismissDy = over;
+            if (this._ctxSheetEl) {
+                this._ctxSheetEl.style.transition = 'none';
+                this._ctxSheetEl.style.transform = 'translate3d(0,' + Math.round(over) + 'px,0)';
+            }
+        } else {
+            this._ctxDrag.dismissDy = 0;
+            if (this._ctxSheetEl) {
+                this._ctxSheetEl.style.transform = '';
+            }
+            this.ctxSheetSetHeight(newH, false);
+        }
         this._ctxDrag.dy = rawDy;
         if (ev && ev.cancelable) {
             ev.preventDefault();
@@ -2419,18 +2720,26 @@ var contextSheetMethods = {
         let el = this._ctxSheetEl;
         let h = this.ctxSheetHeights();
         let rawDy = this._ctxDrag.dy || 0;
+        let dismissDy = this._ctxDrag.dismissDy || 0;
         this._ctxDrag.active = false;
         this._ctxDrag = null;
         this.ctxSheetUnbindDocDrag();
 
-        // Settle on a step only — drag never fully dismisses
+        if (dismissDy > 72 || (rawDy > 90 && (this._ctxSheetHeight || h.half) <= h.half + 12)) {
+            if (el) {
+                el.style.transform = '';
+            }
+            this.ctxSheetCloseAnimated();
+            return;
+        }
+        if (el) {
+            el.style.transform = '';
+        }
         let cur = this._ctxSheetHeight || h.half;
         let mid = (h.half + h.full) / 2;
         if (rawDy > 18) {
-            // Drag down → first step (half)
             this.ctxSheetSnap(false);
         } else if (rawDy < -18) {
-            // Drag up → second step (full)
             this.ctxSheetSnap(true);
         } else {
             this.ctxSheetSnap(cur >= mid);
@@ -2448,6 +2757,9 @@ var contextSheetMethods = {
         }
         try {
             document.querySelectorAll('.v-menu__content.msk-context-sheet, .v-menu__content.menuable__content__active').forEach(function(n) {
+                if (n.classList && n.classList.contains('msk-settings-menu')) {
+                    return;
+                }
                 if (nodes.indexOf(n) < 0) { nodes.push(n); }
             });
         } catch (e) {}
@@ -2468,6 +2780,7 @@ var contextSheetMethods = {
             scrim.style.removeProperty('transition');
         }
         this.ctxSheetShiftPage(false);
+        try { document.documentElement.classList.remove('msk-ctx-sheet-closing'); } catch (eCls) {}
         this.ctxSheetUnbindDocDrag();
         this._ctxSheetEl = null;
         this._ctxScrimEl = null;

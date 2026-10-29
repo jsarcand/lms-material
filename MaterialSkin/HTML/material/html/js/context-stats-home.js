@@ -696,6 +696,10 @@ function contextStatsHomeMenu(view, card, event) {
         stdItem = STD_ITEM_ALBUM;
     } else if ('playlist'==card.type) {
         stdItem = STD_ITEM_PLAYLIST;
+    } else if ('track'==card.type || 'song'==card.type) {
+        stdItem = STD_ITEM_TRACK;
+    } else if ('artist'==card.type) {
+        stdItem = STD_ITEM_ARTIST;
     }
 
     // Drawer: show full subtitle including stats (ASCII-safe)
@@ -717,6 +721,10 @@ function contextStatsHomeMenu(view, card, event) {
         cstatsCard: card,
         menu: menu
     };
+    if (typeof browseMenuWithPreview==='function') {
+        menu = browseMenuWithPreview(menu, view, pseudo);
+        pseudo.menu = menu;
+    }
 
     let pos = typeof browseMenuCoords==='function'
         ? browseMenuCoords(event)
@@ -743,7 +751,7 @@ function contextStatsHomeMenu(view, card, event) {
         y: pos.y || (window.innerHeight || 0),
         index: -1
     };
-    if (typeof view.ctxSheetPrepareOpen==='function' && !view.desktopLayout) {
+    if (typeof view.ctxSheetPrepareOpen==='function' && view.useContextSheet) {
         view.ctxSheetPrepareOpen();
     }
 }
@@ -890,30 +898,28 @@ function contextStatsHomeScheduleRefresh(view) {
 
 /**
  * Apply a new card list with optional morph (device switch / soft refresh).
- * Morph: fade-out current cards → swap → fade-in (keeps layout stable, no hard flash).
+ * Morph fades only the card contents. The shell stays put (no swiper remount).
  */
 function contextStatsHomeApplyItems(view, newItems, opts) {
     opts = opts || {};
     let csh = view.contextStatsHome;
     let morph = !!opts.morph && csh.items && csh.items.length > 0;
-    let finish = function(items, enter) {
+    let finish = function(items, enterInner) {
         for (let i = 0, len = items.length; i < len; ++i) {
             Vue.set(items[i], 'leaving', false);
-            Vue.set(items[i], 'entering', !!enter);
+            Vue.set(items[i], 'entering', false);
+            Vue.set(items[i], 'innerOut', false);
+            Vue.set(items[i], 'innerIn', !!enterInner);
         }
         csh.items = items;
         csh.morphing = false;
         contextStatsHomeApplyLayout(view);
-        // Bump swiper so pages rebuild cleanly after a device switch
-        if (opts.morph) {
-            csh.swiperKey = (csh.swiperKey || 0) + 1;
-        }
-        if (enter && view.$nextTick) {
+        if (enterInner && view.$nextTick) {
             view.$nextTick(function() {
                 requestAnimationFrame(function() {
                     requestAnimationFrame(function() {
                         for (let i = 0, len = csh.items.length; i < len; ++i) {
-                            Vue.set(csh.items[i], 'entering', false);
+                            Vue.set(csh.items[i], 'innerIn', false);
                         }
                     });
                 });
@@ -927,9 +933,9 @@ function contextStatsHomeApplyItems(view, newItems, opts) {
     }
 
     csh.morphing = true;
-    // Leave animation on current cards
     for (let i = 0, len = csh.items.length; i < len; ++i) {
-        Vue.set(csh.items[i], 'leaving', true);
+        Vue.set(csh.items[i], 'innerOut', true);
+        Vue.set(csh.items[i], 'leaving', false);
         Vue.set(csh.items[i], 'entering', false);
     }
     if (csh._morphTimer) {
@@ -938,7 +944,7 @@ function contextStatsHomeApplyItems(view, newItems, opts) {
     csh._morphTimer = setTimeout(function() {
         csh._morphTimer = undefined;
         finish(newItems, true);
-    }, 240);
+    }, 180);
 }
 
 /**

@@ -2617,6 +2617,15 @@ sub _cliCommand {
             };
         }
         preferences('server')->client($client)->set('presets', $out);
+        # Empty WiiM buttons pick up /preset/N for slots that now have content.
+        # A local bridge is rewritten with that slot's title and a clean
+        # /preset/N link. Remote buttons are left alone until an explicit replace.
+        eval {
+            if (Slim::Utils::PluginManager->isEnabled('Plugins::WiimIntegration::Plugin')
+                && Plugins::WiimIntegration::Plugin::isWiimPlayer($client)) {
+                Plugins::WiimIntegration::Plugin::syncEmptyPresetKeys($client);
+            }
+        };
         $request->addResult('ok', 1);
         $request->setStatusDone();
         return;

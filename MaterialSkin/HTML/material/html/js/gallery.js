@@ -125,7 +125,7 @@ var lmsGallery = Vue.component("lms-gallery", {
     },
     filters: {
         svgIcon: function (name) {
-            return "/material/svg/"+name+"?c="+LMS_DARK_SVG+"&c2=333&r="+LMS_MATERIAL_REVISION;
+            return "/material/svg/"+name+"?c="+LMS_DARK_SVG+"&c2=333&r="+LMS_MATERIAL_REVISION+((''+name).indexOf('hover-')===0 ? '&g=1' : '');
         }
     }
 });

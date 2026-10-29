@@ -9,7 +9,7 @@
 <html>
  <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui, interactive-widget=resizes-content">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui, viewport-fit=cover, interactive-widget=overlays-content">
   <style>
     html.msk-booting, html.msk-booting body { background: var(--msk-boot-bg, #212121) !important; }
     html.msk-booting #app { opacity: 0 !important; }
@@ -137,8 +137,10 @@
       setHref('themecss', 'html/css/themes/'+themeName+'.css?r='+rev);
     }
     setHref('variantcss', 'html/css/variant/'+variant+'.css?r='+rev);
+    var isGlass = themeName==='glass';
+    document.documentElement.classList.toggle('theme-glass', isGlass);
     var isLight = /light/i.test(themeName) && !/\/dark\//i.test(themeName) && !/Dark/i.test(themeName);
-    document.documentElement.style.setProperty('--msk-boot-bg', isLight ? '#f5f5f5' : '#212121');
+    document.documentElement.style.setProperty('--msk-boot-bg', isGlass ? '#07080c' : (isLight ? '#f5f5f5' : '#212121'));
     var color = ls('color') || 'blue';
     if (color.indexOf('user:')===0) setHref('colorcss', '/material/usercolor/'+color.substring(5)+'?r='+rev);
     else if (color && color!=='from-cover') setHref('colorcss', 'html/css/colors/'+color+'.css?r='+rev);
@@ -232,6 +234,7 @@ MSKBOOT
     <lms-screensaver></lms-screensaver>
     <lms-volumeoverlay></lms-volumeoverlay>
     <lms-mediasession></lms-mediasession>
+    <div class="msk-bottom-fade" aria-hidden="true"></div>
    </v-app>
   </div>
   [% PERL %]
