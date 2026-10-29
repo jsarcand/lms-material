@@ -166,9 +166,15 @@ function isInFavorites(item) {
     return lmsFavorites.has(item.presetParams && item.presetParams.favorites_url ? item.presetParams.favorites_url : item.favUrl);
 }
 
-/** Mobile (non-desktop layout): context menus open as a bottom sheet/drawer. */
+/** Mobile: context menus as a bottom drawer unless the user chose the classic popover. */
 function contextMenuUseSheet(vm) {
     try {
+        if (vm && vm.$store && vm.$store.state.desktopLayout) {
+            return false;
+        }
+        if (vm && vm.$store && vm.$store.state.mobileContextStyle==='menu') {
+            return false;
+        }
         if (vm && vm.$store && undefined!=vm.$store.state.desktopLayout) {
             return !vm.$store.state.desktopLayout;
         }
@@ -285,7 +291,7 @@ function showMenu(obj, newMenu) {
             if (!sheet) {
                 setTimeout(function() {
                     try {
-                        document.querySelectorAll('.v-menu__content.menuable__content__active:not(.msk-context-sheet)').forEach(function(el) {
+                        document.querySelectorAll('.v-menu__content.menuable__content__active:not(.msk-context-sheet):not(.msk-settings-menu)').forEach(function(el) {
                             el.style.removeProperty('height');
                             el.style.removeProperty('max-height');
                             el.style.removeProperty('transform');
@@ -303,7 +309,7 @@ function showMenu(obj, newMenu) {
             // After Vuetify mounts the content, clear sheet sizing leftovers
             setTimeout(function() {
                 try {
-                    document.querySelectorAll('.v-menu__content.menuable__content__active:not(.msk-context-sheet)').forEach(function(el) {
+                    document.querySelectorAll('.v-menu__content.menuable__content__active:not(.msk-context-sheet):not(.msk-settings-menu)').forEach(function(el) {
                         el.style.removeProperty('height');
                         el.style.removeProperty('max-height');
                         el.style.removeProperty('transform');

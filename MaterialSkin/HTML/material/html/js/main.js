@@ -88,11 +88,316 @@ function setWindowArea() {
     }, 50);
 }
 
-function toggleButtonDueToKeyboard(id, keyboardShown) {
-    let elem = document.getElementById(id);
-    if (elem) {
-        elem.style.display = keyboardShown ? 'none' : 'block';
+/* Used length of env(safe-area-inset-*), after viewport-fit=cover. 0 without a home indicator or notch. */
+function mskReadEnvInset(edge) {
+    let probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;visibility:hidden;';
+    probe.style.height = edge==='top' ? 'env(safe-area-inset-top, 0px)' : 'env(safe-area-inset-bottom, 0px)';
+    document.documentElement.appendChild(probe);
+    let h = probe.offsetHeight || 0;
+    if (probe.parentNode) {
+        probe.parentNode.removeChild(probe);
     }
+    return h;
+}
+
+function mskApplyIosSafeTop() {
+    if (typeof IS_IOS==='undefined' || !IS_IOS || (typeof queryParams!=='undefined' && queryParams.topPad>0)) {
+        return;
+    }
+    let top = mskReadEnvInset('top');
+    let root = document.documentElement;
+    if (top>0) {
+        root.style.setProperty('--top-pad', top + 'px');
+        root._mskSafeTopApplied = true;
+    } else if (root._mskSafeTopApplied) {
+        root.style.removeProperty('--top-pad');
+        root._mskSafeTopApplied = false;
+    }
+}
+
+/* How far the keyboard covers the pre-keyboard layout (px). */
+function mskKeyboardInset(app) {
+    let base = app._kbLayoutHeight || window.innerHeight;
+    let vv = window.visualViewport;
+    if (vv) {
+        return Math.max(0, Math.round(base - vv.height - vv.offsetTop));
+    }
+    return Math.max(0, Math.round(base - window.innerHeight));
+}
+
+function mskKeyboardChromeParked() {
+    let appEl = document.querySelector('.lms-app');
+    return !!(appEl && (appEl.classList.contains('np-bar-docked') || appEl.classList.contains('nav-shortcuts-auto-collapsed')));
+}
+
+/* Pin each bar at its current visual top once, then only translate3d.
+ * bottom/height changes are what made the chrome jump when the keyboard opened. */
+function mskKeyboardReal(app) {
+    return mskKeyboardInset(app) > 150;
+}
+
+function mskUnpinKeyboardBar(el) {
+    if (!el || !el._kbPinned) {
+        return;
+    }
+    el._kbY = undefined;
+    el._kbPinned = false;
+    el._kbPinTop = undefined;
+    el._kbPinH = undefined;
+    el.style.setProperty('transition', 'none', 'important');
+    el.style.setProperty('-webkit-transition', 'none', 'important');
+    el.style.removeProperty('top');
+    el.style.removeProperty('bottom');
+    el.style.removeProperty('transform');
+    el.style.removeProperty('-webkit-transform');
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            if (!el._kbPinned) {
+                el.style.removeProperty('transition');
+                el.style.removeProperty('-webkit-transition');
+            }
+        });
+    });
+}
+
+function mskPinKeyboardBar(el) {
+    if (!el || el._kbPinned) {
+        return;
+    }
+    if (el.id === 'np-bar' && (el.classList.contains('np-bar-sheet-dormant') || el.classList.contains('np-bar-dock-dragging'))) {
+        return;
+    }
+    if (el.id === 'nav-bar' && mskKeyboardChromeParked()) {
+        return;
+    }
+    let r = el.getBoundingClientRect();
+    if (!r.height) {
+        return;
+    }
+    el._kbPinned = true;
+    el._kbPinTop = r.top;
+    el._kbPinH = r.height;
+    el.style.setProperty('transition', 'none', 'important');
+    el.style.setProperty('-webkit-transition', 'none', 'important');
+    el.style.setProperty('top', r.top + 'px', 'important');
+    el.style.setProperty('bottom', 'auto', 'important');
+    el.style.setProperty('transform', 'translate3d(0,0,0)', 'important');
+    el.style.setProperty('-webkit-transform', 'translate3d(0,0,0)', 'important');
+    el._kbY = 0;
+}
+
+function mskNpBarMayMove(bar) {
+    if (!bar) {
+        return false;
+    }
+    if (bar.classList.contains('np-bar-sheet-dormant') || bar.classList.contains('np-bar-dock-dragging')) {
+        return false;
+    }
+    let appEl = document.querySelector('.lms-app');
+    if (appEl && appEl.classList.contains('np-sheet-open')) {
+        return false;
+    }
+    return true;
+}
+
+/* Browse / queue / fusion filter. Not dialogs or the player sheet. */
+function mskIsListFilterField(el) {
+    if (!el || !el.closest || !el.tagName) {
+        return false;
+    }
+    if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA' && !el.isContentEditable) {
+        return false;
+    }
+    if (el.closest('.v-dialog, .lms-dialog, .v-navigation-drawer, #np-page')) {
+        return false;
+    }
+    return !!(el.closest('.lib-fusion-pull-tools, .browse-overflow-panel, .browse-scroll-tools, .lms-search-list-row, .browse-inline-search, .lms-search-field'));
+}
+
+/* Hide the shortcut strip and mini player while a mobile filter field is focused.
+ * Do not translate the bars or rewrite --vh. */
+function mskSyncFilterKeyboard(app) {
+    let root = document.documentElement;
+    if (typeof IS_MOBILE === 'undefined' || !IS_MOBILE) {
+        root.classList.remove('msk-filter-kb');
+        return;
+    }
+    let focused = mskIsListFilterField(document.activeElement);
+    if (!focused) {
+        root.classList.remove('msk-filter-kb');
+        if (app) {
+            app._kbFilterSaw = false;
+        }
+        return;
+    }
+    let real = mskKeyboardReal(app);
+    if (real) {
+        if (app) {
+            app._kbFilterSaw = true;
+        }
+        root.classList.add('msk-filter-kb');
+        return;
+    }
+    /* Keyboard closed after it had opened (scroll-dismiss) while the field stays focused. */
+    if (app && app._kbFilterSaw) {
+        root.classList.remove('msk-filter-kb');
+        return;
+    }
+    root.classList.add('msk-filter-kb');
+}
+
+/* Text entry, not buttons or sliders. */
+function mskTextEntryFocused() {
+    let a = document.activeElement;
+    if (!a || !a.tagName) {
+        return false;
+    }
+    if (a.tagName !== 'INPUT' && a.tagName !== 'TEXTAREA' && !a.isContentEditable) {
+        return false;
+    }
+    if (a.tagName === 'INPUT') {
+        let type = (a.getAttribute('type') || 'text').toLowerCase();
+        if (type === 'button' || type === 'checkbox' || type === 'radio' || type === 'range' ||
+            type === 'file' || type === 'submit' || type === 'reset' || type === 'hidden' || type === 'image') {
+            return false;
+        }
+    }
+    return true;
+}
+
+function mskWriteBgBox(w, h) {
+    let root = document.documentElement;
+    root.style.setProperty('--msk-bg-w', Math.round(w) + 'px');
+    root.style.setProperty('--msk-bg-h', Math.round(h) + 'px');
+}
+
+/* Keep the mesh and every --100vh backdrop at the pre-keyboard size.
+ * Do not write the shrunk height into --vh: that collapses the shells. */
+function mskSyncBackgroundBox(app) {
+    if (!app || typeof IS_MOBILE === 'undefined' || !IS_MOBILE) {
+        return;
+    }
+    let hNow = window.innerHeight;
+    let wNow = window.innerWidth;
+    if (mskTextEntryFocused()) {
+        if (!app._kbBgLock) {
+            let inset = mskKeyboardInset(app);
+            if (!app._kbStableH || (inset <= 150 && hNow >= app._kbStableH - 40)) {
+                app._kbStableW = wNow;
+                app._kbStableH = hNow;
+            }
+            let w = app._kbStableW || wNow;
+            let h = app._kbStableH || hNow;
+            mskWriteBgBox(w, h);
+            if (app._kbVhSaved == null) {
+                app._kbVhSaved = document.documentElement.style.getPropertyValue('--vh') || '';
+            }
+            document.documentElement.style.setProperty('--vh', (h * 0.01) + 'px');
+            app._kbBgLock = true;
+            document.documentElement.classList.add('msk-bg-lock');
+        }
+        return;
+    }
+    if (app._kbBgLock) {
+        app._kbBgLock = false;
+        document.documentElement.classList.remove('msk-bg-lock');
+        if (app._kbVhSaved) {
+            document.documentElement.style.setProperty('--vh', app._kbVhSaved);
+        } else if (!app._kbAppMode) {
+            document.documentElement.style.setProperty('--vh', (hNow * 0.01) + 'px');
+        } else {
+            document.documentElement.style.removeProperty('--vh');
+        }
+        app._kbVhSaved = null;
+    }
+    app._kbStableW = wNow;
+    app._kbStableH = hNow;
+    mskWriteBgBox(wNow, hNow);
+}
+
+function mskPaintKeyboardChrome(app) {
+    /* Do not move #np-bar / #nav-bar or rewrite --vh to the keyboard height.
+     * That lifted the mini player and shortened the player drawer. */
+    if (app && app.keyboardShown) {
+        mskClearKeyboardChrome(app);
+    }
+    mskSyncFilterKeyboard(app);
+    mskSyncBackgroundBox(app);
+}
+
+function mskMoveKeyboardBar(el, targetTop) {
+    let y = Math.round(targetTop - el._kbPinTop);
+    if (el._kbY === y) {
+        return;
+    }
+    el._kbY = y;
+    let t = 'translate3d(0,' + y + 'px,0)';
+    el.style.setProperty('transform', t, 'important');
+    el.style.setProperty('-webkit-transform', t, 'important');
+}
+
+function mskClearKeyboardChrome(app) {
+    app.keyboardShown = false;
+    app._kbClearGen = (app._kbClearGen || 0) + 1;
+    let gen = app._kbClearGen;
+    document.documentElement.classList.remove('msk-keyboard');
+    let ids = ['np-bar', 'nav-bar'];
+    for (let i = 0; i < ids.length; ++i) {
+        let el = document.getElementById(ids[i]);
+        if (!el) {
+            continue;
+        }
+        el._kbY = undefined;
+        el._kbPinned = false;
+        el._kbPinTop = undefined;
+        el._kbPinH = undefined;
+        el.style.setProperty('transition', 'none', 'important');
+        el.style.setProperty('-webkit-transition', 'none', 'important');
+        el.style.removeProperty('top');
+        el.style.removeProperty('bottom');
+        el.style.removeProperty('transform');
+        el.style.removeProperty('-webkit-transform');
+    }
+    /* A text field keeps the pre-keyboard backdrop. Do not thaw it here. */
+    if (app._kbVhSaved != null && !app._kbBgLock) {
+        if (app._kbVhSaved) {
+            document.documentElement.style.setProperty('--vh', app._kbVhSaved);
+        } else if (!app._kbAppMode) {
+            document.documentElement.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px');
+        } else {
+            document.documentElement.style.removeProperty('--vh');
+        }
+        app._kbVhSaved = null;
+    }
+    if (!app._kbBgLock) {
+        app._kbLayoutHeight = window.innerHeight;
+    }
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            if (gen !== app._kbClearGen || app.keyboardShown) {
+                return;
+            }
+            for (let i = 0; i < ids.length; ++i) {
+                let el = document.getElementById(ids[i]);
+                if (!el) {
+                    continue;
+                }
+                el.style.removeProperty('transition');
+                el.style.removeProperty('-webkit-transition');
+            }
+        });
+    });
+}
+
+function mskScheduleKeyboardChrome(app) {
+    if (!IS_MOBILE || app._kbRaf) {
+        return;
+    }
+    app._kbRaf = requestAnimationFrame(function() {
+        app._kbRaf = 0;
+        mskPaintKeyboardChrome(app);
+    });
 }
 
 var app = new Vue({
@@ -147,13 +452,35 @@ var app = new Vue({
         }
         if (queryParams.topPad>0) {
             document.documentElement.style.setProperty('--top-pad', queryParams.topPad + 'px');
+        } else if (IS_IOS) {
+            // viewport-fit=cover draws under the status bar. Pad only when the inset is real.
+            mskApplyIosSafeTop();
+            window.addEventListener('orientationchange', mskApplyIosSafeTop);
+            window.addEventListener('load', mskApplyIosSafeTop);
         }
         if (queryParams.dlgPad>0) {
             document.documentElement.style.setProperty('--dialog-pad', queryParams.dlgPad + 'px');
         }
         this.autoLayout = true;
         this.$store.commit('initUiSettings');
-        this.$store.commit('setShowQueue', getLocalStorageBool('showQueue', true));
+        let freshLaunch = false;
+        try {
+            if (!sessionStorage.getItem('msk-launched')) {
+                sessionStorage.setItem('msk-launched', '1');
+                freshLaunch = true;
+            }
+        } catch (e) {
+            freshLaunch = (undefined==getLocalStorageVal('showQueue', undefined));
+        }
+        if (freshLaunch) {
+            this.$store.commit('setShowQueue', false);
+            this.$store.commit('setNpSheetOpen', false);
+            this.$store.commit('setPage', 'browse');
+            bus.$emit('closeNowPlaying');
+            bus.$emit('nowPlayingExpanded', false);
+        } else {
+            this.$store.commit('setShowQueue', getLocalStorageBool('showQueue', false));
+        }
         if (queryParams.player) {
             document.title += SEPARATOR + unescape(queryParams.player);
         }
@@ -331,6 +658,48 @@ var app = new Vue({
             }
         }
         lmsApp.keyboardShown = false;
+        lmsApp._kbAppMode = appMode;
+        lmsApp._kbLayoutHeight = window.innerHeight;
+        lmsApp._kbVhSaved = null;
+        lmsApp._kbBgLock = false;
+        mskSyncBackgroundBox(lmsApp);
+        if (IS_MOBILE) {
+            let noteKbLayout = function() {
+                if (!lmsApp.keyboardShown) {
+                    lmsApp._kbLayoutHeight = window.innerHeight;
+                }
+            };
+            document.addEventListener('focusin', function(ev) {
+                let t = ev.target;
+                if (!t || (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA' && !t.isContentEditable)) {
+                    return;
+                }
+                noteKbLayout();
+                mskSyncBackgroundBox(lmsApp);
+                mskScheduleKeyboardChrome(lmsApp);
+            }, true);
+            document.addEventListener('focusout', function() {
+                setTimeout(function() {
+                    let a = document.activeElement;
+                    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) {
+                        mskSyncFilterKeyboard(lmsApp);
+                        mskSyncBackgroundBox(lmsApp);
+                        return;
+                    }
+                    if (!lmsApp.keyboardShown || !mskKeyboardReal(lmsApp)) {
+                        mskClearKeyboardChrome(lmsApp);
+                        mskSyncFilterKeyboard(lmsApp);
+                        mskSyncBackgroundBox(lmsApp);
+                        return;
+                    }
+                    mskScheduleKeyboardChrome(lmsApp);
+                }, 80);
+            }, true);
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', function() { mskScheduleKeyboardChrome(lmsApp); });
+                window.visualViewport.addEventListener('scroll', function() { mskScheduleKeyboardChrome(lmsApp); });
+            }
+        }
         window.addEventListener('resize', () => {
             if (timeout) {
                 clearTimeout(timeout);
@@ -341,12 +710,20 @@ var app = new Vue({
                 let adjustLayout = false;
                 // Only update if changed
                 if (lastWinHeight!=window.innerHeight) {
-                    if (!appMode) {
+                    heightChange = lastWinHeight - window.innerHeight;
+                    let likelyKb = IS_MOBILE && Math.abs(lastWinWidth-window.innerWidth)<3 && heightChange>100;
+                    if (likelyKb && !lmsApp._kbLayoutHeight) {
+                        lmsApp._kbLayoutHeight = lastWinHeight;
+                    }
+                    /* Keyboard must not rewrite --vh. That collapses every 100vh shell. */
+                    if (!appMode && !likelyKb && !lmsApp.keyboardShown && !lmsApp._kbBgLock && !mskTextEntryFocused()) {
                         document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
                     }
-                    heightChange = lastWinHeight - window.innerHeight;
                     lastWinHeight = window.innerHeight;
-                    adjustLayout = true;
+                    if (!likelyKb && !lmsApp.keyboardShown) {
+                        lmsApp._kbLayoutHeight = window.innerHeight;
+                    }
+                    adjustLayout = !likelyKb && !lmsApp.keyboardShown;
                 }
                 if (Math.abs(lastWinWidth-window.innerWidth)>=3) {
                     widthChange = lastWinWidth - window.innerWidth;
@@ -358,35 +735,20 @@ var app = new Vue({
                     bus.$emit('windowWidthChanged');
                     adjustLayout = true;
                 }
-                if (Math.abs(lastReportedHeight-window.innerHeight)>=3) {
+                if (Math.abs(lastReportedHeight-window.innerHeight)>=3 && !lmsApp.keyboardShown && !(IS_MOBILE && 0==widthChange && heightChange>100)) {
                     lastReportedHeight = window.innerHeight;
                     bus.$emit('windowHeightChanged');
                 }
                 if (adjustLayout) {
                     lmsApp.checkLayout();
                 }
+                if (IS_MOBILE) {
+                    mskSyncBackgroundBox(lmsApp);
+                    mskScheduleKeyboardChrome(lmsApp);
+                }
 
                 // Check entries are visible
                 if (IS_MOBILE) {
-                    var keyboardShown = 0==widthChange && heightChange>100;
-                    if (keyboardShown != lmsApp.keyboardShown) {
-                        if (keyboardShown) {
-                            lmsApp.heights = [];
-                            let vars = ['--bottom-toolbar-height', '--desktop-npbar-height', '--mobile-npbar-height-thin', '--mobile-npbar-height-thick', '--mobile-npbar-height', '--bottom-pad', '--desktop-np-bottom-pad'];
-                            for (let v=0, len=vars.length; v<len; ++v) {
-                                lmsApp.heights.push([vars[v], getComputedStyle(document.documentElement).getPropertyValue(vars[v])]);
-                            }
-                        }
-                        lmsApp.keyboardShown = keyboardShown;
-                        toggleButtonDueToKeyboard('nav-bar', keyboardShown);
-                        toggleButtonDueToKeyboard('np-bar', keyboardShown);
-                        toggleButtonDueToKeyboard('browse-search-btn', keyboardShown);
-                        for (let v=0, list=lmsApp.heights, len=list.length; v<len; ++v) {
-                            if (undefined!=list[v][1]) {
-                                document.documentElement.style.setProperty(list[v][0], keyboardShown ? '0px' : list[v][1]);
-                            }
-                        }
-                    }
                     if (document.activeElement.tagName=="INPUT" || document.activeElement.tagName=="TEXTAREA") {
                         let elem = document.activeElement;
                         let found = false;
@@ -744,6 +1106,12 @@ var app = new Vue({
             if (undefined==npBar || undefined==ev.target || !npBar.contains(ev.target)) {
                 return;
             }
+            // Closed bar owns the film (cover + both lines follow the trackpad),
+            // same as the mobile two-line swipe. Stopping the event here skips instantly.
+            // Sheet open: keep the instant path. The bar handler ignores the wheel then.
+            if (!this.$store.state.npSheetOpen) {
+                return;
+            }
             let dx = npBarWheelDeltaX(ev);
             if (Math.abs(dx)<1 || Math.abs(dx)<=Math.abs(ev.deltaY)*0.5) {
                 return;
@@ -983,7 +1351,21 @@ var app = new Vue({
         },
         touchStart(ev) {
             this.edgeSwipe = undefined;
+            this._npMainScrollAtStart = 0;
             if (ev && ev.touches && ev.touches.length>1) {
+                return;
+            }
+            // Device drawer owns its own taps and scroll. Do not turn them
+            // into an NP-sheet dismiss or a browse/queue page swipe.
+            if (ev && ev.target && ev.target.closest && ev.target.closest('.v-navigation-drawer, .v-overlay')) {
+                this.touchIgnoreSwipe = true;
+                this.touch = undefined;
+                return;
+            }
+            let ndRoot = document.querySelector('.lms-app');
+            if (ndRoot && ndRoot.classList.contains('nd-open')) {
+                this.touchIgnoreSwipe = true;
+                this.touch = undefined;
                 return;
             }
             if (typeof browseZoomNavBlocked==='function' && browseZoomNavBlocked()) {
@@ -1003,10 +1385,20 @@ var app = new Vue({
             }
             let t = ev.target;
             if (t && t.closest && (t.closest('#nav-bar') || t.closest('.nav-shortcut-bar') || t.closest('.nav-shortcuts-wrap') ||
-                t.closest('.nav-shortcuts-scroll') || t.closest('.nav-shortcut-fixed') || t.closest('.lms-jumplist'))) {
+                t.closest('.nav-shortcuts-scroll') || t.closest('.nav-shortcut-fixed') || t.closest('.lms-jumplist') ||
+                t.closest('.list-swipe-enabled') || t.closest('.lib-fusion-song-row') || t.closest('.lib-fusion-track-row') ||
+                t.closest('.lib-fusion-artist-row') || t.closest('.lib-fusion-album') || t.closest('.lib-fusion-grid-item'))) {
                 this.touchIgnoreSwipe = true;
                 this.touch = undefined;
                 return;
+            }
+            // Phone scroll NP: remember whether this gesture began already at the top.
+            // A flick that starts lower only scrolls back up; it must not close the sheet.
+            if (t && t.closest) {
+                let npScroller = t.closest('#np-page.np-details-scroll .np-main-slide-np .np-main');
+                if (npScroller) {
+                    this._npMainScrollAtStart = npScroller.scrollTop || 0;
+                }
             }
             this.touch = getTouchPos(ev);
         },
@@ -1082,9 +1474,14 @@ var app = new Vue({
                                         return;
                                     }
                                 }
-                                // NP slide: allow lower from meta/controls (beside/under art), not from cover track-swipe
+                                // NP slide: allow lower from meta/controls (beside/under art), not from cover track-swipe.
+                                // Scroll-details: only a gesture that started at the top lowers the sheet.
                                 if (t && t.closest && t.closest('.np-main-slide-np')) {
                                     if (t.closest('.np-cover-block, .np-cover-stack, .np-slider')) {
+                                        this.touch = undefined;
+                                        return;
+                                    }
+                                    if (this._npMainScrollAtStart > 4) {
                                         this.touch = undefined;
                                         return;
                                     }

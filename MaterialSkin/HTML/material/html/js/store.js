@@ -22,6 +22,27 @@ function setDesktopWideCoverPad(on) {
 }
 
 /** Lexicon (A–Z jumplist) side: 'left' | 'right' — applies to browse, queue, fusion */
+/** Mobile shortcut-bar size: 1 compact … 5 extra-large. Drives --bottom-nav-content-height. */
+const SHORTCUT_SIZE_HEIGHTS = {1:44, 2:48, 3:52, 4:60, 5:68};
+function clampShortcutSize(n) {
+    n = parseInt(n, 10);
+    if (isNaN(n) || n<1) { return 3; }
+    if (n>5) { return 5; }
+    return n;
+}
+function applyShortcutSize(n) {
+    n = clampShortcutSize(n);
+    var h = SHORTCUT_SIZE_HEIGHTS[n] || 52;
+    var icon = Math.max(16, Math.round(h * 0.56));
+    try {
+        document.documentElement.style.setProperty('--bottom-nav-content-height', h + 'px');
+        document.documentElement.style.setProperty('--nav-shortcut-icon-size', icon + 'px');
+        document.documentElement.classList.toggle('nav-shortcuts-size-compact', n<=2);
+        document.documentElement.classList.toggle('nav-shortcuts-size-large', n>=4);
+    } catch (e) {}
+    try { bus.$emit('shortcutSizeChanged', n); } catch (e2) {}
+}
+
 function applyJumplistSide(side) {
     try {
         var right = side === 'right';
@@ -38,7 +59,7 @@ function updateUiSettings(state, val) {
                     'browseTechInfo', 'techInfo', 'nowPlayingTrackNum', 'swipeVolume', 'swipeChangeTrack',
                     'keyboardControl', 'skipBSeconds', 'skipFSeconds', 'mediaControls', 'showRating', 'browseContext',
                     'nowPlayingContext', 'queueContext', 'moveDialogs', 'autoCloseQueue', 'nowPlayingFull', 'tinted',
-                    'ndShortcuts', 'autoCollapseShortcuts', 'gridPerView', 'browseSearch', 'browseHomeSplit', 'browseCatalogHeader',
+                    'ndShortcuts', 'autoCollapseShortcuts', 'shortcutSize', 'mobileContextStyle', 'npMobileDetailStyle', 'gridPerView', 'browseSearch', 'browseHomeSplit', 'browseCatalogHeader',
                     'browseCatalogTintToolbar', 'contextStatsHome',
                     'contextStatsSessionEnhance', 'maiIntegrated', 'jumplistSide'];
     for (let i=0, len=stdItems.length; i<len; ++i) {
@@ -56,6 +77,8 @@ function updateUiSettings(state, val) {
                 browseDisplayChanged = true;
             } else if ('jumplistSide'==key) {
                 applyJumplistSide(state.jumplistSide);
+            } else if ('shortcutSize'==key) {
+                applyShortcutSize(state.shortcutSize);
             }
         }
     }
@@ -436,6 +459,9 @@ const store = new Vuex.Store({
         autoCloseQueue: false,
         ndShortcuts: false,
         autoCollapseShortcuts: false,
+        shortcutSize: 3,
+        mobileContextStyle: 'drawer',
+        npMobileDetailStyle: 'scroll',
         browseSearch: true,
         browseHomeSplit: true,
         browseCatalogHeader: true,
@@ -705,7 +731,11 @@ const store = new Vuex.Store({
                 state.jumplistSide = 'left';
             }
             applyJumplistSide(state.jumplistSide);
-            let intItems = ['skipBSeconds', 'skipFSeconds', 'mobileBar', 'maxRating', 'volumeStep', 'screensaver', 'homeButton'];
+            let ctxStyle = getLocalStorageVal('mobileContextStyle', state.mobileContextStyle || 'drawer');
+            state.mobileContextStyle = (ctxStyle==='menu') ? 'menu' : 'drawer';
+            let detailStyle = getLocalStorageVal('npMobileDetailStyle', state.npMobileDetailStyle || 'scroll');
+            state.npMobileDetailStyle = (detailStyle==='cards') ? 'cards' : 'scroll';
+            let intItems = ['skipBSeconds', 'skipFSeconds', 'mobileBar', 'maxRating', 'volumeStep', 'screensaver', 'homeButton', 'shortcutSize'];
             for (let i=0, len=intItems.length; i<len; ++i) {
                 let key = intItems[i];
                 let value = getLocalStorageVal(key, state[key]);
@@ -717,6 +747,8 @@ const store = new Vuex.Store({
             if (!VALID_SKIP_SECONDS.has(state.skipFSeconds)) {
                 state.skipFSeconds = 30;
             }
+            state.shortcutSize = clampShortcutSize(state.shortcutSize);
+            applyShortcutSize(state.shortcutSize);
 
             let dhi = getLocalStorageVal('detailedHomeItems', undefined);
             if (undefined!=dhi) {

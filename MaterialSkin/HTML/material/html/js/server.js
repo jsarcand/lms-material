@@ -198,6 +198,15 @@ function lmsCommand(playerid, command, commandId, timeout) {
     }
 
     logJsonMessage("REQ", data.params);
+    // Restart has no boot-progress document: the port stays closed until init
+    // finishes. Tell the np-bar before the socket drops.
+    if (bus && command && command.length>0) {
+        if (command[0]=='restartserver') {
+            bus.$emit('serverRestart');
+        } else if (command[0]=='stopserver') {
+            bus.$emit('serverStopping');
+        }
+    }
     if (undefined!=timeout) {
         return axios.post(URL, data, { timeout: timeout});
     } else {
@@ -676,6 +685,16 @@ var lmsServer = Vue.component('lms-server', {
                         player.current.rating = 100;
                     }
                 }
+            }
+
+            player.wiimDiffuse = undefined;
+            if (data.wiim_diffuse && data.wiim_diffuse.role) {
+                player.wiimDiffuse = {
+                    role: String(data.wiim_diffuse.role),
+                    source: data.wiim_diffuse.source || '',
+                    sourceId: String(data.wiim_diffuse.source_id || ''),
+                    dests: data.wiim_diffuse.dests || ''
+                };
             }
 
             if (player.isgroup && data.members) {

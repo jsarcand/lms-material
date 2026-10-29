@@ -186,6 +186,7 @@ const GENRES_ID = MUSIC_ID_PREFIX+"genres";
 const YEARS_ID = MUSIC_ID_PREFIX+"years";
 const RANDOM_MIX_ID = MUSIC_ID_PREFIX+"randomMix";
 const START_RANDOM_MIX_ID = MUSIC_ID_PREFIX+"randomMixStart";
+const UNIFY_BROWSE_ID = MUSIC_ID_PREFIX+"unifyBrowse";
 const ARTIST_TAGS = "tags:4s";
 const ALBUM_TAGS = "tags:ajlqswyKS24";
 const ALBUM_TAGS_ALL_ARTISTS = "tags:aajlqswyKSS24";

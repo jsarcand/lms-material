@@ -374,12 +374,10 @@ Vue.component('lms-information-dialog', {
             });
         },
         restartServer() {
+            bus.$emit('serverRestartReload');
             lmsCommand("", ["restartserver"]).then(({data}) => {
                 this.close();
                 bus.$emit('showMessage', i18n('Server is being restarted.'));
-                setTimeout(function () {
-                    location.reload();
-                }, 2500);
             }).catch(err => {
                 this.close();
                 bus.$emit('showMessage', i18n('Server is being restarted.'));
