@@ -11,6 +11,11 @@
 }
 
 /* Host must fill the browse pane so fusion (absolute fill) is truly 100% height */
+/* Desktop popover must leave the fixed overflow host. JS also pins left/top. */
+#browse-view:has(.lib-fusion-host) .v-menu__content.msk-context-popover.menuable__content__active {
+ position:fixed !important;
+ z-index:10050 !important;
+}
 #browse-view .lms-list.bgnd-cover.lib-fusion-host {
  position:fixed !important;
  top:calc(var(--main-toolbar-height) + var(--sub-toolbar-height)) !important;
@@ -21,7 +26,7 @@
  height:auto !important;
  max-height:none !important;
  min-height:0 !important;
- z-index:1 !important;
+ z-index:auto !important;
  box-sizing:border-box !important;
  overflow:hidden !important;
 }
@@ -46,14 +51,16 @@
   max-height:none !important;
  }
 }
+/* Phone splitter: the pane already ends at the screen. A chrome inset here
+   left an empty band. Wide desktop keeps bottom at the in-flow np-bar. */
 @media (max-width: 1024px) {
- #browse-view .lms-list.bgnd-cover.lib-fusion-host {
-  bottom:var(--mobile-bottom-chrome-height, var(--bottom-toolbar-height, 0px)) !important;
+ .lms-splitter .splitter-pane #browse-view .browse-main-pane > .lms-list.bgnd-cover.lib-fusion-host {
+  bottom:0 !important;
  }
 }
 /* Fusion chrome must receive clicks above the My Music glass subheader */
 #browse-view .lib-fusion {
- z-index:8 !important;
+ z-index:auto !important;
 }
 #browse-view .lib-fusion .lib-fusion-tabs {
  pointer-events:auto !important;
@@ -86,22 +93,52 @@
 #browse-view .browse-main-pane.lib-fusion-main > .browse-subheader-wrap .sub-cover-fade {
  pointer-events:auto !important;
 }
-/* Single-line title in Fusion — subtitle row made the bar grow */
+/* Single-line title in Fusion — subtitle row made the bar grow.
+   Matches the glass one-line rule so "Browse music library" stays hidden. */
+html.theme-glass #browse-view.browse-home-split:not(.browse-catalog):not(.detailed-sub) .browse-main-pane.lib-fusion-main .browse-title .subtoolbar-subtitle,
 #browse-view .browse-main-pane.lib-fusion-main .browse-title .subtoolbar-subtitle {
  display:none !important;
 }
 #browse-view .browse-main-pane.lib-fusion-main .browse-title {
  flex-wrap:nowrap !important;
  min-width:0;
+ /* Leave the right edge for the title-bar filter / sort / view tools. */
+ max-width:calc(100% - 168px);
+}
+html.lib-fusion-filtering #browse-view .browse-main-pane.lib-fusion-main .browse-title {
+ visibility:hidden !important;
+}
+/* Mobile pull row holds filter/sort/display, so the title keeps its full width. */
+html.lib-fusion-pull #browse-view .browse-main-pane.lib-fusion-main .browse-title {
+ max-width:none;
+}
+html.lib-fusion-pull #browse-view .browse-main-pane.lib-fusion-main .browse-commands {
+ margin-right:0;
+}
+html.lib-fusion-pull.lib-fusion-filtering #browse-view .browse-main-pane.lib-fusion-main .browse-title,
+html.lib-fusion-pull.lib-fusion-filtering #browse-view .browse-main-pane.lib-fusion-main .browse-commands {
+ visibility:visible !important;
+ pointer-events:auto !important;
 }
 #browse-view .browse-main-pane.lib-fusion-main .browse-title .subtoolbar-title {
  white-space:nowrap;
  overflow:hidden;
  text-overflow:ellipsis;
 }
+/* Unified header is the chevron plus the Artist / Album / Song pills. */
+#browse-view .browse-main-pane.lib-fusion-main .browse-section-glyph,
+#browse-view .browse-main-pane.lib-fusion-main .browse-title {
+ display:none !important;
+}
 #browse-view .browse-main-pane.lib-fusion-main .browse-commands {
  max-height:var(--sub-toolbar-height, 48px);
  overflow:hidden;
+ /* One gap from the title-bar cluster. The width is measured when the icons change. */
+ margin-right:var(--fusion-tools-reserve, 136px);
+}
+html.lib-fusion-filtering #browse-view .browse-main-pane.lib-fusion-main .browse-commands {
+ visibility:hidden !important;
+ pointer-events:none !important;
 }
 #browse-view .browse-main-pane.lib-fusion-main .browse-commands .context-button obj {
  display:none !important; /* no text labels that force wrap/height */
@@ -120,7 +157,7 @@
  width:100% !important;
  height:100% !important;
  max-height:100% !important;
- z-index:8 !important;
+ z-index:auto !important;
  display:flex !important;
  flex-direction:column;
  min-height:0;
@@ -134,9 +171,8 @@
 }
 
 /*
- * Host is already pinned above the NP / bottom chrome (top+bottom).
- * Scrollers only need breathing room so the last row (and ⋮) is not flush
- * against the edge — do NOT re-add full np-bar height (that left a false gap).
+ * The scrollport fills the host. Padding-bottom on these flex scrollers
+ * showed up as a permanent empty band. scroll-padding only clears the last row.
  */
 #browse-view .lib-fusion {
  --lib-fusion-np-clearance:16px;
@@ -146,21 +182,20 @@
 #browse-view .lib-fusion .lib-fusion-col-scroll,
 #browse-view .lib-fusion .lib-fusion-album-grid,
 #browse-view .lib-fusion .vue-recycle-scroller {
- padding-bottom:var(--lib-fusion-np-clearance) !important;
+ padding-bottom:0 !important;
+ scroll-padding-bottom:24px;
  box-sizing:border-box;
 }
-/* Mobile: extra end pad so last-row ⋮ clears miniplayer glass / overlay */
 @media (max-width: 1024px) {
  #browse-view .lib-fusion {
-  --lib-fusion-np-clearance:12px;
-  --lib-fusion-mobile-menu-clear:64px;
+  --lib-fusion-np-clearance:0px;
  }
  #browse-view .lib-fusion .lib-fusion-scroller,
  #browse-view .lib-fusion .lib-fusion-col-scroll,
  #browse-view .lib-fusion .lib-fusion-album-grid,
  #browse-view .lib-fusion .vue-recycle-scroller {
-  padding-bottom:calc(var(--lib-fusion-mobile-menu-clear) + var(--lib-fusion-np-clearance) + env(safe-area-inset-bottom, 0px)) !important;
-  scroll-padding-bottom:calc(var(--lib-fusion-mobile-menu-clear) + env(safe-area-inset-bottom, 0px)) !important;
+  padding-bottom:0 !important;
+  scroll-padding-bottom:var(--mobile-bottom-chrome-height, 72px) !important;
  }
  /* Keep row ⋮ menus tappable above miniplayer glass */
  .lib-fusion-item-menu {
@@ -204,11 +239,10 @@
 /* A–Z lexicon — side follows settings (jl-side-*) / explicit class */
 .lib-fusion-jumplist {
  position:absolute;
- top:calc(var(--sub-toolbar-height, 48px) + 52px);
- /* Host already clears NP chrome; sit above scroller end-pad */
- bottom:calc(var(--lib-fusion-np-clearance, 16px) + 4px);
+ top:calc(var(--sub-toolbar-height, 48px) + 8px);
+ bottom:4px;
  width:22px;
- z-index:8;
+ z-index:4;
  display:flex;
  align-items:stretch;
  justify-content:center;
@@ -226,11 +260,11 @@ html.jl-side-left .lib-fusion-jumplist:not(.lib-fusion-jl-right) {
  left:0;
  right:auto;
 }
-html.jl-side-left .lib-fusion-body {
+html.jl-side-left .lib-fusion.lib-fusion-has-jl .lib-fusion-body {
  padding-right:8px;
  padding-left:18px;
 }
-html.jl-side-right .lib-fusion-body {
+html.jl-side-right .lib-fusion.lib-fusion-has-jl .lib-fusion-body {
  padding-left:8px;
  padding-right:18px;
 }
@@ -238,9 +272,10 @@ html.jl-side-right .lib-fusion-body {
 /* Stable host so absolute enter/leave never collapses flex height (no header drop) */
 .lib-fusion-slide-host {
  position:relative;
- flex:1 1 auto;
+ flex:1 1 0%;
  min-height:0;
  width:100%;
+ height:auto;
  overflow:hidden;
 }
 /* Tab content always fills the host — no reflow when transition ends */
@@ -308,19 +343,15 @@ html.jl-side-right .lib-fusion-body {
 }
 
 /*
- * Scroll-down: gently hide section heads only (Songs / Title row).
- * Keep Artists|Albums|Songs tabs + My Music subheader always visible.
+ * Scroll-down hides the song column titles only.
+ * Artist / album / track counts stay in the list, at its head. They scroll away with the rows.
  */
-.lib-fusion-col-head,
-.lib-fusion-tab-head,
 .lib-fusion-song-header {
  transition:max-height 0.32s cubic-bezier(0.32, 0.72, 0, 1),
   opacity 0.24s ease, padding 0.32s cubic-bezier(0.32, 0.72, 0, 1),
   margin 0.32s cubic-bezier(0.32, 0.72, 0, 1), border-width 0.2s ease,
   transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
 }
-.lib-fusion-chrome-collapsed .lib-fusion-col-head,
-.lib-fusion-chrome-collapsed .lib-fusion-tab-head,
 .lib-fusion-chrome-collapsed .lib-fusion-song-header {
  max-height:0 !important;
  min-height:0 !important;
@@ -392,6 +423,35 @@ html.jl-side-right .lib-fusion-body {
  opacity:0.9;
  pointer-events:auto;
 }
+/* Desktop: the ⋮ stays in the row so columns do not jump, and it appears on hover. */
+body.msk-is-non-touch .lib-fusion-item-menu {
+ opacity:0;
+ pointer-events:none;
+ transition:opacity 0.12s ease;
+}
+body.msk-is-non-touch .lib-fusion-artist-row:hover .lib-fusion-item-menu,
+body.msk-is-non-touch .lib-fusion-album-head:hover .lib-fusion-item-menu,
+body.msk-is-non-touch .lib-fusion-track-row:hover .lib-fusion-item-menu,
+body.msk-is-non-touch .lib-fusion-song-row:hover .lib-fusion-item-menu,
+body.msk-is-non-touch .lib-fusion-grid-item:hover .lib-fusion-item-menu,
+body.msk-is-non-touch .lib-fusion-item-menu:hover {
+ opacity:0.95;
+ pointer-events:auto;
+}
+.lib-fusion-item-menu.list-btn {
+ margin-right:0;
+}
+/* Matches the ⋮ slot so the duration header lines up with the duration column. */
+.lib-fusion-menu-spacer {
+ flex:0 0 28px;
+ width:28px;
+ min-width:28px;
+ margin-left:2px;
+}
+html.msk-is-touch .lib-fusion-menu-spacer,
+body.msk-is-touch .lib-fusion-menu-spacer {
+ display:none !important;
+}
 .lib-fusion-grid-menu {
  position:absolute !important;
  bottom:6px !important;
@@ -430,6 +490,11 @@ html.jl-side-right .lib-fusion-body {
  .theme--light .lib-fusion-frost {
   background:rgba(250, 250, 250, 0.82) !important;
  }
+}
+
+/* Tools are positioned onto the browse title. See the title-bar block below. */
+.lib-fusion-tools {
+ display:flex;
 }
 
 /* Tabs — frosted glass covering Artists | Albums | Songs (always one row) */
@@ -854,12 +919,12 @@ body.theme-mojave .lib-fusion-tab-active {
  color:var(--primary-color, #1976d2);
 }
 
-/* Frosted section headers — content scrolls underneath via scroll padding */
+/* Count line lives at the head of the list and scrolls with it. Not a sticky bar. */
 .lib-fusion-col-head,
 .lib-fusion-tab-head {
- position:sticky;
- top:0;
- z-index:4;
+ position:static;
+ top:auto;
+ z-index:auto;
  flex:0 0 auto;
  max-height:48px;
  padding:10px 12px 10px 12px;
@@ -954,7 +1019,7 @@ body.theme-mojave .lib-fusion-tab-active {
 .lib-fusion-detail-head {
  position:sticky;
  top:0;
- z-index:4;
+ z-index:6;
  flex:0 0 auto;
  display:flex;
  align-items:center;
@@ -1080,24 +1145,24 @@ body.theme-mojave .lib-fusion-tab-active {
  min-width:0;
  padding:4px 6px;
  border-radius:14px;
- background:color-mix(in srgb, var(--background-color, #121212) 88%, transparent);
- backdrop-filter:blur(10px) saturate(1.2);
- -webkit-backdrop-filter:blur(10px) saturate(1.2);
- box-shadow:0 2px 10px rgba(0,0,0,0.28);
+ background:color-mix(in srgb, var(--background-color, #121212) 46%, transparent);
+ backdrop-filter:blur(14px) saturate(1.45);
+ -webkit-backdrop-filter:blur(14px) saturate(1.45);
+ box-shadow:0 1px 4px rgba(0,0,0,0.28), inset 0 0 0 1px rgba(255,255,255,0.14);
  pointer-events:auto;
 }
 
 .theme--light .lib-fusion-row-btns {
- background:color-mix(in srgb, var(--background-color, #fafafa) 90%, transparent);
- box-shadow:0 2px 10px rgba(0,0,0,0.12);
+ background:color-mix(in srgb, #f7f7f7 64%, transparent);
+ box-shadow:0 1px 3px rgba(0,0,0,0.14), inset 0 0 0 1px rgba(0,0,0,0.08);
 }
 
 @supports not (color: color-mix(in srgb, red, blue)) {
  .lib-fusion-row-btns {
-  background:rgba(24, 24, 24, 0.9);
+  background:rgba(20, 20, 20, 0.5);
  }
  .theme--light .lib-fusion-row-btns {
-  background:rgba(250, 250, 250, 0.92);
+  background:rgba(247, 247, 247, 0.72);
  }
 }
 
@@ -1126,6 +1191,17 @@ body.theme-mojave .lib-fusion-tab-active {
 
 .lib-fusion-ibtn:hover {
  opacity:1;
+}
+/* The row is one glass pill. Browse .list-btns and .lib-fusion-mat-main
+   would paint a second chip on each glyph. */
+.lib-fusion-row-btns .grid-btn,
+.lib-fusion-row-btns .lib-fusion-ibtn,
+.theme--light .lib-fusion-row-btns .grid-btn,
+.lib-fusion-row-btns .lib-fusion-mat-main {
+ background:transparent !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+ box-shadow:none !important;
 }
 
 /* Expand chevron stays clickable above hover play cluster */
@@ -1321,7 +1397,20 @@ body.theme-mojave .lib-fusion-tab-active {
  display:none !important;
 }
 
-/* SVG hover-play/shuffle already include a circle — no extra chip background */
+/* Glyph only; the chip is frosted glass (same as browse .grid-btns). */
+.lib-fusion-grid-btns .lib-fusion-gbtn {
+ width:var(--icon-size, 24px);
+ height:var(--icon-size, 24px);
+ border-radius:50%;
+ cursor:pointer;
+ display:block;
+ background:color-mix(in srgb, #141414 46%, transparent);
+ backdrop-filter:blur(14px) saturate(1.45);
+ -webkit-backdrop-filter:blur(14px) saturate(1.45);
+ box-shadow:0 1px 4px rgba(0,0,0,0.28), inset 0 0 0 1px rgba(255,255,255,0.16);
+ opacity:0.94;
+}
+.lib-fusion-row-btns .lib-fusion-gbtn,
 .lib-fusion-gbtn {
  width:var(--icon-size, 24px);
  height:var(--icon-size, 24px);
@@ -1329,7 +1418,7 @@ body.theme-mojave .lib-fusion-tab-active {
  cursor:pointer;
  display:block;
  background:transparent;
- opacity:0.85;
+ opacity:0.9;
  box-shadow:none;
 }
 
@@ -1365,13 +1454,15 @@ body.theme-mojave .lib-fusion-tab-active {
  width:28px;
  height:28px;
  border-radius:50%;
- background:rgba(32, 32, 32, 0.78);
- box-shadow:0 1px 3px rgba(0,0,0,0.3);
+ background:color-mix(in srgb, #141414 46%, transparent);
+ backdrop-filter:blur(14px) saturate(1.45);
+ -webkit-backdrop-filter:blur(14px) saturate(1.45);
+ box-shadow:0 1px 4px rgba(0,0,0,0.28), inset 0 0 0 1px rgba(255,255,255,0.16);
  cursor:pointer;
  margin-left:3px;
 }
 .lib-fusion-mat-main {
- background:rgba(0,0,0,0.85);
+ background:color-mix(in srgb, #141414 58%, transparent);
  width:32px;
  height:32px;
 }
@@ -1387,8 +1478,8 @@ body.theme-mojave .lib-fusion-tab-active {
  position:absolute;
  top:0;
  bottom:0;
- width:56%;
- max-width:100px;
+ width:92px;
+ max-width:92px;
  display:flex;
  flex-direction:column;
  align-items:center;
@@ -1422,14 +1513,88 @@ body.theme-mojave .lib-fusion-tab-active {
 .lib-fusion-swipe-armed.lib-fusion-swipe-left .lib-fusion-swipe-next {
  filter:brightness(1.08);
 }
+.lib-fusion-swipe-open.lib-fusion-swipe-right .lib-fusion-swipe-add,
+.lib-fusion-swipe-open.lib-fusion-swipe-left .lib-fusion-swipe-next {
+ pointer-events:auto;
+ cursor:pointer;
+ z-index:2;
+}
 .lib-fusion-album,
 .lib-fusion-song-row,
-.lib-fusion-track-row {
+.lib-fusion-track-row,
+.lib-fusion-artist-row,
+.lib-fusion-grid-item {
  position:relative;
+ touch-action:pan-y;
+}
+.lib-fusion-album > :not(.lib-fusion-swipe-bg),
+.lib-fusion-song-row > :not(.lib-fusion-swipe-bg),
+.lib-fusion-track-row > :not(.lib-fusion-swipe-bg),
+.lib-fusion-artist-row > :not(.lib-fusion-swipe-bg),
+.lib-fusion-grid-item > :not(.lib-fusion-swipe-bg) {
+ transition:transform 0.2s ease;
+}
+.lib-fusion-swiping > :not(.lib-fusion-swipe-bg),
+.lib-fusion-swipe-open > :not(.lib-fusion-swipe-bg),
+.lib-fusion-swipe-left > :not(.lib-fusion-swipe-bg),
+.lib-fusion-swipe-right > :not(.lib-fusion-swipe-bg) {
+ transform:translate3d(var(--fusion-swipe-x, 0px), 0, 0);
+}
+.lib-fusion-album.lib-fusion-swiping > .lib-fusion-album-head,
+.lib-fusion-album.lib-fusion-swipe-open > .lib-fusion-album-head,
+.lib-fusion-album.lib-fusion-swipe-left > .lib-fusion-album-head,
+.lib-fusion-album.lib-fusion-swipe-right > .lib-fusion-album-head,
+.lib-fusion-album.lib-fusion-swiping > .lib-fusion-tracks,
+.lib-fusion-album.lib-fusion-swipe-open > .lib-fusion-tracks,
+.lib-fusion-album.lib-fusion-swipe-left > .lib-fusion-tracks,
+.lib-fusion-album.lib-fusion-swipe-right > .lib-fusion-tracks,
+.lib-fusion-grid-item.lib-fusion-swiping > .lib-fusion-grid-text,
+.lib-fusion-grid-item.lib-fusion-swipe-open > .lib-fusion-grid-text,
+.lib-fusion-grid-item.lib-fusion-swipe-left > .lib-fusion-grid-text,
+.lib-fusion-grid-item.lib-fusion-swipe-right > .lib-fusion-grid-text {
+ background:var(--background-color);
+}
+.lib-fusion-swiping > :not(.lib-fusion-swipe-bg) {
+ transition:none;
+}
+.lib-fusion-song-row.lib-fusion-swiping,
+.lib-fusion-song-row.lib-fusion-swipe-open,
+.lib-fusion-song-row.lib-fusion-swipe-left,
+.lib-fusion-song-row.lib-fusion-swipe-right,
+.lib-fusion-track-row.lib-fusion-swiping,
+.lib-fusion-track-row.lib-fusion-swipe-open,
+.lib-fusion-track-row.lib-fusion-swipe-left,
+.lib-fusion-track-row.lib-fusion-swipe-right,
+.lib-fusion-artist-row.lib-fusion-swiping,
+.lib-fusion-artist-row.lib-fusion-swipe-open,
+.lib-fusion-artist-row.lib-fusion-swipe-left,
+.lib-fusion-artist-row.lib-fusion-swipe-right {
+ background:var(--background-color);
+}
+.lib-fusion-album.lib-fusion-swiping,
+.lib-fusion-album.lib-fusion-swipe-open,
+.lib-fusion-album.lib-fusion-swipe-left,
+.lib-fusion-album.lib-fusion-swipe-right,
+.lib-fusion-song-row.lib-fusion-swiping,
+.lib-fusion-song-row.lib-fusion-swipe-open,
+.lib-fusion-song-row.lib-fusion-swipe-left,
+.lib-fusion-song-row.lib-fusion-swipe-right,
+.lib-fusion-track-row.lib-fusion-swiping,
+.lib-fusion-track-row.lib-fusion-swipe-open,
+.lib-fusion-track-row.lib-fusion-swipe-left,
+.lib-fusion-track-row.lib-fusion-swipe-right,
+.lib-fusion-artist-row.lib-fusion-swiping,
+.lib-fusion-artist-row.lib-fusion-swipe-open,
+.lib-fusion-artist-row.lib-fusion-swipe-left,
+.lib-fusion-artist-row.lib-fusion-swipe-right,
+.lib-fusion-grid-item.lib-fusion-swiping,
+.lib-fusion-grid-item.lib-fusion-swipe-open,
+.lib-fusion-grid-item.lib-fusion-swipe-left,
+.lib-fusion-grid-item.lib-fusion-swipe-right {
+ overflow:hidden;
 }
 .lib-fusion-swiping {
  z-index:1;
- will-change:transform;
 }
 
 .lib-fusion-grid-title {
@@ -1638,17 +1803,29 @@ body.theme-mojave .lib-fusion-tab-active {
  overscroll-behavior:contain;
  padding:6px;
  border-radius:12px;
- background:color-mix(in srgb, var(--background-color, #1a1a1a) 96%, transparent);
- backdrop-filter:blur(16px);
- -webkit-backdrop-filter:blur(16px);
- border:1px solid var(--list-item-border-color, rgba(128,128,128,0.3));
- box-shadow:0 10px 28px rgba(0,0,0,0.35);
+ background:var(--std-popup-background-color, var(--popup-background-color, #303030));
+ color:var(--text-color, inherit);
+ border:1px solid var(--popup-border-color, var(--list-item-border-color, rgba(128,128,128,0.3)));
+ box-shadow:var(--menu-dlg-shadow, 0 10px 28px rgba(0,0,0,0.35));
  /* Ensure dropdown paints above sliding tab content */
  pointer-events:auto;
 }
 
 .theme--light .lib-fusion-sort-menu {
- background:color-mix(in srgb, var(--background-color, #fff) 96%, transparent);
+ background:var(--std-popup-background-color, var(--popup-background-color, #fff));
+ color:var(--text-color, inherit);
+}
+html.theme-glass .lib-fusion-sort-menu {
+ background:rgba(28, 28, 30, 0.94);
+ color:#f5f5f7;
+ border-color:rgba(255, 255, 255, 0.12);
+ box-shadow:0 12px 40px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+html.theme-glass.theme--light .lib-fusion-sort-menu {
+ background:rgba(255, 255, 255, 0.96);
+ color:#1c1c1e;
+ border-color:rgba(0, 0, 0, 0.12);
+ box-shadow:0 12px 40px rgba(0, 0, 0, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.4);
 }
 
 .lib-fusion-sort-head {
@@ -1692,7 +1869,24 @@ body.theme-mojave .lib-fusion-tab-active {
 .lib-fusion-sort-opt-on {
  color:var(--primary-color, #1976d2);
  font-weight:var(--bold-weight, 600);
- background:rgba(25, 118, 210, 0.14);
+ background:color-mix(in srgb, var(--primary-color, #1976d2) 16%, transparent);
+}
+/* Phone: one sort list plus Reverse. The second key stays available on desktop. */
+@media (max-width: 799px) {
+ .lib-fusion-sort-secondary {
+  display:none;
+ }
+ .lib-fusion-sort-menu {
+  max-height:min(42vh, 240px);
+  padding:4px;
+ }
+ .lib-fusion-sort-opt {
+  padding:6px 10px;
+  font-size:0.84rem;
+ }
+ .lib-fusion-sort-head {
+  padding:6px 10px 2px;
+ }
 }
 
 /* Songs display / columns menu */
@@ -1785,8 +1979,7 @@ body.theme-mojave .lib-fusion-tab-active {
  opacity:0.72;
  border-bottom:1px solid var(--list-item-border-color, rgba(128,128,128,0.2));
  position:sticky;
- /* Sit under sticky "Songs" section head when both expanded */
- top:48px;
+ top:0;
  z-index:5;
  /* Frosted glass — content scrolls underneath */
  backdrop-filter:var(--toolbar-filter, blur(14px) saturate(1.25));
@@ -1976,6 +2169,36 @@ body.theme-mojave .lib-fusion-tab-active {
 }
 .lib-fusion-song-header .lib-fusion-track-time {
  text-align:left !important;
+ display:inline-flex;
+ align-items:center;
+ gap:2px;
+}
+/* Beat the global .v-icon size (!important, many :not()) so the clock sits on the duration's left edge. */
+#browse-view .lib-fusion .lib-fusion-time-icn {
+ font-size:16px !important;
+ width:16px !important;
+ height:16px !important;
+ min-width:16px !important;
+ max-width:16px !important;
+ line-height:16px !important;
+ margin:0 !important;
+ padding:0 !important;
+ flex:0 0 16px !important;
+ letter-spacing:0 !important;
+ text-transform:none !important;
+ text-align:left !important;
+ transform:none !important;
+ vertical-align:middle !important;
+ opacity:0.72;
+ color:inherit !important;
+}
+.lib-fusion-genre-back {
+ display:flex;
+ align-items:center;
+ gap:4px;
+ flex:0 0 auto;
+ min-height:40px;
+ padding:0 8px;
 }
 .lib-fusion-song-row.has-added .lib-fusion-song-artist,
 .lib-fusion-song-row.has-added .lib-fusion-song-album {
@@ -2179,26 +2402,23 @@ body.theme-mojave .lib-fusion-tab-active {
   will-change:transform;
  }
  .lib-fusion-artists.lib-fusion-drill-1 .lib-fusion-artists-track {
-  transform:translateX(-33.333%);
+  transform:translateX(calc(-100% / 3));
  }
  .lib-fusion-artists.lib-fusion-drill-2 .lib-fusion-artists-track {
-  transform:translateX(-66.666%);
+  transform:translateX(calc(-200% / 3));
  }
  .lib-fusion-artists-track > .lib-fusion-artist-list,
  .lib-fusion-artists-track > .lib-fusion-detail,
  .lib-fusion-artists-track > .lib-fusion-tracks-pane {
   display:flex !important;
-  flex:0 0 33.333% !important;
-  width:33.333% !important;
+  flex:0 0 calc(100% / 3) !important;
+  width:calc(100% / 3) !important;
   max-width:none !important;
   min-width:0 !important;
   height:100% !important;
   border:none !important;
+  box-shadow:none !important;
   box-sizing:border-box;
- }
- .lib-fusion-artists-track > .lib-fusion-detail,
- .lib-fusion-artists-track > .lib-fusion-tracks-pane {
-  box-shadow:-6px 0 18px rgba(0,0,0,0.16);
  }
 
  /* Albums tab: grid → tracks */
@@ -2215,27 +2435,65 @@ body.theme-mojave .lib-fusion-tab-active {
   transform:translateX(0);
  }
  .lib-fusion-albums-tab.lib-fusion-album-drill .lib-fusion-albums-track {
-  transform:translateX(-50%);
+  transform:translateX(calc(-100% / 2));
  }
  .lib-fusion-albums-grid-pane,
  .lib-fusion-albums-tab .lib-fusion-tracks-pane {
-  flex:0 0 50%;
-  width:50%;
+  flex:0 0 calc(100% / 2);
+  width:calc(100% / 2);
   min-width:0;
   height:100%;
   display:flex;
   flex-direction:column;
   min-height:0;
+  box-shadow:none;
+  box-sizing:border-box;
  }
- .lib-fusion-albums-tab .lib-fusion-tracks-pane {
-  box-shadow:-6px 0 18px rgba(0,0,0,0.16);
+ /* Body padding is the A–Z gutter. overflow clips at the padding edge, so the
+    next drill pane sat in that strip. Clip the track to the body and inset
+    each pane instead. */
+ html.jl-side-right .lib-fusion.lib-fusion-has-jl .lib-fusion-artists,
+ html.jl-side-left .lib-fusion.lib-fusion-has-jl .lib-fusion-artists,
+ html.jl-side-right .lib-fusion.lib-fusion-has-jl .lib-fusion-albums-tab,
+ html.jl-side-left .lib-fusion.lib-fusion-has-jl .lib-fusion-albums-tab {
+  padding-left:0 !important;
+  padding-right:0 !important;
+ }
+ html.jl-side-right .lib-fusion.lib-fusion-has-jl .lib-fusion-artists-track > .lib-fusion-col,
+ html.jl-side-right .lib-fusion.lib-fusion-has-jl .lib-fusion-albums-track > .lib-fusion-col {
+  padding-left:8px;
+  padding-right:18px;
+ }
+ html.jl-side-left .lib-fusion.lib-fusion-has-jl .lib-fusion-artists-track > .lib-fusion-col,
+ html.jl-side-left .lib-fusion.lib-fusion-has-jl .lib-fusion-albums-track > .lib-fusion-col {
+  padding-left:18px;
+  padding-right:8px;
+ }
+ /* Last album tracks clear the np-bar. Pad the list, not the scrollport:
+    padding on .lib-fusion-col-scroll stays on screen as an empty band.
+    Raised: bar thickness + shortcut strip. Docked or auto-collapsed: the
+    strip is off screen and the bar rests on the home indicator. */
+ #browse-view .lib-fusion .lib-fusion-tracks-pane .lib-fusion-detail-head {
+  padding-top:18px;
+ }
+ #browse-view .lib-fusion .lib-fusion-tracks-pane .lib-fusion-track-list {
+  padding-top:16px;
+  padding-bottom:calc(var(--mobile-npbar-height, 48px) + var(--np-bar-dock-lift, 0px) + 12px);
+  box-sizing:border-box;
+ }
+ #browse-view .lib-fusion .lib-fusion-album-grid {
+  padding-top:20px;
+ }
+ .lms-app.np-bar-docked:not(.np-sheet-open) #browse-view .lib-fusion .lib-fusion-tracks-pane .lib-fusion-track-list,
+ .lms-app.nav-shortcuts-auto-collapsed:not(.np-bar-docked):not(.np-sheet-open) #browse-view .lib-fusion .lib-fusion-tracks-pane .lib-fusion-track-list {
+  padding-bottom:calc(var(--mobile-npbar-height, 48px) + var(--np-home-rest, 0px) + 12px);
  }
 
  .lib-fusion-song-album {
   display:none;
  }
 
- /* Filter expands as overlay — never pushes body / header down */
+ /* One pill row. Filter, sort, and view live in the title bar. */
  .lib-fusion-tabs {
   flex-wrap:nowrap !important;
   position:relative;
@@ -2243,8 +2501,9 @@ body.theme-mojave .lib-fusion-tab-active {
   min-height:44px !important;
   max-height:44px !important;
   height:44px !important;
-  padding:4px 6px !important;
-  overflow:visible !important;
+  padding:4px 8px !important;
+  overflow:hidden !important;
+  align-items:center !important;
  }
  /* Songs: stack artist under title when narrow */
  .lib-fusion-song-main {
@@ -2280,7 +2539,6 @@ body.theme-mojave .lib-fusion-tab-active {
  .lib-fusion-scroller .vue-recycle-scroller__item-view .lib-fusion-song-row {
   min-height:48px;
  }
- /* Mobile: filter stays inside the tabs row (never floats under main titlebar) */
  .lib-fusion-tabs {
   position:relative !important;
   z-index:50 !important;
@@ -2384,4 +2642,418 @@ body.theme-mojave .lib-fusion-tab-active {
  .lib-fusion-albums-tab .lib-fusion-tracks-pane {
   display:none !important;
  }
+}
+
+/*
+ * Title bar: filter, sort, and column view sit on the My Music subheader.
+ * The host and .lib-fusion stay z-index:auto so this bar (z-index 60) paints
+ * above the subheader. Menus drop over the pills; the pills stay put.
+ * Overlay hosts (home-split, phone splitter) start at the pane top, so top:0
+ * lands in the title band. A fixed host that already starts under the title
+ * lifts the bar by one subheader.
+ */
+#browse-view .lib-fusion > .lib-fusion-tools {
+ display:flex !important;
+ position:absolute !important;
+ top:0;
+ right:8px;
+ left:auto;
+ width:auto !important;
+ max-width:calc(100% - 56px);
+ height:var(--sub-toolbar-height, 48px) !important;
+ min-height:var(--sub-toolbar-height, 48px) !important;
+ max-height:var(--sub-toolbar-height, 48px) !important;
+ margin:0;
+ padding:0;
+ align-items:center;
+ justify-content:flex-end;
+ gap:0;
+ z-index:60;
+ overflow:visible !important;
+ pointer-events:auto !important;
+ background:transparent !important;
+ box-sizing:border-box;
+ color:var(--browse-chrome-ink, inherit);
+}
+#browse-view:not(.browse-home-split) .browse-main-pane > .lms-list.bgnd-cover.lib-fusion-host {
+ overflow:visible !important;
+}
+#browse-view:not(.browse-home-split) .lms-list.bgnd-cover.lib-fusion-host > .lib-fusion {
+ overflow:visible !important;
+ padding-top:4px !important;
+}
+#browse-view:not(.browse-home-split) .lib-fusion > .lib-fusion-tools {
+ top:calc(-1 * (var(--sub-toolbar-height, 48px) - var(--browse-subheader-offset, 0px)));
+}
+#browse-view:not(.browse-home-split) .lms-list.bgnd-cover.lib-fusion-host > .lib-fusion .lib-fusion-jumplist {
+ top:56px;
+}
+/* Wide desktop host already starts under the header, and the pill row is gone. */
+@media (min-width: 800px) {
+ #browse-view:not(.browse-home-split) .lms-list.bgnd-cover.lib-fusion-host > .lib-fusion .lib-fusion-jumplist {
+  top:8px;
+ }
+}
+.lms-splitter .splitter-pane #browse-view .browse-main-pane > .lms-list.bgnd-cover.lib-fusion-host,
+.lms-splitter .splitter-pane #browse-view .lib-fusion {
+ overflow:hidden !important;
+}
+.lms-splitter .splitter-pane #browse-view .lib-fusion {
+ padding-top:calc(var(--sub-toolbar-height, 48px) - var(--browse-subheader-offset, 0px) + 4px) !important;
+}
+.lms-splitter .splitter-pane #browse-view .lib-fusion > .lib-fusion-tools {
+ top:0;
+}
+/* The non-split rule sets padding-top:4px and outranks the splitter clearance.
+   Pull mode keeps the content below the header. The pills themselves sit in it. */
+html.lib-fusion-pull .lms-splitter .splitter-pane #browse-view .lms-list.bgnd-cover.lib-fusion-host > .lib-fusion {
+ padding-top:calc(var(--sub-toolbar-height, 48px) - var(--browse-subheader-offset, 0px) + 4px) !important;
+}
+html.lib-fusion-pull #browse-view .browse-main-pane.lib-fusion-main > .browse-subheader-wrap {
+ z-index:20 !important;
+}
+html.lib-fusion-pull #browse-view .lib-fusion .lib-fusion-tabs {
+ z-index:40 !important;
+}
+/* Pull row matches the browse overflow field: 36px, clipped until the gesture opens it. */
+#browse-view .lib-fusion > .lib-fusion-pull-tools.browse-scroll-tools {
+ position:relative;
+ z-index:8;
+ flex:0 0 auto;
+ width:100%;
+ min-height:0;
+ margin:0;
+ background:transparent;
+}
+#browse-view .lib-fusion > .lib-fusion-pull-tools .browse-overflow-panel {
+ display:flex;
+ flex-direction:column;
+ justify-content:center;
+ height:100% !important;
+ min-height:0 !important;
+ max-height:100% !important;
+ order:0;
+ margin:0;
+ padding:0 4px;
+ border:none;
+ border-radius:0;
+ background:transparent;
+ box-sizing:border-box;
+ overflow:hidden;
+}
+#browse-view .lib-fusion > .lib-fusion-pull-tools .browse-overflow-row {
+ height:36px;
+ flex:0 0 36px;
+}
+#browse-view .lib-fusion > .lib-fusion-pull-tools .lms-search,
+#browse-view .lib-fusion > .lib-fusion-pull-tools .v-input,
+#browse-view .lib-fusion > .lib-fusion-pull-tools .v-text-field {
+ margin:0 !important;
+ padding-top:0 !important;
+ height:32px !important;
+ max-height:32px !important;
+}
+#browse-view .lib-fusion > .lib-fusion-pull-tools .v-input__control {
+ margin-top:0 !important;
+}
+#browse-view .lib-fusion > .lib-fusion-pull-tools .v-input__slot {
+ min-height:32px !important;
+ margin:0 !important;
+}
+#browse-view .lib-fusion > .lib-fusion-pull-tools .browse-overflow-icons {
+ gap:4px;
+}
+#browse-view .lib-fusion > .lib-fusion-pull-tools .browse-overflow-icons .lib-fusion-sort-wrap,
+#browse-view .lib-fusion > .lib-fusion-pull-tools .browse-overflow-icons .lib-fusion-disp-wrap {
+ flex:0 0 auto;
+}
+#browse-view .lib-fusion > .lib-fusion-pull-tools .browse-overflow-icons .lib-fusion-dd-btn {
+ width:auto;
+ min-width:40px;
+ height:32px;
+ padding:0 2px 0 4px;
+ overflow:visible;
+}
+/* Keep the carets off the A–Z rail. The rail itself slides down when the row or a menu opens. */
+html.jl-side-right .lib-fusion.lib-fusion-has-jl > .lib-fusion-pull-tools .browse-overflow-row {
+ padding-right:22px;
+ box-sizing:border-box;
+}
+html.jl-side-left .lib-fusion.lib-fusion-has-jl > .lib-fusion-pull-tools .browse-overflow-row {
+ padding-left:22px;
+ box-sizing:border-box;
+}
+#browse-view .lib-fusion > .lib-fusion-pull-tools.lib-fusion-tools-menu,
+#browse-view .lib-fusion > .lib-fusion-pull-tools.lib-fusion-tools-menu .browse-overflow-panel {
+ overflow:visible;
+ z-index:40;
+}
+#browse-view .lib-fusion > .lib-fusion-pull-tools .lib-fusion-sort-menu {
+ z-index:80;
+}
+.lms-splitter .splitter-pane #browse-view .lib-fusion-jumplist,
+#browse-view.browse-home-split .lib-fusion-jumplist {
+ top:calc(var(--sub-toolbar-height, 48px) + 8px);
+}
+#browse-view .lib-fusion > .lib-fusion-tools.lib-fusion-tools-filter {
+ left:52px;
+ right:8px;
+ max-width:none;
+}
+html.theme-glass #browse-view.browse-home-split .lib-fusion > .lib-fusion-tools.lib-fusion-tools-filter {
+ left:var(--glass-split-content-x, 52px);
+}
+html.theme-glass #browse-view.browse-home-split:has(#back-button) .lib-fusion > .lib-fusion-tools.lib-fusion-tools-filter {
+ left:calc(var(--browse-home-pane-w) + 64px);
+}
+html.theme-glass #browse-view.browse-home-split:has(#back-button):has(#home-button) .lib-fusion > .lib-fusion-tools.lib-fusion-tools-filter {
+ left:calc(var(--browse-home-pane-w) + 104px);
+}
+html.theme-glass #browse-view.browse-home-split.browse-on-shortcut:has(#home-button) .lib-fusion > .lib-fusion-tools.lib-fusion-tools-filter {
+ left:calc(var(--browse-home-pane-w) + 64px);
+}
+#browse-view .lib-fusion > .lib-fusion-tools .lib-fusion-filter-btn,
+#browse-view .lib-fusion > .lib-fusion-tools .lib-fusion-dd-btn,
+#browse-view .lib-fusion > .lib-fusion-tools .v-icon {
+ color:var(--browse-chrome-ink, var(--primary-color));
+ opacity:1;
+}
+.lib-fusion-tools.lib-fusion-tools-filter .lib-fusion-sort-wrap,
+.lib-fusion-tools.lib-fusion-tools-filter .lib-fusion-disp-wrap {
+ display:none !important;
+}
+.lib-fusion-tools.lib-fusion-tools-filter .lib-fusion-filter-wrap {
+ flex:1 1 auto;
+ max-width:none;
+ min-width:0;
+}
+.lib-fusion-tools.lib-fusion-tools-menu {
+ overflow:visible !important;
+ z-index:70;
+}
+@media (max-width: 1024px) {
+ .lib-fusion-jumplist {
+  bottom:calc(var(--mobile-bottom-chrome-height, 0px) + 4px);
+ }
+}
+
+/* Glass pills: content width, left aligned, horizontal scroll when they overflow. */
+html.theme-glass .lib-fusion-tabs {
+ min-width:0 !important;
+ overflow:hidden !important;
+ justify-content:flex-start !important;
+}
+html.theme-glass .lib-fusion-tabs .lib-fusion-seg {
+ flex:0 1 auto !important;
+ width:max-content !important;
+ max-width:100% !important;
+ min-width:0 !important;
+ justify-content:flex-start !important;
+ overflow-x:auto !important;
+ overflow-y:hidden !important;
+ -webkit-overflow-scrolling:touch;
+ scrollbar-width:none;
+}
+html.theme-glass .lib-fusion-tabs .lib-fusion-seg::-webkit-scrollbar {
+ display:none;
+ height:0;
+ width:0;
+}
+html.theme-glass .lib-fusion-tab {
+ flex:0 0 auto !important;
+ width:auto !important;
+ min-width:max-content;
+}
+
+/* Pills sit in the title band, after the chevron. The title and section icon are hidden.
+   Phone host covers the header, so top 0 is the bar. Desktop host starts below it. */
+#browse-view .lib-fusion > .lib-fusion-tabs {
+ position:absolute !important;
+ top:0 !important;
+ left:56px !important;
+ right:calc(var(--fusion-tools-reserve, 12px)) !important;
+ height:var(--sub-toolbar-height, 48px) !important;
+ min-height:0 !important;
+ max-height:var(--sub-toolbar-height, 48px) !important;
+ flex:none !important;
+ margin:0 !important;
+ padding:0 4px !important;
+ z-index:40 !important;
+ display:flex !important;
+ align-items:center !important;
+ justify-content:flex-start !important;
+ background:transparent !important;
+ border:none !important;
+ box-shadow:none !important;
+ backdrop-filter:none !important;
+ -webkit-backdrop-filter:none !important;
+}
+#browse-view:not(.browse-home-split) .lib-fusion > .lib-fusion-tabs {
+ top:calc(-1 * (var(--sub-toolbar-height, 48px) - var(--browse-subheader-offset, 0px))) !important;
+}
+.lms-splitter .splitter-pane #browse-view .lib-fusion > .lib-fusion-tabs,
+#browse-view.browse-home-split .lib-fusion > .lib-fusion-tabs {
+ top:0 !important;
+}
+html.lib-fusion-pull #browse-view .lib-fusion > .lib-fusion-tabs {
+ right:8px !important;
+ z-index:40 !important;
+}
+#browse-view .lib-fusion > .lib-fusion-tabs .lib-fusion-seg {
+ height:auto !important;
+ min-height:0 !important;
+}
+#browse-view.browse-home-split:has(#home-button) .lib-fusion > .lib-fusion-tabs {
+ left:104px !important;
+}
+@media (min-width: 800px) {
+ html.theme-glass #browse-view.browse-home-split:has(#back-button) .lib-fusion > .lib-fusion-tabs {
+  left:calc(var(--browse-home-pane-w) + 64px) !important;
+ }
+ html.theme-glass #browse-view.browse-home-split:has(#back-button):has(#home-button) .lib-fusion > .lib-fusion-tabs {
+  left:calc(var(--browse-home-pane-w) + 104px) !important;
+ }
+ html.theme-glass #browse-view.browse-home-split.browse-on-shortcut:has(#home-button) .lib-fusion > .lib-fusion-tabs {
+  left:calc(var(--browse-home-pane-w) + 64px) !important;
+ }
+}
+html.lib-fusion-filtering #browse-view .lib-fusion > .lib-fusion-tabs {
+ visibility:hidden !important;
+ pointer-events:none !important;
+}
+
+/* List column fills the host. A short scroller was the empty band under the rows.
+   Do not set flex on .lib-fusion-col — the phone drill sizes those panes itself. */
+#browse-view .lib-fusion .lib-fusion-col-scroll,
+#browse-view .lib-fusion .lib-fusion-scroller {
+ flex:1 1 0% !important;
+ min-height:0 !important;
+ height:100%;
+}
+#browse-view .lib-fusion .lib-fusion-album-grid {
+ padding-bottom:24px !important;
+}
+
+/*
+ * Desktop song table. Header and rows share one width per column.
+ * The title takes the leftover space. Hovering the header shows a separator
+ * on each boundary; dragging it resizes that column.
+ */
+@media (min-width: 800px) {
+ #browse-view .lib-fusion {
+  --fusion-col-num:40px;
+  --fusion-col-artist:168px;
+  --fusion-col-album:168px;
+  --fusion-col-genre:120px;
+  --fusion-col-year:56px;
+  --fusion-col-added:104px;
+  --fusion-col-time:72px;
+ }
+ #browse-view .lib-fusion .lib-fusion-songs-tab .lib-fusion-song-header {
+  padding-right:calc(12px + var(--fusion-sbw, 0px)) !important;
+ }
+ #browse-view .lib-fusion .lib-fusion-song-num,
+ #browse-view .lib-fusion .lib-fusion-song-num-h {
+  flex:0 0 var(--fusion-col-num) !important;
+  width:var(--fusion-col-num) !important;
+  max-width:var(--fusion-col-num) !important;
+ }
+ #browse-view .lib-fusion .lib-fusion-song-header .lib-fusion-song-artist,
+ #browse-view .lib-fusion .lib-fusion-song-row .lib-fusion-song-artist {
+  flex:0 0 var(--fusion-col-artist) !important;
+  width:var(--fusion-col-artist) !important;
+  max-width:var(--fusion-col-artist) !important;
+ }
+ #browse-view .lib-fusion .lib-fusion-song-header .lib-fusion-song-album,
+ #browse-view .lib-fusion .lib-fusion-song-row .lib-fusion-song-album {
+  flex:0 0 var(--fusion-col-album) !important;
+  width:var(--fusion-col-album) !important;
+  max-width:var(--fusion-col-album) !important;
+ }
+ #browse-view .lib-fusion .lib-fusion-song-header .lib-fusion-song-genre,
+ #browse-view .lib-fusion .lib-fusion-song-row .lib-fusion-song-genre {
+  flex:0 0 var(--fusion-col-genre) !important;
+  width:var(--fusion-col-genre) !important;
+  max-width:var(--fusion-col-genre) !important;
+ }
+ #browse-view .lib-fusion .lib-fusion-song-header .lib-fusion-song-year,
+ #browse-view .lib-fusion .lib-fusion-song-row .lib-fusion-song-year {
+  flex:0 0 var(--fusion-col-year) !important;
+  width:var(--fusion-col-year) !important;
+  max-width:var(--fusion-col-year) !important;
+ }
+ #browse-view .lib-fusion .lib-fusion-song-header .lib-fusion-song-added,
+ #browse-view .lib-fusion .lib-fusion-song-row .lib-fusion-song-added {
+  flex:0 0 var(--fusion-col-added) !important;
+  width:var(--fusion-col-added) !important;
+  max-width:var(--fusion-col-added) !important;
+ }
+ #browse-view .lib-fusion .lib-fusion-song-header .lib-fusion-track-time,
+ #browse-view .lib-fusion .lib-fusion-song-row .lib-fusion-track-time {
+  flex:0 0 var(--fusion-col-time) !important;
+  width:var(--fusion-col-time) !important;
+  max-width:var(--fusion-col-time) !important;
+  min-width:0 !important;
+  padding-left:0 !important;
+  padding-right:0 !important;
+  box-sizing:border-box;
+  justify-content:flex-start !important;
+  text-align:left !important;
+ }
+ #browse-view .lib-fusion .lib-fusion-song-row .lib-fusion-song-artist,
+ #browse-view .lib-fusion .lib-fusion-song-row .lib-fusion-song-album,
+ #browse-view .lib-fusion .lib-fusion-song-row .lib-fusion-song-genre,
+ #browse-view .lib-fusion .lib-fusion-song-row .lib-fusion-song-year,
+ #browse-view .lib-fusion .lib-fusion-song-row .lib-fusion-song-added,
+ #browse-view .lib-fusion .lib-fusion-song-row .lib-fusion-track-time {
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+ }
+ #browse-view .lib-fusion .lib-fusion-song-header > .lib-fusion-col-sort {
+  position:relative;
+  overflow:visible;
+ }
+ .lib-fusion-col-grip {
+  position:absolute;
+  top:0;
+  bottom:0;
+  right:-5px;
+  width:10px;
+  cursor:col-resize;
+  z-index:4;
+  opacity:0;
+  pointer-events:none;
+ }
+ .lib-fusion-col-grip::after {
+  content:"";
+  position:absolute;
+  top:3px;
+  bottom:3px;
+  left:50%;
+  width:1px;
+  margin-left:-0.5px;
+  background:rgba(255,255,255,0.55);
+  border-radius:1px;
+ }
+ .theme--light .lib-fusion-col-grip::after {
+  background:rgba(0,0,0,0.38);
+ }
+ .lib-fusion-song-header:hover .lib-fusion-col-grip {
+  opacity:1;
+  pointer-events:auto;
+ }
+}
+html.lib-fusion-col-resizing .lib-fusion-col-grip {
+ opacity:1;
+ pointer-events:auto;
+}
+html.msk-is-touch .lib-fusion-col-grip,
+body.msk-is-touch .lib-fusion-col-grip {
+ display:none !important;
+}
+html.lib-fusion-col-resizing,
+html.lib-fusion-col-resizing * {
+ cursor:col-resize !important;
+ user-select:none !important;
 }

@@ -306,6 +306,23 @@
         added: false,
         tracknum: false
     };
+    /* Desktop song table. Title stays flexible; these columns share one width in the header and the rows. */
+    var COL_WIDTH_VAR = {
+        tracknum: '--fusion-col-num',
+        artist: '--fusion-col-artist',
+        album: '--fusion-col-album',
+        genre: '--fusion-col-genre',
+        year: '--fusion-col-year',
+        added: '--fusion-col-added',
+        duration: '--fusion-col-time'
+    };
+    var COL_WIDTH_MIN = {
+        tracknum: 28, artist: 72, album: 72, genre: 56, year: 44, added: 72, duration: 52
+    };
+    var COL_WIDTH_DEFAULT = {
+        tracknum: 40, artist: 168, album: 168, genre: 120, year: 56, added: 104, duration: 72
+    };
+    var COL_AFTER_TITLE = ['artist', 'album', 'genre', 'year', 'added', 'duration'];
     function parseAddedNum(raw) {
         if (raw == null || raw === '') { return 0; }
         // LMS titles tag D returns unix seconds as string/number
@@ -360,10 +377,58 @@
         return String(text || '').toLowerCase().indexOf(q) !== -1;
     }
 
+    var FUSION_SWIPE_MAX = 92;
+    var FUSION_SWIPE_COMMIT = 56;
+    /* One gesture stays on the side it opened. Closing stops at rest. */
+    function fusionSwipeClamp(s, travel) {
+        var base = s.open ? (s.origin || 0) : 0;
+        var dx = base + travel;
+        if (!s.side) {
+            if (dx > 1) { s.side = 1; }
+            else if (dx < -1) { s.side = -1; }
+        }
+        if (s.side > 0) {
+            return Math.max(0, Math.min(FUSION_SWIPE_MAX, dx));
+        }
+        if (s.side < 0) {
+            return Math.max(-FUSION_SWIPE_MAX, Math.min(0, dx));
+        }
+        return 0;
+    }
+
+    function fusionSwipeBindDoc(view) {
+        if (!view || view._fusionSwipeDocBound) { return; }
+        view._fusionSwipeDocBound = true;
+        view._fusionSwipeDocMove = function(ev) {
+            if (view.itemSwipe && view.itemSwipeMove) { view.itemSwipeMove(ev); }
+        };
+        view._fusionSwipeDocEnd = function(ev) {
+            if (view.itemSwipeEnd) { view.itemSwipeEnd(ev); }
+            else { fusionSwipeUnbindDoc(view); }
+        };
+        document.addEventListener('touchmove', view._fusionSwipeDocMove, { capture: true, passive: false });
+        document.addEventListener('touchend', view._fusionSwipeDocEnd, { capture: true, passive: true });
+        document.addEventListener('touchcancel', view._fusionSwipeDocEnd, { capture: true, passive: true });
+    }
+
+    function fusionSwipeUnbindDoc(view) {
+        if (!view || !view._fusionSwipeDocBound) { return; }
+        view._fusionSwipeDocBound = false;
+        if (view._fusionSwipeDocMove) {
+            document.removeEventListener('touchmove', view._fusionSwipeDocMove, { capture: true });
+            view._fusionSwipeDocMove = undefined;
+        }
+        if (view._fusionSwipeDocEnd) {
+            document.removeEventListener('touchend', view._fusionSwipeDocEnd, { capture: true });
+            document.removeEventListener('touchcancel', view._fusionSwipeDocEnd, { capture: true });
+            view._fusionSwipeDocEnd = undefined;
+        }
+    }
+
     Vue.component('lms-library-fusion', {
         template:
             '<div class="lib-fusion noselect lib-fusion-zoomable" tabindex="0" ref="root" @keydown="onKeyDown"' +
-            '     :class="{\'lib-fusion-chrome-collapsed\':chromeCollapsed}"' +
+            '     :class="{\'lib-fusion-chrome-collapsed\':chromeCollapsed, \'lib-fusion-pull\':pullTools, \'lib-fusion-has-jl\':showJumplist}"' +
             '     @touchstart="fusionTouchStart" @touchmove="fusionTouchMove" @touchend="fusionTouchEnd" @touchcancel="fusionTouchEnd"' +
             '     @gesturestart.prevent="fusionGestureStart" @gesturechange.prevent="fusionGestureChange" @gestureend.prevent="fusionGestureEnd">' +
             /* Selection bar */
@@ -374,24 +439,67 @@
             '  <button type="button" class="lib-fusion-icon-btn" @click.stop="invertSelection" :title="tInvert"><v-icon>swap_horiz</v-icon></button>' +
             '  <button type="button" class="lib-fusion-icon-btn" @click.stop="clearSelection" :title="tClear"><v-icon>close</v-icon></button>' +
             ' </div>' +
-            /* stop + chromeTouchBlock: iOS ghost-clicks must not hit toolbar (player/nav drawer) */
-            ' <div class="lib-fusion-tabs lib-fusion-frost" role="tablist" @click.stop @mousedown.stop @touchstart.stop="chromeTouchBlock" @touchend.stop="chromeTouchBlock">' +
-            '  <div class="lib-fusion-seg" role="presentation" :style="segPillStyle">' +
-            '   <div class="lib-fusion-seg-pill" aria-hidden="true"></div>' +
-            '   <button type="button" class="lib-fusion-tab" role="tab" :aria-selected="tab===\'artists\'"' +
-            '           :class="{\'lib-fusion-tab-active\':tab===\'artists\'}" @click.prevent.stop="setTab(\'artists\')">{{tArtists}}</button>' +
-            '   <button type="button" class="lib-fusion-tab" role="tab" :aria-selected="tab===\'albums\'"' +
-            '           :class="{\'lib-fusion-tab-active\':tab===\'albums\'}" @click.prevent.stop="setTab(\'albums\')">{{tAlbums}}</button>' +
-            '   <button type="button" class="lib-fusion-tab" role="tab" :aria-selected="tab===\'songs\'"' +
-            '           :class="{\'lib-fusion-tab-active\':tab===\'songs\'}" @click.prevent.stop="setTab(\'songs\')">{{tSongs}}</button>' +
+            /* Mobile: filter, sort, and display sit in the pull-to-refresh row. */
+            ' <div v-if="pullTools" class="browse-scroll-tools lib-fusion-pull-tools" :class="pullToolsClass" :style="pullToolsStyle"' +
+            '      @touchstart.stop="chromeTouchBlock" @touchend.stop="chromeTouchBlock">' +
+            '  <div class="browse-overflow-panel">' +
+            '   <div class="browse-overflow-row">' +
+            '    <v-layout class="lms-search-list-row" style="min-width:0;max-width:100%;overflow:hidden;align-items:center">' +
+            '     <form class="lms-search-list-form" @submit.prevent>' +
+            '      <v-text-field type="text" :placeholder="tFilter" hide-details single-line clearable autocorrect="off" autocomplete="off" autocapitalize="none" spellcheck="false"' +
+            '       v-model="filterDraft" class="lms-search lib-search" @keydown.native="onFilterKey" @click.stop' +
+            '       ref="filterInput" style="min-width:0;flex:1 1 0;max-width:100%"></v-text-field>' +
+            '     </form>' +
+            '    </v-layout>' +
+            '    <div class="browse-overflow-icons">' +
+            '     <div class="lib-fusion-sort-wrap">' +
+            '      <button type="button" class="lib-fusion-dd-btn" @click.prevent.stop="toggleSortMenu" :title="tSort">' +
+            '       <v-icon small>sort</v-icon><v-icon small class="lib-fusion-dd-caret">arrow_drop_down</v-icon>' +
+            '      </button>' +
+            '      <div v-if="showSort" class="lib-fusion-sort-menu" @click.stop @touchstart.stop="chromeTouchBlock">' +
+            '       <div class="lib-fusion-sort-head">{{tSortPrimary}}</div>' +
+            '       <button type="button" class="lib-fusion-sort-opt" v-for="o in currentSortOptions" :key="\'p-\'+o.id"' +
+            '               :class="{\'lib-fusion-sort-opt-on\':o.id===currentSortId}" @click.prevent.stop="setSort(o.id)">{{o.label}}</button>' +
+            '       <div class="lib-fusion-sort-secondary">' +
+            '        <div class="lib-fusion-sort-sep" role="separator"></div>' +
+            '        <div class="lib-fusion-sort-head">{{tSortThen}}</div>' +
+            '        <button type="button" class="lib-fusion-sort-opt" v-for="o in currentSecondaryOptions" :key="\'s-\'+o.id"' +
+            '                :class="{\'lib-fusion-sort-opt-on\':o.id===currentSort2Id}" @click.prevent.stop="setSort2(o.id)">{{o.label}}</button>' +
+            '       </div>' +
+            '       <div class="lib-fusion-sort-sep" role="separator"></div>' +
+            '       <button type="button" class="lib-fusion-sort-opt lib-fusion-sort-reverse" ' +
+            '               :class="{\'lib-fusion-sort-opt-on\':currentSortRev}" @click.prevent.stop="toggleSortRev()">' +
+            '        <span class="lib-fusion-disp-check" :class="{\'lib-fusion-disp-check-on\':currentSortRev}">{{currentSortRev ? "✓" : ""}}</span>' +
+            '        <span>{{tSortReverse}}</span>' +
+            '       </button>' +
+            '      </div>' +
+            '     </div>' +
+            '     <div class="lib-fusion-disp-wrap" v-if="tab===\'songs\'">' +
+            '      <button type="button" class="lib-fusion-dd-btn" @click.prevent.stop="toggleDispMenu" :title="tDisplay">' +
+            '       <v-icon small>view_column</v-icon><v-icon small class="lib-fusion-dd-caret">arrow_drop_down</v-icon>' +
+            '      </button>' +
+            '      <div v-if="showDisp" class="lib-fusion-sort-menu lib-fusion-disp-menu" @click.stop @touchstart.stop="chromeTouchBlock">' +
+            '       <div class="lib-fusion-disp-head">{{tDisplayCols}}</div>' +
+            '       <button type="button" class="lib-fusion-disp-opt" v-for="c in songColDefs" :key="c.id"' +
+            '               :class="{\'lib-fusion-disp-locked\':c.locked}" @click.prevent.stop="toggleSongCol(c)">' +
+            '        <span class="lib-fusion-disp-check" :class="{\'lib-fusion-disp-check-on\':songCols[c.id]}">{{songCols[c.id] ? "✓" : ""}}</span>' +
+            '        <span>{{c.label}}</span>' +
+            '       </button>' +
+            '      </div>' +
+            '     </div>' +
+            '    </div>' +
+            '   </div>' +
             '  </div>' +
+            ' </div>' +
+            /* Desktop: filter, sort, and column view sit in the browse title bar. */
+            ' <div v-if="!pullTools" class="lib-fusion-tools" :class="toolsClass">' +
             '  <div class="lib-fusion-filter-wrap" :class="{\'lib-fusion-filter-open\':filterExpanded}" @touchstart.stop="chromeTouchBlock" @touchend.stop="chromeTouchBlock">' +
             '   <button type="button" class="lib-fusion-filter-btn" v-if="!filterExpanded"' +
             '           @click.prevent.stop="openFilter" :title="tFilter">' +
             '    <img class="svg-img lib-fusion-filter-icn" :src="iconSearch" alt="">' +
             '   </button>' +
-            '   <input v-show="filterExpanded" type="search" class="lib-fusion-filter" ref="filterInput"' +
-            '          :value="filter" :placeholder="tFilter" autocomplete="off" spellcheck="false"' +
+            '   <input v-show="filterExpanded" type="text" inputmode="search" enterkeyhint="search" class="lib-fusion-filter" ref="filterInput"' +
+            '          :value="filter" :placeholder="tFilter" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"' +
             '          @input="onFilterInput" @click.stop @touchstart.stop="chromeTouchBlock" @keydown.stop="onFilterKey" @blur="onFilterBlur">' +
             /* Always show X when open — closes filter mode (not only clears text) */
             '   <button v-if="filterExpanded" type="button" class="lib-fusion-filter-clear"' +
@@ -406,10 +514,12 @@
             '    <div class="lib-fusion-sort-head">{{tSortPrimary}}</div>' +
             '    <button type="button" class="lib-fusion-sort-opt" v-for="o in currentSortOptions" :key="\'p-\'+o.id"' +
             '            :class="{\'lib-fusion-sort-opt-on\':o.id===currentSortId}" @click.prevent.stop="setSort(o.id)">{{o.label}}</button>' +
-            '    <div class="lib-fusion-sort-sep" role="separator"></div>' +
-            '    <div class="lib-fusion-sort-head">{{tSortThen}}</div>' +
-            '    <button type="button" class="lib-fusion-sort-opt" v-for="o in currentSecondaryOptions" :key="\'s-\'+o.id"' +
-            '            :class="{\'lib-fusion-sort-opt-on\':o.id===currentSort2Id}" @click.prevent.stop="setSort2(o.id)">{{o.label}}</button>' +
+            '    <div class="lib-fusion-sort-secondary">' +
+            '     <div class="lib-fusion-sort-sep" role="separator"></div>' +
+            '     <div class="lib-fusion-sort-head">{{tSortThen}}</div>' +
+            '     <button type="button" class="lib-fusion-sort-opt" v-for="o in currentSecondaryOptions" :key="\'s-\'+o.id"' +
+            '             :class="{\'lib-fusion-sort-opt-on\':o.id===currentSort2Id}" @click.prevent.stop="setSort2(o.id)">{{o.label}}</button>' +
+            '    </div>' +
             '    <div class="lib-fusion-sort-sep" role="separator"></div>' +
             '    <button type="button" class="lib-fusion-sort-opt lib-fusion-sort-reverse" ' +
             '            :class="{\'lib-fusion-sort-opt-on\':currentSortRev}" @click.prevent.stop="toggleSortRev()">' +
@@ -433,6 +543,19 @@
             '   </div>' +
             '  </div>' +
             ' </div>' +
+            /* stop + chromeTouchBlock: iOS ghost-clicks must not hit toolbar (player/nav drawer) */
+            ' <div class="lib-fusion-tabs lib-fusion-frost" role="tablist" @click.stop @mousedown.stop' +
+            '      @touchstart.stop="pillsTouchStart" @touchmove.stop="pillsTouchMove" @touchend.stop="pillsTouchEnd" @touchcancel.stop="pillsTouchEnd">' +
+            '  <div class="lib-fusion-seg" role="presentation" :style="segPillStyle">' +
+            '   <div class="lib-fusion-seg-pill" aria-hidden="true"></div>' +
+            '   <button type="button" class="lib-fusion-tab" role="tab" :aria-selected="tab===\'artists\'"' +
+            '           :class="{\'lib-fusion-tab-active\':tab===\'artists\'}" @click.prevent.stop="setTab(\'artists\')">{{tArtists}}</button>' +
+            '   <button type="button" class="lib-fusion-tab" role="tab" :aria-selected="tab===\'albums\'"' +
+            '           :class="{\'lib-fusion-tab-active\':tab===\'albums\'}" @click.prevent.stop="setTab(\'albums\')">{{tAlbums}}</button>' +
+            '   <button type="button" class="lib-fusion-tab" role="tab" :aria-selected="tab===\'songs\'"' +
+            '           :class="{\'lib-fusion-tab-active\':tab===\'songs\'}" @click.prevent.stop="setTab(\'songs\')">{{tSongs}}</button>' +
+            '  </div>' +
+            ' </div>' +
             /* Contextual menu uses global browse v-menu (see openCtx → browseShowItemMenu) */
             /* Artists | Albums | Songs — host keeps height while push runs (no content drop) */
             ' <div class="lib-fusion-slide-host">' +
@@ -445,18 +568,22 @@
             /* pane 0 — artist list */
             '  <div class="lib-fusion-col lib-fusion-artist-list">' +
             '   <div class="lib-fusion-col-scroll">' +
-            '    <div class="lib-fusion-col-head">{{tArtists}}' +
-            '     <span class="lib-fusion-count" v-if="filteredArtists.length">{{filteredArtists.length}}</span>' +
-            '     <span class="lib-fusion-count" v-if="filter && artists.length && filteredArtists.length!==artists.length">/ {{artists.length}}</span>' +
-            '    </div>' +
             '    <div v-if="loadingArtists" class="lib-fusion-loading">{{tLoading}} <span v-if="loadStatus" class="lib-fusion-status">{{loadStatus}}</span></div>' +
             '    <div v-else-if="!filteredArtists.length" class="lib-fusion-empty">{{err || (filter ? tNoMatch : tNoArtists)}}</div>' +
             '    <RecycleScroller ref="artistScroller" v-else class="lib-fusion-scroller" :items="filteredArtists" :item-size="artistRowH" key-field="key" :buffer="120">' +
+            '     <div slot="before" class="lib-fusion-col-head lib-fusion-list-head">{{tArtists}}' +
+            '      <span class="lib-fusion-count" v-if="filteredArtists.length">{{filteredArtists.length}}</span>' +
+            '      <span class="lib-fusion-count" v-if="filter && artists.length && filteredArtists.length!==artists.length">/ {{artists.length}}</span>' +
+            '     </div>' +
             '     <div slot-scope="{item}" class="lib-fusion-artist-row"' +
-            '          :class="{\'lib-fusion-row-active\':selectedArtist && selectedArtist.id===item.id,' +
+            '          :class="[{\'lib-fusion-row-active\':selectedArtist && selectedArtist.id===item.id,' +
             '                   \'lib-fusion-kb\':kbKey===item.key,' +
-            '                   \'lib-fusion-picked\':isSelected(item.key)}"' +
-            '          @click="onArtistClick(item, $event)" @contextmenu.prevent="openCtx(item, \'artist\', $event)" :title="item.title">' +
+            '                   \'lib-fusion-picked\':isSelected(item.key)}, swipeRowClass(item)]"' +
+            '          :style="swipeRowStyle(item)"' +
+            '          @click="onArtistClick(item, $event)" @contextmenu.prevent="openCtx(item, \'artist\', $event)" :title="item.title"' +
+            '          @touchstart="itemSwipeStart(item, \'artist\', $event)" @touchmove="itemSwipeMove($event)" @touchend="itemSwipeEnd($event)" @touchcancel="itemSwipeEnd($event)">' +
+            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-add" aria-hidden="true" @click.stop="fusionSwipeAction(\'add\', item, $event)"><v-icon>playlist_add</v-icon><span>{{tAdd}}</span></div>' +
+            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-next" aria-hidden="true" @click.stop="fusionSwipeAction(\'next\', item, $event)"><v-icon>playlist_play</v-icon><span>{{tPlayNext}}</span></div>' +
             '      <span class="lib-fusion-check" v-if="selectedCount>0 || isSelected(item.key)"' +
             '            :class="{\'lib-fusion-check-on\':isSelected(item.key)}" @click.stop="toggleSelect(item, $event)"></span>' +
             '      <img class="lib-fusion-artist-art" :src="item.image" loading="lazy" @error="imgErr">' +
@@ -487,8 +614,8 @@
             '     <div v-for="alb in albums" :key="alb.key" class="lib-fusion-album"' +
             '          :class="swipeRowClass(alb)" :style="swipeRowStyle(alb)"' +
             '          @touchstart="itemSwipeStart(alb, \'album\', $event)" @touchmove="itemSwipeMove($event)" @touchend="itemSwipeEnd($event)" @touchcancel="itemSwipeEnd($event)">' +
-            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-add" aria-hidden="true"><v-icon>playlist_add</v-icon><span>{{tAdd}}</span></div>' +
-            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-next" aria-hidden="true"><v-icon>playlist_play</v-icon><span>{{tPlayNext}}</span></div>' +
+            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-add" aria-hidden="true" @click.stop="fusionSwipeAction(\'add\', alb, $event)"><v-icon>playlist_add</v-icon><span>{{tAdd}}</span></div>' +
+            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-next" aria-hidden="true" @click.stop="fusionSwipeAction(\'next\', alb, $event)"><v-icon>playlist_play</v-icon><span>{{tPlayNext}}</span></div>' +
             '      <div class="lib-fusion-album-head" @click="onArtistAlbumClick(alb, $event)"' +
             '           @dblclick.prevent.stop="onArtistAlbumDblClick(alb)"' +
             '           @contextmenu.prevent="openCtx(alb, \'artistAlbum\', $event)"' +
@@ -500,10 +627,10 @@
             '       </div>' +
             /* Hover play cluster sits left of ⋮ (+ expand); never covers them */
             '       <div class="lib-fusion-row-btns list-btns" v-if="!isTouch && hoverKey===alb.key" @click.stop @dblclick.stop>' +
-            '        <img class="other-btn grid-btn lib-fusion-ibtn" role="button" @click.stop="addAlbum(alb)" :title="tAdd" :src="iconAdd">' +
-            '        <img class="other-btn grid-btn lib-fusion-ibtn" role="button" @click.stop="insertAlbum(alb)" :title="tPlayNext" :src="iconPlayNext">' +
-            '        <img class="other-btn grid-btn lib-fusion-ibtn" role="button" @click.stop="shuffleAlbum(alb)" :title="tShuffle" :src="iconShuffle">' +
-            '        <img class="main-btn grid-btn lib-fusion-ibtn lib-fusion-mat-main" role="button" @click.stop="playAlbum(alb)" :title="tPlay" :src="iconPlay">' +
+            '        <img class="other-btn grid-btn lib-fusion-ibtn" role="button" @click.stop="addAlbum(alb)" :title="tAdd" :src="iconAddRow">' +
+            '        <img class="other-btn grid-btn lib-fusion-ibtn" role="button" @click.stop="insertAlbum(alb)" :title="tPlayNext" :src="iconPlayNextRow">' +
+            '        <img class="other-btn grid-btn lib-fusion-ibtn" role="button" @click.stop="shuffleAlbum(alb)" :title="tShuffle" :src="iconShuffleRow">' +
+            '        <img class="main-btn grid-btn lib-fusion-ibtn lib-fusion-mat-main" role="button" @click.stop="playAlbum(alb)" :title="tPlay" :src="iconPlayRow">' +
             '       </div>' +
             '       <div class="grid-btn list-btn hover-btn menu-btn lib-fusion-item-menu" role="button"' +
             '            @click.stop="openCtx(alb, \'artistAlbum\', $event)" :aria-label="tMenu" :title="tMenu"></div>' +
@@ -516,16 +643,20 @@
             '       <div v-else-if="!alb.tracks || !alb.tracks.length" class="lib-fusion-empty">{{tNoTracks}}</div>' +
             '       <div v-else class="lib-fusion-track-list">' +
             '        <div v-for="tr in alb.tracks" :key="tr.key" class="lib-fusion-track-row lib-fusion-track-row-mat"' +
+            '             :class="swipeRowClass(tr)" :style="swipeRowStyle(tr)"' +
             '             @mouseenter="hoverKey=tr.key" @mouseleave="hoverKey=\'\'"' +
             '             @click="playTrack(tr)"' +
-            '             @contextmenu.prevent="openCtx(tr, \'track\', $event)">' +
+            '             @contextmenu.prevent="openCtx(tr, \'track\', $event)"' +
+            '             @touchstart.stop="itemSwipeStart(tr, \'track\', $event)" @touchmove="itemSwipeMove($event)" @touchend="itemSwipeEnd($event)" @touchcancel="itemSwipeEnd($event)">' +
+            '         <div class="lib-fusion-swipe-bg lib-fusion-swipe-add" aria-hidden="true" @click.stop="fusionSwipeAction(\'add\', tr, $event)"><v-icon>playlist_add</v-icon></div>' +
+            '         <div class="lib-fusion-swipe-bg lib-fusion-swipe-next" aria-hidden="true" @click.stop="fusionSwipeAction(\'next\', tr, $event)"><v-icon>playlist_play</v-icon></div>' +
             '         <span class="lib-fusion-track-num">{{tr.tracknum || ""}}</span>' +
             '         <span class="lib-fusion-track-title ellipsis">{{tr.title}}</span>' +
             '         <span class="lib-fusion-track-time subtext">{{tr.durationStr}}</span>' +
             '         <div class="lib-fusion-row-btns list-btns list-btns-track" v-if="!isTouch && hoverKey===tr.key" @click.stop>' +
-            '          <img class="other-btn grid-btn lib-fusion-ibtn" role="button" @click.stop="addTrack(tr)" :title="tAdd" :src="iconAdd">' +
-            '          <img class="other-btn grid-btn lib-fusion-ibtn" role="button" @click.stop="insertTrack(tr)" :title="tPlayNext" :src="iconPlayNext">' +
-            '          <img class="main-btn grid-btn lib-fusion-ibtn lib-fusion-mat-main" role="button" @click.stop="playTrack(tr)" :title="tPlay" :src="iconPlay">' +
+            '          <img class="other-btn grid-btn lib-fusion-ibtn" role="button" @click.stop="addTrack(tr)" :title="tAdd" :src="iconAddRow">' +
+            '          <img class="other-btn grid-btn lib-fusion-ibtn" role="button" @click.stop="insertTrack(tr)" :title="tPlayNext" :src="iconPlayNextRow">' +
+            '          <img class="main-btn grid-btn lib-fusion-ibtn lib-fusion-mat-main" role="button" @click.stop="playTrack(tr)" :title="tPlay" :src="iconPlayRow">' +
             '         </div>' +
             '         <div class="grid-btn list-btn hover-btn menu-btn lib-fusion-item-menu" role="button"' +
             '              @click.stop="openCtx(tr, \'track\', $event)" :aria-label="tMenu" :title="tMenu"></div>' +
@@ -555,8 +686,8 @@
             '          :class="swipeRowClass(tr)" :style="swipeRowStyle(tr)"' +
             '          @touchstart="itemSwipeStart(tr, \'track\', $event)" @touchmove="itemSwipeMove($event)" @touchend="itemSwipeEnd($event)" @touchcancel="itemSwipeEnd($event)"' +
             '          @click="playTrack(tr)" @contextmenu.prevent="openCtx(tr, \'track\', $event)">' +
-            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-add" aria-hidden="true"><v-icon>playlist_add</v-icon></div>' +
-            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-next" aria-hidden="true"><v-icon>playlist_play</v-icon></div>' +
+            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-add" aria-hidden="true" @click.stop="fusionSwipeAction(\'add\', tr, $event)"><v-icon>playlist_add</v-icon></div>' +
+            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-next" aria-hidden="true" @click.stop="fusionSwipeAction(\'next\', tr, $event)"><v-icon>playlist_play</v-icon></div>' +
             '      <span class="lib-fusion-track-num">{{tr.tracknum || ""}}</span>' +
             '      <span class="lib-fusion-track-title ellipsis">{{tr.title}}</span>' +
             '      <span class="lib-fusion-track-time subtext">{{tr.durationStr}}</span>' +
@@ -574,7 +705,7 @@
             '  <div class="lib-fusion-albums-track">' +
             '  <div class="lib-fusion-col lib-fusion-albums-grid-pane">' +
             '  <div class="lib-fusion-col-scroll">' +
-            '   <div class="lib-fusion-col-head lib-fusion-tab-head">{{tAlbums}}' +
+            '   <div class="lib-fusion-col-head lib-fusion-tab-head lib-fusion-list-head">{{tAlbums}}' +
             '    <span class="lib-fusion-count" v-if="filteredAlbums.length">{{filteredAlbums.length}}</span>' +
             '    <span class="lib-fusion-count" v-if="filter && allAlbums.length && filteredAlbums.length!==allAlbums.length">/ {{allAlbums.length}}</span>' +
             '   </div>' +
@@ -587,8 +718,8 @@
             '         @touchstart="itemSwipeStart(alb, \'album\', $event)" @touchmove="itemSwipeMove($event)" @touchend="itemSwipeEnd($event)" @touchcancel="itemSwipeEnd($event)"' +
             '         @click="onAlbumGridClick(alb, $event)" @dblclick.prevent.stop="openAlbum(alb)"' +
             '         @contextmenu.prevent="openCtx(alb, \'album\', $event)">' +
-            '     <div class="lib-fusion-swipe-bg lib-fusion-swipe-add" aria-hidden="true"><v-icon>playlist_add</v-icon><span>{{tAdd}}</span></div>' +
-            '     <div class="lib-fusion-swipe-bg lib-fusion-swipe-next" aria-hidden="true"><v-icon>playlist_play</v-icon><span>{{tPlayNext}}</span></div>' +
+            '     <div class="lib-fusion-swipe-bg lib-fusion-swipe-add" aria-hidden="true" @click.stop="fusionSwipeAction(\'add\', alb, $event)"><v-icon>playlist_add</v-icon><span>{{tAdd}}</span></div>' +
+            '     <div class="lib-fusion-swipe-bg lib-fusion-swipe-next" aria-hidden="true" @click.stop="fusionSwipeAction(\'next\', alb, $event)"><v-icon>playlist_play</v-icon><span>{{tPlayNext}}</span></div>' +
             '     <div class="lib-fusion-cover-wrap">' +
             '      <span class="lib-fusion-check lib-fusion-check-grid" v-if="selectedCount>0 || isSelected(alb.key)"' +
             '            :class="{\'lib-fusion-check-on\':isSelected(alb.key)}" @click.stop="toggleSelect(alb, $event)"></span>' +
@@ -629,8 +760,8 @@
             '          :class="swipeRowClass(tr)" :style="swipeRowStyle(tr)"' +
             '          @touchstart="itemSwipeStart(tr, \'track\', $event)" @touchmove="itemSwipeMove($event)" @touchend="itemSwipeEnd($event)" @touchcancel="itemSwipeEnd($event)"' +
             '          @click="playTrack(tr)" @contextmenu.prevent="openCtx(tr, \'track\', $event)">' +
-            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-add" aria-hidden="true"><v-icon>playlist_add</v-icon></div>' +
-            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-next" aria-hidden="true"><v-icon>playlist_play</v-icon></div>' +
+            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-add" aria-hidden="true" @click.stop="fusionSwipeAction(\'add\', tr, $event)"><v-icon>playlist_add</v-icon></div>' +
+            '      <div class="lib-fusion-swipe-bg lib-fusion-swipe-next" aria-hidden="true" @click.stop="fusionSwipeAction(\'next\', tr, $event)"><v-icon>playlist_play</v-icon></div>' +
             '      <span class="lib-fusion-track-num">{{tr.tracknum || ""}}</span>' +
             '      <span class="lib-fusion-track-title ellipsis">{{tr.title}}</span>' +
             '      <span class="lib-fusion-track-time subtext">{{tr.durationStr}}</span>' +
@@ -647,13 +778,13 @@
             '  <div class="lib-fusion-col-scroll">' +
             /* Genre hierarchy: list of genres */
             '   <template v-if="songsGenreBrowse">' +
-            '    <div class="lib-fusion-col-head lib-fusion-tab-head">{{tGenre}}' +
-            '     <span class="lib-fusion-count" v-if="genreGroups.length">{{genreGroups.length}}</span>' +
-            '    </div>' +
             '    <div v-if="loadingSongs" class="lib-fusion-loading">{{tLoading}}' +
             '     <span v-if="loadStatus" class="lib-fusion-status">{{loadStatus}}</span></div>' +
             '    <div v-else-if="!genreGroups.length" class="lib-fusion-empty">{{filter ? tNoMatch : tNoSongs}}</div>' +
             '    <RecycleScroller v-else class="lib-fusion-scroller" :items="genreGroups" :item-size="artistRowH" key-field="key" :buffer="80">' +
+            '     <div slot="before" class="lib-fusion-col-head lib-fusion-tab-head lib-fusion-list-head">{{tGenre}}' +
+            '      <span class="lib-fusion-count" v-if="genreGroups.length">{{genreGroups.length}}</span>' +
+            '     </div>' +
             '     <div slot-scope="{item}" class="lib-fusion-genre-row"' +
             '          :class="{\'lib-fusion-kb\':kbKey===item.key}"' +
             '          @click="openGenre(item)">' +
@@ -665,51 +796,64 @@
             '   </template>' +
             /* Songs list (normal or inside a genre) */
             '   <template v-else>' +
-            '   <div class="lib-fusion-col-head lib-fusion-tab-head">' +
-            '    <button v-if="activeGenre" type="button" class="lib-fusion-back-btn" @click.stop="closeGenre" :title="tBack">‹</button>' +
-            '    <span class="ellipsis">{{activeGenre ? activeGenre : tSongs}}</span>' +
-            '    <span class="lib-fusion-count" v-if="filteredSongs.length">{{filteredSongs.length}}</span>' +
-            '    <span class="lib-fusion-count" v-if="!activeGenre && filter && songs.length && filteredSongs.length!==songs.length">/ {{songs.length}}</span>' +
+            '   <div v-if="activeGenre" class="lib-fusion-genre-back">' +
+            '    <button type="button" class="lib-fusion-back-btn" @click.stop="closeGenre" :title="tBack">‹</button>' +
+            '    <span class="ellipsis">{{activeGenre}}</span>' +
             '   </div>' +
             '   <div v-if="filteredSongs.length && !loadingSongs" class="lib-fusion-song-header"' +
             '        :class="songRowClass">' +
             '    <span class="lib-fusion-check lib-fusion-check-ph" v-if="selectedCount>0"></span>' +
             '    <span class="lib-fusion-song-num-h lib-fusion-col-sort" v-if="songCols.tracknum"' +
-            '          :class="{\'lib-fusion-col-sort-on\':sortSongs===\'title\'}" @click.stop="headerSort(\'title\')">#</span>' +
+            '          :class="{\'lib-fusion-col-sort-on\':sortSongs===\'title\'}" @click.stop="headerSort(\'title\')">#' +
+            '     <span class="lib-fusion-col-grip" @mousedown.stop.prevent="colResizeStart(\'tracknum\', $event)" @click.stop.prevent></span></span>' +
             '    <span class="lib-fusion-track-title lib-fusion-col-sort" v-if="songCols.title"' +
             '          :class="{\'lib-fusion-col-sort-on\':sortSongs===\'title\'}" @click.stop="headerSort(\'title\')">' +
-            '     {{tTitle}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'title\'">{{sortSongsRev ? "▲" : "▼"}}</span></span>' +
+            '     {{tTitle}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'title\'">{{sortSongsRev ? "▲" : "▼"}}</span>' +
+            '     <span class="lib-fusion-col-grip" @mousedown.stop.prevent="colResizeStart(\'title\', $event)" @click.stop.prevent></span></span>' +
             '    <span class="lib-fusion-song-artist lib-fusion-col-sort" v-if="songCols.artist"' +
             '          :class="{\'lib-fusion-col-sort-on\':sortSongs===\'artist\'}" @click.stop="headerSort(\'artist\')">' +
-            '     {{tArtists}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'artist\'">{{sortSongsRev ? "▲" : "▼"}}</span></span>' +
+            '     {{tArtists}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'artist\'">{{sortSongsRev ? "▲" : "▼"}}</span>' +
+            '     <span class="lib-fusion-col-grip" @mousedown.stop.prevent="colResizeStart(\'artist\', $event)" @click.stop.prevent></span></span>' +
             '    <span class="lib-fusion-song-album lib-fusion-col-sort" v-if="songCols.album"' +
             '          :class="{\'lib-fusion-col-sort-on\':sortSongs===\'album\'}" @click.stop="headerSort(\'album\')">' +
-            '     {{tAlbums}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'album\'">{{sortSongsRev ? "▲" : "▼"}}</span></span>' +
+            '     {{tAlbums}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'album\'">{{sortSongsRev ? "▲" : "▼"}}</span>' +
+            '     <span class="lib-fusion-col-grip" @mousedown.stop.prevent="colResizeStart(\'album\', $event)" @click.stop.prevent></span></span>' +
             '    <span class="lib-fusion-song-genre lib-fusion-col-sort" v-if="songCols.genre"' +
             '          :class="{\'lib-fusion-col-sort-on\':sortSongs===\'genre\'}" @click.stop="headerSort(\'genre\')">' +
-            '     {{tGenre}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'genre\'">{{sortSongsRev ? "▲" : "▼"}}</span></span>' +
+            '     {{tGenre}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'genre\'">{{sortSongsRev ? "▲" : "▼"}}</span>' +
+            '     <span class="lib-fusion-col-grip" @mousedown.stop.prevent="colResizeStart(\'genre\', $event)" @click.stop.prevent></span></span>' +
             '    <span class="lib-fusion-song-year lib-fusion-col-sort" v-if="songCols.year"' +
             '          :class="{\'lib-fusion-col-sort-on\':sortSongs===\'year\'}" @click.stop="headerSort(\'year\')">' +
-            '     {{tYear}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'year\'">{{sortSongsRev ? "▲" : "▼"}}</span></span>' +
+            '     {{tYear}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'year\'">{{sortSongsRev ? "▲" : "▼"}}</span>' +
+            '     <span class="lib-fusion-col-grip" @mousedown.stop.prevent="colResizeStart(\'year\', $event)" @click.stop.prevent></span></span>' +
             '    <span class="lib-fusion-song-added lib-fusion-col-sort" v-if="songCols.added"' +
             '          :class="{\'lib-fusion-col-sort-on\':sortSongs===\'added\'}" @click.stop="headerSort(\'added\')">' +
-            '     {{tAdded}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'added\'">{{sortSongsRev ? "▲" : "▼"}}</span></span>' +
+            '     {{tAdded}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'added\'">{{sortSongsRev ? "▲" : "▼"}}</span>' +
+            '     <span class="lib-fusion-col-grip" @mousedown.stop.prevent="colResizeStart(\'added\', $event)" @click.stop.prevent></span></span>' +
             '    <span class="lib-fusion-track-time lib-fusion-col-sort" v-if="songCols.duration"' +
             '          :class="{\'lib-fusion-col-sort-on\':sortSongs===\'duration\'}" @click.stop="headerSort(\'duration\')">' +
-            '     {{tTime}}<span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'duration\'">{{sortSongsRev ? "▲" : "▼"}}</span></span>' +
+            '     <v-icon class="lib-fusion-time-icn" :title="tTime" :aria-label="tTime">schedule</v-icon>' +
+            '     <span class="lib-fusion-col-sort-dir" v-if="sortSongs===\'duration\'">{{sortSongsRev ? "▲" : "▼"}}</span>' +
+            '     <span class="lib-fusion-col-grip" @mousedown.stop.prevent="colResizeStart(\'duration\', $event)" @click.stop.prevent></span></span>' +
+            '    <span class="lib-fusion-menu-spacer" aria-hidden="true"></span>' +
             '   </div>' +
             '   <div v-if="loadingSongs" class="lib-fusion-loading">{{tLoading}}' +
             '    <span v-if="loadStatus" class="lib-fusion-status">{{loadStatus}}</span></div>' +
             '   <div v-else-if="!filteredSongs.length" class="lib-fusion-empty">{{filter ? tNoMatch : tNoSongs}}</div>' +
             '   <RecycleScroller ref="songScroller" v-else class="lib-fusion-scroller" :items="filteredSongs" :item-size="songRowH" key-field="key" :buffer="200">' +
+            '    <div slot="before" class="lib-fusion-col-head lib-fusion-tab-head lib-fusion-list-head">' +
+            '     <span class="ellipsis">{{tSongs}}</span>' +
+            '     <span class="lib-fusion-count" v-if="filteredSongs.length">{{filteredSongs.length}}</span>' +
+            '     <span class="lib-fusion-count" v-if="!activeGenre && filter && songs.length && filteredSongs.length!==songs.length">/ {{songs.length}}</span>' +
+            '    </div>' +
             '    <div slot-scope="{item}" class="lib-fusion-song-row"' +
             '         :class="[songRowClass, swipeRowClass(item), {\'lib-fusion-kb\':kbKey===item.key,\'lib-fusion-picked\':isSelected(item.key)}]"' +
             '         :style="swipeRowStyle(item)"' +
             '         @touchstart="itemSwipeStart(item, \'track\', $event)" @touchmove="itemSwipeMove($event)" @touchend="itemSwipeEnd($event)" @touchcancel="itemSwipeEnd($event)"' +
             '         @mouseenter="hoverKey=item.key" @mouseleave="hoverKey=\'\'"' +
             '         @click="onSongClick(item, $event)" @contextmenu.prevent="openCtx(item, \'track\', $event)">' +
-            '     <div class="lib-fusion-swipe-bg lib-fusion-swipe-add" aria-hidden="true"><v-icon>playlist_add</v-icon></div>' +
-            '     <div class="lib-fusion-swipe-bg lib-fusion-swipe-next" aria-hidden="true"><v-icon>playlist_play</v-icon></div>' +
+            '     <div class="lib-fusion-swipe-bg lib-fusion-swipe-add" aria-hidden="true" @click.stop="fusionSwipeAction(\'add\', item, $event)"><v-icon>playlist_add</v-icon></div>' +
+            '     <div class="lib-fusion-swipe-bg lib-fusion-swipe-next" aria-hidden="true" @click.stop="fusionSwipeAction(\'next\', item, $event)"><v-icon>playlist_play</v-icon></div>' +
             '     <span class="lib-fusion-check" v-if="selectedCount>0 || isSelected(item.key)"' +
             '           :class="{\'lib-fusion-check-on\':isSelected(item.key)}" @click.stop="toggleSelect(item, $event)"></span>' +
             '     <span class="lib-fusion-song-num subtext" v-if="songCols.tracknum">{{item.tracknum || ""}}</span>' +
@@ -727,9 +871,9 @@
             '     <span class="lib-fusion-song-added subtext" v-if="songCols.added" :title="item.addedStr">{{item.addedStr}}</span>' +
             '     <span class="lib-fusion-track-time subtext" v-if="songCols.duration">{{item.durationStr}}</span>' +
             '     <div class="lib-fusion-row-btns" v-if="selectedCount<1 && !isTouch && hoverKey===item.key" @click.stop>' +
-            '      <img class="lib-fusion-ibtn" role="button" @click.stop="addTrack(item)" :title="tAdd" :src="iconAdd">' +
-            '      <img class="lib-fusion-ibtn" role="button" @click.stop="insertTrack(item)" :title="tPlayNext" :src="iconPlayNext">' +
-            '      <img class="lib-fusion-ibtn lib-fusion-mat-main" role="button" @click.stop="playTrack(item)" :title="tPlay" :src="iconPlay">' +
+            '      <img class="lib-fusion-ibtn" role="button" @click.stop="addTrack(item)" :title="tAdd" :src="iconAddRow">' +
+            '      <img class="lib-fusion-ibtn" role="button" @click.stop="insertTrack(item)" :title="tPlayNext" :src="iconPlayNextRow">' +
+            '      <img class="lib-fusion-ibtn lib-fusion-mat-main" role="button" @click.stop="playTrack(item)" :title="tPlay" :src="iconPlayRow">' +
             '     </div>' +
             '     <div class="grid-btn list-btn hover-btn menu-btn lib-fusion-item-menu" role="button"' +
             '          @click.stop="openCtx(item, \'track\', $event)" :aria-label="tMenu" :title="tMenu"></div>' +
@@ -742,8 +886,8 @@
             ' </transition>' +
             ' </div>' + /* end slide-host */
             /* A–Z lexicon on the border */
-            ' <div class="lib-fusion-jumplist noselect" v-if="jumplist.length>1"' +
-            '      :class="jlSideClass"' +
+            ' <div class="lib-fusion-jumplist noselect" v-if="showJumplist"' +
+            '      :class="jlSideClass" :style="jumplistStyle"' +
             '      @touchstart.prevent="jlTouchStart" @touchmove.prevent="jlTouchMove" @touchend="jlTouchEnd" @touchcancel="jlTouchEnd">' +
             '  <div class="lib-fusion-jl-inner">' +
             '   <div v-for="(j, ji) in jumplist" :key="\'jl-\'+j.key+ji" class="lib-fusion-jl-key"' +
@@ -774,6 +918,7 @@
             var sortLRev = !!mmAlb.reverse;
             var sortSRev = false;
             var songCols = Object.assign({}, DEFAULT_SONG_COLS);
+            var colWidths = {};
             try {
                 if (typeof getLocalStorageVal === 'function') {
                     // Only override with fusion-local keys when the user has set them
@@ -814,11 +959,26 @@
                             }
                         } catch (e2) {}
                     }
+                    var rawWidths = getLocalStorageVal('libFusionColWidths', '');
+                    if (rawWidths) {
+                        try {
+                            var parsedW = JSON.parse(rawWidths);
+                            if (parsedW && typeof parsedW === 'object') {
+                                for (var wid in COL_WIDTH_VAR) {
+                                    if (!Object.prototype.hasOwnProperty.call(parsedW, wid)) { continue; }
+                                    var wn = parseFloat(parsedW[wid]);
+                                    var wmin = COL_WIDTH_MIN[wid] || 28;
+                                    if (wn >= wmin && wn <= 520) { colWidths[wid] = Math.round(wn); }
+                                }
+                            }
+                        } catch (e3) {}
+                    }
                 }
             } catch (e) {}
             return {
                 tab: tab,
                 filter: '',
+                filterDraft: '',
                 artists: [],
                 albums: [],
                 allAlbums: [],
@@ -840,7 +1000,9 @@
                 selectedMap: {},
                 showSort: false,
                 showDisp: false,
+                menuSlide: 0,
                 songCols: songCols,
+                colWidths: colWidths,
                 songColDefs: SONG_COLS,
                 sortArtists: sortA,
                 sortAlbums: sortL,
@@ -860,6 +1022,9 @@
                 albumDrill: false, /* albums tab track slide */
                 drillAlbum: null,
                 isNarrow: false,
+                toolsOpen: false,
+                toolsPulling: false,
+                toolsPullPx: 0,
                 isTouch: false,
                 itemSwipe: null, /* reactive: swipe-to-add state */
                 tabDir: 'fwd', /* push animation direction */
@@ -871,6 +1036,10 @@
                 iconAdd: '',
                 iconPlayNext: '',
                 iconShuffle: '',
+                iconPlayRow: '',
+                iconAddRow: '',
+                iconPlayNextRow: '',
+                iconShuffleRow: '',
                 iconSearch: '',
                 tArtists: 'Artists',
                 tAlbums: 'Albums',
@@ -926,6 +1095,19 @@
                     return this.sortSongs || 'title';
                 }
                 return this.sortArtists || 'name';
+            },
+            /* Lexicon only on a tab's top list, not after an artist, album, or genre drill. */
+            showJumplist: function() {
+                if (!this.jumplist || this.jumplist.length < 2) {
+                    return false;
+                }
+                if (this.tab === 'albums') {
+                    return !this.albumDrill;
+                }
+                if (this.tab === 'songs') {
+                    return !this.activeGenre;
+                }
+                return this.drillLevel < 1;
             },
             jumplist: function() {
                 var list = this.activeList || [];
@@ -1148,19 +1330,124 @@
             },
             filterExpanded: function() {
                 return !!(this.filterOpen || this.filter);
+            },
+            /* Title-bar tools. Filter class widens the field; menu class keeps the dropdown visible. */
+            toolsClass: function() {
+                return {
+                    'lib-fusion-tools-menu': !!(this.showSort || this.showDisp),
+                    'lib-fusion-tools-filter': !!this.filterExpanded
+                };
+            },
+            /* Same gate as the browse pull row: phone layout, not a wide desktop window. */
+            pullTools: function() {
+                return !(this.$store && this.$store.state && this.$store.state.desktopLayout);
+            },
+            pullToolsClass: function() {
+                return {
+                    'is-open': !!(this.toolsOpen && this.selectedCount < 1),
+                    'is-pulling': !!this.toolsPulling,
+                    'lib-fusion-tools-menu': !!(this.showSort || this.showDisp)
+                };
+            },
+            /* Phone: lexicon starts under the pills, then slides with the pull row
+               and again when a sort/display menu covers the rail. */
+            jumplistStyle: function() {
+                if (!this.pullTools) {
+                    return null;
+                }
+                var tools = 0;
+                if (this.selectedCount < 1) {
+                    if (this.toolsPulling) {
+                        tools = Math.max(0, this.toolsPullPx || 0);
+                    } else if (this.toolsOpen) {
+                        tools = 36;
+                    }
+                }
+                var tabs = 44;
+                var menu = (this.showSort || this.showDisp) ? (this.menuSlide || 0) : 0;
+                var extra = menu > 0 ? Math.max(tabs, menu) : tabs;
+                return {
+                    top: 'calc(var(--sub-toolbar-height, 48px) - var(--browse-subheader-offset, 0px) + 4px + ' + (tools + extra) + 'px)',
+                    transition: this.toolsPulling ? 'none' : 'top 0.28s cubic-bezier(0.32, 0.72, 0, 1)'
+                };
+            },
+            pullToolsStyle: function() {
+                var full = 36;
+                if (this.toolsPulling) {
+                    var h = Math.max(0, this.toolsPullPx || 0);
+                    return {
+                        height: h + 'px',
+                        opacity: String(Math.max(0.18, Math.min(1, h / Math.max(24, full * 0.55)))),
+                        transition: 'none'
+                    };
+                }
+                var open = !!(this.toolsOpen && this.selectedCount < 1);
+                return {
+                    height: (open ? full : 0) + 'px',
+                    opacity: open ? '1' : '0'
+                };
             }
         },
         watch: {
-            filter: function() {
-                this.resetKbNav(true);
+            pullTools: function() {
+                this.syncPullChrome();
+            },
+            showSort: function() {
+                this.measureMenuSlide();
+            },
+            showDisp: function() {
+                this.measureMenuSlide();
+            },
+            filterDraft: function(v) {
+                if (!this.pullTools) {
+                    return;
+                }
+                var self = this;
+                var next = v == null ? '' : String(v);
+                this.filterOpen = next.length > 0;
+                if (this._filterTimer) {
+                    clearTimeout(this._filterTimer);
+                }
+                this._filterTimer = setTimeout(function() {
+                    self._filterTimer = null;
+                    if (self.filter !== next) {
+                        self.filter = next;
+                    } else {
+                        self.$nextTick(function() {
+                            self.syncSelectionToFilter();
+                        });
+                    }
+                }, 120);
+            },
+            filter: function(next, prev) {
+                this.syncFilterChrome();
+                var nextOn = !!(next && String(next).length);
+                var prevOn = !!(prev && String(prev).length);
+                if (nextOn) {
+                    this.resetKbNav(true);
+                } else if (prevOn && this._fusionScroll) {
+                    this.resetKbNav(false);
+                    this.restoreFusionScroll(this._fusionScroll);
+                    this._fusionScroll = null;
+                } else {
+                    this.resetKbNav(false);
+                }
                 this.$nextTick(function() {
                     this.syncSelectionToFilter();
+                    this.syncToolsReserve();
                 }.bind(this));
             },
             filteredArtists: function(list) {
                 if (this.tab === 'artists') {
                     this.ensureArtistInList(list);
                 }
+            },
+            filterOpen: function() {
+                this.syncFilterChrome();
+                this.$nextTick(this.syncToolsReserve);
+            },
+            loadingSongs: function(v) {
+                if (!v) { this.$nextTick(this.syncSongScrollbar); }
             }
         },
         mounted: function() {
@@ -1170,7 +1457,21 @@
             } catch (e) {}
             this.syncTheme();
             this.localize();
+            this.syncFilterChrome();
+            this.syncPullChrome();
+            this.applyColWidths();
+            this.$nextTick(function() {
+                this.syncToolsReserve();
+                var tools = this.$el && this.$el.querySelector('.lib-fusion-tools');
+                if (tools && typeof ResizeObserver !== 'undefined') {
+                    this._toolsObs = new ResizeObserver(function() {
+                        this.syncToolsReserve();
+                    }.bind(this));
+                    this._toolsObs.observe(tools);
+                }
+            }.bind(this));
             this.bootstrap();
+            this.$nextTick(this.syncSongScrollbar);
             this._onDocClick = function(ev) {
                 if (!ev || !ev.target) { return; }
                 // Ignore the same click that opened a menu
@@ -1239,9 +1540,13 @@
                     ack(handled);
                 }
             }.bind(this);
+            this._onFusionResetFilter = function() {
+                this.leaveFilteredPage();
+            }.bind(this);
             if (typeof bus !== 'undefined') {
                 bus.$on('fusionHandleEsc', this._onFusionEsc);
                 bus.$on('fusionHandleBack', this._onFusionBack);
+                bus.$on('fusionResetFilter', this._onFusionResetFilter);
             }
             this.$nextTick(function() {
                 try {
@@ -1256,9 +1561,29 @@
             }.bind(this));
         },
         beforeDestroy: function() {
+            if (this._toolsObs) {
+                try { this._toolsObs.disconnect(); } catch (eObs) {}
+                this._toolsObs = null;
+            }
+            try {
+                document.documentElement.style.removeProperty('--fusion-tools-reserve');
+            } catch (eReserve) {}
+            fusionSwipeUnbindDoc(this);
+            this.colResizeEnd();
+            try {
+                if (document.documentElement) {
+                    document.documentElement.classList.remove('lib-fusion-filtering');
+                    document.documentElement.classList.remove('lib-fusion-pull');
+                }
+            } catch (e) {}
             if (this._filterTimer) {
                 clearTimeout(this._filterTimer);
                 this._filterTimer = null;
+            }
+            this._fusionMenuHoldClear();
+            if (this._fusionSwipeIgnoreTimer) {
+                clearTimeout(this._fusionSwipeIgnoreTimer);
+                this._fusionSwipeIgnoreTimer = null;
             }
             if (this._onDocClick) {
                 document.removeEventListener('click', this._onDocClick, false);
@@ -1274,6 +1599,9 @@
             }
             if (typeof bus !== 'undefined' && this._onFusionBack) {
                 bus.$off('fusionHandleBack', this._onFusionBack);
+            }
+            if (typeof bus !== 'undefined' && this._onFusionResetFilter) {
+                bus.$off('fusionResetFilter', this._onFusionResetFilter);
             }
             this.setChromeCollapsed(false);
         },
@@ -1320,17 +1648,115 @@
                 // Only section heads hide — My Music subheader + tab strip stay put
                 this.chromeCollapsed = collapsed;
             },
+            /* Hide the My Music title while the desktop title-bar filter field is open. */
+            syncFilterChrome: function() {
+                try {
+                    if (document.documentElement) {
+                        document.documentElement.classList.toggle('lib-fusion-filtering', !!this.filterExpanded && !this.pullTools);
+                    }
+                } catch (e) {}
+            },
+            /* Title lives outside this component, so the pull layout is marked on <html>. */
+            syncPullChrome: function() {
+                try {
+                    if (document.documentElement) {
+                        document.documentElement.classList.toggle('lib-fusion-pull', !!this.pullTools);
+                    }
+                } catch (e) {}
+            },
             updateNarrow: function() {
                 var w = typeof window !== 'undefined' ? window.innerWidth : 1200;
                 this.isNarrow = w <= 799;
+                this.syncPullChrome();
                 this.songRowH = this.isNarrow ? SONG_ROW_H_NARROW : SONG_ROW_H;
                 if (!this.isNarrow) {
                     this.drillLevel = 0;
                     this.albumDrill = false;
                 }
+                this.$nextTick(this.syncSongScrollbar);
+            },
+            fusionScrollState: function() {
+                var state = {};
+                try {
+                    var col = this.$el && this.$el.querySelector('.lib-fusion-col-scroll');
+                    if (col) {
+                        state.col = col.scrollTop || 0;
+                    }
+                    var song = this.$refs.songScroller;
+                    if (song && song.$el) {
+                        state.song = song.$el.scrollTop || 0;
+                    }
+                    var artist = this.$refs.artistScroller;
+                    if (artist && artist.$el) {
+                        state.artist = artist.$el.scrollTop || 0;
+                    }
+                    var grid = this.$el && this.$el.querySelector('.lib-fusion-album-grid');
+                    var pane = grid && (grid.closest ? (grid.closest('.lib-fusion-col-scroll') || grid.parentElement) : grid.parentElement);
+                    if (pane) {
+                        state.pane = pane.scrollTop || 0;
+                    }
+                } catch (e) {}
+                return state;
+            },
+            restoreFusionScroll: function(state) {
+                if (!state) {
+                    return;
+                }
+                this.$nextTick(function() {
+                    try {
+                        var col = this.$el && this.$el.querySelector('.lib-fusion-col-scroll');
+                        if (col && state.col != null) {
+                            col.scrollTop = state.col;
+                        }
+                        var song = this.$refs.songScroller;
+                        if (song && song.$el && state.song != null) {
+                            song.$el.scrollTop = state.song;
+                        }
+                        var artist = this.$refs.artistScroller;
+                        if (artist && artist.$el && state.artist != null) {
+                            artist.$el.scrollTop = state.artist;
+                        }
+                        var grid = this.$el && this.$el.querySelector('.lib-fusion-album-grid');
+                        var pane = grid && (grid.closest ? (grid.closest('.lib-fusion-col-scroll') || grid.parentElement) : grid.parentElement);
+                        if (pane && state.pane != null) {
+                            pane.scrollTop = state.pane;
+                        }
+                    } catch (e) {}
+                }.bind(this));
+            },
+            /* Width of the title-bar cluster, so browse buttons keep one gap when the set changes. */
+            syncToolsReserve: function() {
+                if (this.pullTools) {
+                    return;
+                }
+                var px = 0;
+                if (!this.filterExpanded) {
+                    var tools = this.$el && this.$el.querySelector('.lib-fusion-tools');
+                    if (tools) {
+                        px = (tools.offsetWidth || 0) + 12;
+                    }
+                }
+                try {
+                    document.documentElement.style.setProperty('--fusion-tools-reserve', px + 'px');
+                } catch (e) {}
+            },
+            /* Back closes the header search and restores the list. Mobile pull search is separate. */
+            consumeHeaderSearch: function() {
+                if (this.pullTools) {
+                    return false;
+                }
+                if (this.filterOpen || this.filterExpanded || (this.filter && String(this.filter).length)) {
+                    this.resetFilter();
+                    return true;
+                }
+                return false;
             },
             openFilter: function() {
                 this.chromeTouchBlock();
+                if (!this.filterExpanded) {
+                    this._fusionScroll = this.fusionScrollState();
+                }
+                this.toolsOpen = true;
                 this.filterOpen = true;
                 this.$nextTick(function() {
                     try {
@@ -1493,23 +1919,83 @@
                     } catch (e) {}
                 }.bind(this));
             },
+            blurFilterEntry: function() {
+                var entry = this.$refs.filterInput;
+                if (!entry) {
+                    return;
+                }
+                try {
+                    if (typeof entry.blur === 'function' && entry.tagName === 'INPUT') {
+                        entry.value = '';
+                        entry.blur();
+                        return;
+                    }
+                    if (entry.$el) {
+                        var input = entry.$el.querySelector('input');
+                        if (input && input.blur) {
+                            input.blur();
+                        }
+                    }
+                } catch (e) {}
+            },
+            fusionFilterActive: function() {
+                var typed = this.filterDraft != null ? String(this.filterDraft).trim() : '';
+                var applied = this.filter != null ? String(this.filter).trim() : '';
+                return !!(typed || applied);
+            },
+            fusionFilterFocused: function() {
+                try {
+                    var ae = document.activeElement;
+                    if (!ae || (ae.tagName !== 'INPUT' && ae.tagName !== 'TEXTAREA')) {
+                        return false;
+                    }
+                    return !!(ae.closest && ae.closest('.lib-fusion-pull-tools, .lib-fusion-filter-wrap'));
+                } catch (e) {
+                    return false;
+                }
+            },
+            /* A new list (tab, drill, or app page) drops the current filter. */
+            leaveFilteredPage: function() {
+                if (!this.fusionFilterActive() && !this.filterOpen) {
+                    return;
+                }
+                this.resetFilter(true, false);
+                this.toolsOpen = false;
+                this.toolsPulling = false;
+                this.toolsPullPx = 0;
+                this.showSort = false;
+                this.showDisp = false;
+            },
             /** ESC: exit filter mode completely (clear term + collapse field) */
-            resetFilter: function() {
+            resetFilter: function(keepFocus, restoreScroll) {
                 if (this._filterTimer) {
                     clearTimeout(this._filterTimer);
                     this._filterTimer = null;
                 }
-                this.filter = '';
+                if (restoreScroll === false) {
+                    this._fusionScroll = null;
+                }
+                var had = !!(this.filter && String(this.filter).length);
+                this.filterDraft = '';
                 this.filterOpen = false;
-                this.resetKbNav(true);
-                try {
-                    if (this.$refs.filterInput) {
-                        this.$refs.filterInput.value = '';
-                        this.$refs.filterInput.blur();
+                if (had) {
+                    this.filter = '';
+                } else {
+                    this.filter = '';
+                    this.resetKbNav(false);
+                    if (this._fusionScroll) {
+                        this.restoreFusionScroll(this._fusionScroll);
+                        this._fusionScroll = null;
                     }
+                }
+                try {
+                    this.blurFilterEntry();
                 } catch (e) {}
                 this.$nextTick(function() {
                     this.syncSelectionToFilter();
+                    if (keepFocus) {
+                        return;
+                    }
                     try {
                         if (this.$refs.root) {
                             this.$refs.root.focus({ preventScroll: true });
@@ -1600,7 +2086,10 @@
                 /* Pinch-zoom (albums grid primarily) */
                 if (ev.touches.length >= 2) {
                     this._navSwipe = null;
+                    this._toolsPull = null;
+                    this.toolsPulling = false;
                     this.itemSwipe = null;
+                    this._fusionMenuHoldClear();
                     var base = 1;
                     try {
                         if (this.$el) {
@@ -1630,12 +2119,98 @@
                     return;
                 }
                 var t = ev.touches[0];
-                this._navSwipe = { x: t.clientX, y: t.clientY, t: Date.now() };
+                if (ev.target && ev.target.closest &&
+                    ev.target.closest('.lib-fusion-song-row, .lib-fusion-track-row, .lib-fusion-artist-row, .lib-fusion-album, .lib-fusion-grid-item')) {
+                    this._navSwipe = null;
+                } else {
+                    this._navSwipe = { x: t.clientX, y: t.clientY, t: Date.now() };
+                }
+                if (this.pullTools && this.selectedCount < 1 && this.fusionActiveScrollTop() <= 4) {
+                    this._toolsPull = { y: t.clientY, fromOpen: !!this.toolsOpen };
+                } else {
+                    this._toolsPull = null;
+                }
             },
             /**
              * Mark Unity chrome interaction so toolbar player/nav drawer ignores
              * the delayed iOS synthetic click that can land on the player title.
              */
+            commitToolsPull: function() {
+                var fullH = 36;
+                var pulled = this.toolsPullPx;
+                var keep = this.fusionFilterFocused() || this.fusionFilterActive() || pulled >= fullH * 0.42;
+                this.toolsOpen = !!keep;
+                if (!this.toolsOpen) {
+                    this.showSort = false;
+                    this.showDisp = false;
+                }
+                this.toolsPulling = false;
+                this.toolsPullPx = 0;
+                this._toolsPull = null;
+                this._navSwipe = null;
+            },
+            /* Drag the artist / album / song pills down to reveal filter and options. */
+            pillsTouchStart: function(ev) {
+                try {
+                    if (typeof window !== 'undefined') {
+                        window._mskFusionChromeTouch = Date.now();
+                    }
+                } catch (e) {}
+                if (!this.pullTools || !ev || !ev.touches || ev.touches.length !== 1) {
+                    this.chromeTouchBlock();
+                    return;
+                }
+                var t = ev.touches[0];
+                this._pillsPull = { x: t.clientX, y: t.clientY, fromOpen: !!this.toolsOpen };
+                this._pillsMoved = false;
+            },
+            pillsTouchMove: function(ev) {
+                var p = this._pillsPull;
+                if (!p || !this.pullTools || !ev || !ev.touches || !ev.touches[0]) {
+                    return;
+                }
+                var t = ev.touches[0];
+                var dy = t.clientY - p.y;
+                var dx = Math.abs(t.clientX - p.x);
+                if (!this._pillsMoved && dx > 16 && dx > Math.abs(dy) * 1.15) {
+                    this._pillsPull = null;
+                    return;
+                }
+                if (!this._pillsMoved && Math.abs(dy) < 8) {
+                    return;
+                }
+                if (p.fromOpen && this.fusionFilterActive()) {
+                    return;
+                }
+                this._pillsMoved = true;
+                try { ev.preventDefault(); } catch (ePull) {}
+                var full = 36;
+                this.toolsPulling = true;
+                if (!p.fromOpen) {
+                    var hOpen = Math.max(0, dy);
+                    if (hOpen > full) {
+                        hOpen = full + (hOpen - full) * 0.22;
+                    }
+                    this.toolsPullPx = hOpen;
+                } else {
+                    this.toolsPullPx = dy >= 0 ? (full + dy * 0.22) : Math.max(0, full + dy);
+                }
+            },
+            pillsTouchEnd: function() {
+                var moved = !!this._pillsMoved;
+                this._pillsPull = null;
+                if (!moved || !this.toolsPulling) {
+                    this._pillsMoved = false;
+                    return;
+                }
+                this.commitToolsPull();
+                this._suppressTabClick = true;
+                var self = this;
+                setTimeout(function() {
+                    self._suppressTabClick = false;
+                    self._pillsMoved = false;
+                }, 400);
+            },
             chromeTouchBlock: function(ev) {
                 try {
                     if (typeof window !== 'undefined') {
@@ -1643,6 +2218,35 @@
                     }
                 } catch (e) {}
                 this._navSwipe = null;
+                this._toolsPull = null;
+            },
+            fusionActiveScrollTop: function() {
+                var t = this._lastChromeScrollEl;
+                try {
+                    if (t && t.offsetParent !== null) {
+                        return t.scrollTop || 0;
+                    }
+                } catch (e) {}
+                var root = this.$el;
+                if (!root || !root.querySelectorAll) {
+                    return 0;
+                }
+                var nodes = root.querySelectorAll('.lib-fusion-scroller, .lib-fusion-col-scroll, .lib-fusion-album-grid, .vue-recycle-scroller');
+                var top = 0;
+                var i;
+                for (i = 0; i < nodes.length; i++) {
+                    var n = nodes[i];
+                    if (!n || n.offsetParent === null) {
+                        continue;
+                    }
+                    if (n.scrollHeight <= n.clientHeight + 4) {
+                        continue;
+                    }
+                    if ((n.scrollTop || 0) > top) {
+                        top = n.scrollTop || 0;
+                    }
+                }
+                return top;
             },
             fusionTouchMove: function(ev) {
                 if (this._fusionPinch && ev.touches && ev.touches.length >= 2) {
@@ -1657,6 +2261,32 @@
                 if (this.itemSwipe && this.itemSwipe.active) {
                     this._navSwipe = null;
                     return;
+                }
+                if (this._toolsPull && this.pullTools && ev.touches && ev.touches[0]) {
+                    var touch = ev.touches[0];
+                    var pullDy = touch.clientY - this._toolsPull.y;
+                    var originX = this._navSwipe ? this._navSwipe.x : touch.clientX;
+                    var pullDx = Math.abs(touch.clientX - originX);
+                    var full = 36;
+                    if (!this.toolsPulling && pullDx > 18 && pullDx > Math.abs(pullDy) * 1.15) {
+                        this._toolsPull = null;
+                    } else if (this._toolsPull && !this._toolsPull.fromOpen) {
+                        if (pullDy > 8 && this.fusionActiveScrollTop() <= 4) {
+                            try { ev.preventDefault(); } catch (ePull) {}
+                            this.toolsPulling = true;
+                            var hOpen = pullDy;
+                            if (hOpen > full) {
+                                hOpen = full + (hOpen - full) * 0.22;
+                            }
+                            this.toolsPullPx = Math.max(0, hOpen);
+                            this._navSwipe = null;
+                        }
+                    } else if (this._toolsPull && this._toolsPull.fromOpen && !this.fusionFilterFocused() && !this.fusionFilterActive() && (pullDy < -6 || pullDy > 6)) {
+                        try { ev.preventDefault(); } catch (ePull2) {}
+                        this.toolsPulling = true;
+                        this.toolsPullPx = pullDy >= 0 ? (full + pullDy * 0.22) : Math.max(0, full + pullDy);
+                        this._navSwipe = null;
+                    }
                 }
                 if (!this._navSwipe || !ev.touches || !ev.touches.length) {
                     return;
@@ -1685,10 +2315,15 @@
                     }
                     return;
                 }
-                if (this.itemSwipe && this.itemSwipe.active) {
+                if (this.toolsPulling) {
+                    this.commitToolsPull();
+                    return;
+                }
+                if (this.itemSwipe && (this.itemSwipe.active || this.itemSwipe.open)) {
                     this._navSwipe = null;
                     return;
                 }
+                this._toolsPull = null;
                 var s = this._navSwipe;
                 this._navSwipe = null;
                 if (!s || !ev.changedTouches || !ev.changedTouches.length) {
@@ -1711,24 +2346,100 @@
                     }
                 }
             },
+            _fusionMenuHoldClear: function() {
+                if (this._fusionMenuHold) {
+                    clearTimeout(this._fusionMenuHold);
+                    this._fusionMenuHold = null;
+                }
+            },
+            fusionClickBlocked: function() {
+                return !!(this.suppressFusionClickUntil && Date.now() < this.suppressFusionClickUntil);
+            },
+            /* Tap on the row face while a button is open: close, do not drill or play. */
+            fusionSwipeConsume: function() {
+                var s = this.itemSwipe;
+                if (!s || !s.open || s.active) {
+                    return false;
+                }
+                this.itemSwipe = null;
+                return true;
+            },
+            fusionSwipeAction: function(kind, item, ev) {
+                if (ev) {
+                    try { ev.preventDefault(); } catch (e1) {}
+                    try { ev.stopPropagation(); } catch (e2) {}
+                }
+                if (this._fusionSwipeIgnoreClick) {
+                    this._fusionSwipeIgnoreClick = false;
+                    return;
+                }
+                var s = this.itemSwipe;
+                if (!s || !s.open || s.active || !item || s.key !== item.key) {
+                    return;
+                }
+                if (kind === 'add' && !(s.dx > 0)) { return; }
+                if (kind === 'next' && !(s.dx < 0)) { return; }
+                var swipeItem = s.item;
+                var swipeKind = s.kind;
+                this.itemSwipe = null;
+                if (kind === 'add') {
+                    if (swipeKind === 'album') { this.addAlbum(swipeItem); }
+                    else if (swipeKind === 'track') { this.addTrack(swipeItem); }
+                    else if (swipeKind === 'artist') { this.playlistCmd('add', 'artist_id', swipeItem.id); }
+                } else if (swipeKind === 'album') { this.insertAlbum(swipeItem); }
+                else if (swipeKind === 'track') { this.insertTrack(swipeItem); }
+                else if (swipeKind === 'artist') { this.playlistCmd('insert', 'artist_id', swipeItem.id); }
+            },
             itemSwipeStart: function(item, kind, ev) {
                 if (!item || !ev || !ev.touches || ev.touches.length !== 1) {
                     return;
                 }
                 if (ev.target && ev.target.closest &&
-                    ev.target.closest('.lib-fusion-grid-btns, .lib-fusion-row-btns, .lib-fusion-gbtn, .lib-fusion-mat-btn, button, .lib-fusion-check, .link-item')) {
+                    ev.target.closest('.lib-fusion-grid-btns, .lib-fusion-row-btns, .lib-fusion-gbtn, .lib-fusion-mat-btn, button, .lib-fusion-check')) {
                     return;
                 }
                 var t = ev.touches[0];
+                var sx = t.clientX;
+                var sy = t.clientY;
+                var prev = this.itemSwipe;
+                var same = !!(prev && prev.open && prev.key === item.key);
+                if (prev && prev.open && prev.key !== item.key) {
+                    this.suppressFusionClickUntil = Date.now() + 380;
+                }
+                var origin = same ? (prev.origin || prev.dx || 0) : 0;
+                var side = same ? (prev.side || (origin > 0 ? 1 : (origin < 0 ? -1 : 0))) : 0;
+                this._fusionMenuHoldClear();
+                this._fusionMenuHoldOpened = false;
                 this.itemSwipe = {
                     key: item.key,
                     item: item,
                     kind: kind,
-                    x: t.clientX,
-                    y: t.clientY,
-                    dx: 0,
-                    active: false
+                    x: sx,
+                    y: sy,
+                    dx: origin,
+                    active: false,
+                    open: same,
+                    side: side,
+                    origin: origin
                 };
+                fusionSwipeBindDoc(this);
+                var onBg = ev.target && ev.target.closest && ev.target.closest('.lib-fusion-swipe-bg');
+                if (onBg) {
+                    return;
+                }
+                /* Same 420ms hold as browse rows. The ⋮ is hidden on touch. */
+                var self = this;
+                this._fusionMenuHold = setTimeout(function() {
+                    self._fusionMenuHold = null;
+                    var s = self.itemSwipe;
+                    if (!s || s.active || s.item !== item) {
+                        return;
+                    }
+                    self._fusionMenuHoldOpened = true;
+                    self.suppressFusionClickUntil = Date.now() + 700;
+                    try { if (navigator.vibrate) { navigator.vibrate(14); } } catch (eV) {}
+                    self.openCtx(item, kind, { clientX: sx, clientY: sy });
+                }, 420);
             },
             itemSwipeMove: function(ev) {
                 var s = this.itemSwipe;
@@ -1736,73 +2447,124 @@
                     return;
                 }
                 var t = ev.touches[0];
-                var dx = t.clientX - s.x;
+                var travel = t.clientX - s.x;
                 var dy = t.clientY - s.y;
+                if (Math.abs(travel) >= 8 && Math.abs(travel) > Math.abs(dy)) {
+                    try { ev.preventDefault(); } catch (eEarly) {}
+                }
+                if (Math.abs(travel) > 10 || Math.abs(dy) > 10) {
+                    this._fusionMenuHoldClear();
+                }
                 if (!s.active) {
-                    if (Math.abs(dx) < 12 && Math.abs(dy) < 12) {
+                    if (Math.abs(travel) < 12 && Math.abs(dy) < 12) {
                         return;
                     }
-                    if (Math.abs(dy) > Math.abs(dx) * 1.1) {
-                        this.itemSwipe = null;
+                    if (Math.abs(dy) > Math.abs(travel) * 1.1) {
+                        this._fusionMenuHoldClear();
+                        if (s.open) {
+                            s.dx = s.origin || s.dx || 0;
+                            s.active = false;
+                            this.itemSwipe = Object.assign({}, s);
+                        } else {
+                            this.itemSwipe = null;
+                        }
                         return;
                     }
                     s.active = true;
                     this._navSwipe = null;
                 }
-                s.dx = Math.max(-92, Math.min(92, dx));
+                s.dx = fusionSwipeClamp(s, travel);
                 this.itemSwipe = Object.assign({}, s);
                 try { if (s.active) { ev.preventDefault(); } } catch (e) {}
             },
             itemSwipeEnd: function(ev) {
+                if (this._fusionSwipeEnding) { return; }
+                this._fusionSwipeEnding = true;
+                var selfSwipeEnd = this;
+                setTimeout(function() { selfSwipeEnd._fusionSwipeEnding = false; }, 0);
+                fusionSwipeUnbindDoc(this);
+                this._fusionMenuHoldClear();
+                var opened = this._fusionMenuHoldOpened;
+                this._fusionMenuHoldOpened = false;
                 var s = this.itemSwipe;
-                this.itemSwipe = null;
-                if (!s || !s.active) {
+                if (opened) {
+                    this.itemSwipe = null;
                     return;
                 }
-                var dx = s.dx || 0;
+                if (!s) {
+                    return;
+                }
+                if (!s.active) {
+                    if (s.open) {
+                        s.dx = s.origin || s.dx || 0;
+                        s.active = false;
+                        this.itemSwipe = Object.assign({}, s);
+                    } else {
+                        this.itemSwipe = null;
+                    }
+                    return;
+                }
+                var travel = (s.dx || 0) - (s.open ? (s.origin || 0) : 0);
                 if (ev && ev.changedTouches && ev.changedTouches[0]) {
-                    dx = Math.max(-92, Math.min(92, ev.changedTouches[0].clientX - s.x));
+                    travel = ev.changedTouches[0].clientX - s.x;
                 }
-                if (dx >= 56) {
-                    /* right → add */
-                    if (s.kind === 'album') {
-                        this.addAlbum(s.item);
-                    } else if (s.kind === 'track') {
-                        this.addTrack(s.item);
-                    } else if (s.kind === 'artist') {
-                        this.playlistCmd('add', 'artist_id', s.item.id);
-                    }
-                } else if (dx <= -56) {
-                    /* left → play next */
-                    if (s.kind === 'album') {
-                        this.insertAlbum(s.item);
-                    } else if (s.kind === 'track') {
-                        this.insertTrack(s.item);
-                    } else if (s.kind === 'artist') {
-                        this.playlistCmd('insert', 'artist_id', s.item.id);
-                    }
+                var dx = fusionSwipeClamp(s, travel);
+                var side = s.side || (dx > 0 ? 1 : (dx < 0 ? -1 : 0));
+                var keep = Math.abs(dx) >= FUSION_SWIPE_COMMIT;
+                if (!keep && s.open && Math.abs(dx) > FUSION_SWIPE_MAX * 0.45) {
+                    keep = true;
                 }
+                if (keep && side) {
+                    var openDx = side > 0 ? FUSION_SWIPE_MAX : -FUSION_SWIPE_MAX;
+                    var selfEnd = this;
+                    this._fusionSwipeIgnoreClick = true;
+                    this.suppressFusionClickUntil = Date.now() + 380;
+                    clearTimeout(this._fusionSwipeIgnoreTimer);
+                    this._fusionSwipeIgnoreTimer = setTimeout(function() {
+                        selfEnd._fusionSwipeIgnoreClick = false;
+                    }, 380);
+                    this.itemSwipe = {
+                        key: s.key,
+                        item: s.item,
+                        kind: s.kind,
+                        x: 0,
+                        y: 0,
+                        dx: openDx,
+                        active: false,
+                        open: true,
+                        side: side,
+                        origin: openDx
+                    };
+                    return;
+                }
+                this.itemSwipe = null;
             },
             swipeRowClass: function(item) {
                 var s = this.itemSwipe;
-                if (!item || !s || s.key !== item.key || !s.dx) {
+                if (!item || !s || s.key !== item.key) {
+                    return {};
+                }
+                if (!s.active && !s.open && !s.dx) {
                     return {};
                 }
                 return {
-                    'lib-fusion-swiping': true,
+                    'lib-fusion-swiping': !!s.active,
+                    'lib-fusion-swipe-open': !!s.open && !s.active,
                     'lib-fusion-swipe-right': s.dx > 0,
                     'lib-fusion-swipe-left': s.dx < 0,
-                    'lib-fusion-swipe-armed': Math.abs(s.dx) >= 56
+                    'lib-fusion-swipe-armed': Math.abs(s.dx) >= FUSION_SWIPE_COMMIT
                 };
             },
             swipeRowStyle: function(item) {
                 var s = this.itemSwipe;
-                if (!item || !s || s.key !== item.key || !s.dx) {
+                if (!item || !s || s.key !== item.key) {
+                    return {};
+                }
+                if (!s.active && !s.open && !s.dx) {
                     return {};
                 }
                 return {
-                    transform: 'translate3d(' + s.dx + 'px,0,0)',
-                    transition: s.active ? 'none' : 'transform 0.2s ease'
+                    '--fusion-swipe-x': (s.dx || 0) + 'px'
                 };
             },
             closeAlbumDrill: function() {
@@ -1813,6 +2575,7 @@
                 if (!alb) {
                     return;
                 }
+                this.leaveFilteredPage();
                 this.drillAlbum = alb;
                 if (alb.tracks == null) {
                     this.loadTracks(alb);
@@ -1824,6 +2587,12 @@
                 }
             },
             onArtistAlbumClick: function(alb, ev) {
+                if (this.fusionClickBlocked()) {
+                    return;
+                }
+                if (this.fusionSwipeConsume()) {
+                    return;
+                }
                 if (this.isNarrow) {
                     this.openAlbumDrill(alb);
                     return;
@@ -1959,12 +2728,28 @@
                 }
                 return arr;
             },
+            measureMenuSlide: function() {
+                var self = this;
+                if (!this.pullTools || (!this.showSort && !this.showDisp)) {
+                    this.menuSlide = 0;
+                    return;
+                }
+                this.$nextTick(function() {
+                    if (!self.showSort && !self.showDisp) {
+                        self.menuSlide = 0;
+                        return;
+                    }
+                    var menu = self.$el && self.$el.querySelector('.lib-fusion-pull-tools .lib-fusion-sort-menu');
+                    self.menuSlide = menu ? (menu.offsetHeight + 10) : 0;
+                });
+            },
             toggleSortMenu: function() {
                 this.chromeTouchBlock();
                 var open = !this.showSort;
                 this._ignoreDocClick = true;
                 this.showSort = open;
                 if (open) {
+                    this.toolsOpen = true;
                     this.showDisp = false;
                 }
                 var self = this;
@@ -1976,6 +2761,7 @@
                 this._ignoreDocClick = true;
                 this.showDisp = open;
                 if (open) {
+                    this.toolsOpen = true;
                     this.showSort = false;
                 }
                 var self = this;
@@ -2014,6 +2800,10 @@
             },
             /** Column header click: sort by col; second click reverses */
             headerSort: function(id) {
+                if (this._suppressHeaderSort) {
+                    this._suppressHeaderSort = false;
+                    return;
+                }
                 if (!id || this.tab !== 'songs') {
                     return;
                 }
@@ -2041,8 +2831,85 @@
                     try { setLocalStorageVal('libFusionSortSRev', '0'); } catch (e2) {}
                 }
             },
+            /* Drag the header separator. Title's grip resizes the next visible column so the title keeps the free space. */
+            colResizeStart: function(id, ev) {
+                if (!ev || ev.button !== 0 || this.isTouch || this.isNarrow) { return; }
+                var target = id;
+                var sign = 1;
+                if (id === 'title') {
+                    target = '';
+                    var cols = this.songCols || {};
+                    for (var i = 0; i < COL_AFTER_TITLE.length; i++) {
+                        if (cols[COL_AFTER_TITLE[i]]) { target = COL_AFTER_TITLE[i]; break; }
+                    }
+                    sign = -1;
+                }
+                if (!target || !COL_WIDTH_VAR[target] || !this.$el) { return; }
+                var cssVar = COL_WIDTH_VAR[target];
+                var cur = parseFloat(this.$el.style.getPropertyValue(cssVar));
+                if (!cur) {
+                    try { cur = parseFloat(window.getComputedStyle(this.$el).getPropertyValue(cssVar)); } catch (e) {}
+                }
+                if (!cur) { cur = COL_WIDTH_DEFAULT[target] || 80; }
+                this._colDrag = { target: target, sign: sign, cssVar: cssVar, startX: ev.clientX, startW: cur, moved: false };
+                this._onColDragMove = this.colResizeMove.bind(this);
+                this._onColDragEnd = this.colResizeEnd.bind(this);
+                window.addEventListener('mousemove', this._onColDragMove);
+                window.addEventListener('mouseup', this._onColDragEnd);
+                try { document.documentElement.classList.add('lib-fusion-col-resizing'); } catch (e2) {}
+            },
+            colResizeMove: function(ev) {
+                var d = this._colDrag;
+                if (!d || !ev || !this.$el) { return; }
+                var dx = ev.clientX - d.startX;
+                if (Math.abs(dx) > 2) { d.moved = true; }
+                var min = COL_WIDTH_MIN[d.target] || 28;
+                var w = Math.round(d.startW + d.sign * dx);
+                if (w < min) { w = min; }
+                if (w > 520) { w = 520; }
+                this.$el.style.setProperty(d.cssVar, w + 'px');
+                this.$set(this.colWidths, d.target, w);
+            },
+            colResizeEnd: function() {
+                if (this._onColDragMove) {
+                    window.removeEventListener('mousemove', this._onColDragMove);
+                    window.removeEventListener('mouseup', this._onColDragEnd);
+                }
+                try { document.documentElement.classList.remove('lib-fusion-col-resizing'); } catch (e) {}
+                var d = this._colDrag;
+                this._colDrag = null;
+                this._onColDragMove = null;
+                this._onColDragEnd = null;
+                if (d && d.moved) {
+                    this._suppressHeaderSort = true;
+                    try { setLocalStorageVal('libFusionColWidths', JSON.stringify(this.colWidths)); } catch (e2) {}
+                    var self = this;
+                    setTimeout(function() { self._suppressHeaderSort = false; }, 0);
+                }
+            },
+            applyColWidths: function() {
+                var el = this.$el;
+                var saved = this.colWidths;
+                if (!el || !saved) { return; }
+                for (var id in COL_WIDTH_VAR) {
+                    if (!Object.prototype.hasOwnProperty.call(saved, id)) { continue; }
+                    var n = parseFloat(saved[id]);
+                    if (!n) { continue; }
+                    el.style.setProperty(COL_WIDTH_VAR[id], Math.round(n) + 'px');
+                }
+            },
+            /* Header sits outside the song scroller, so match its right inset to the scrollbar. */
+            syncSongScrollbar: function() {
+                var sc = this.$refs.songScroller;
+                var el = sc && (sc.$el || sc);
+                if (!el || !this.$el) { return; }
+                var sb = 0;
+                try { sb = Math.max(0, el.offsetWidth - el.clientWidth); } catch (e) {}
+                this.$el.style.setProperty('--fusion-sbw', sb + 'px');
+            },
             openGenre: function(g) {
                 if (!g) { return; }
+                this.leaveFilteredPage();
                 this.activeGenre = g.title || g;
                 this.kbIndex = -1;
                 this.kbKey = '';
@@ -2249,6 +3116,12 @@
                 }
             },
             onArtistClick: function(item, ev) {
+                if (this.fusionClickBlocked()) {
+                    return;
+                }
+                if (this.fusionSwipeConsume()) {
+                    return;
+                }
                 if (ev && (ev.metaKey || ev.ctrlKey || ev.shiftKey || this.selectedCount > 0)) {
                     this.toggleSelect(item, ev);
                     return;
@@ -2257,11 +3130,18 @@
                 this.kbKey = item.key;
                 this.kbIndex = this.activeList.indexOf(item);
                 if (this.isNarrow) {
+                    this.leaveFilteredPage();
                     this.drillLevel = 1;
                     this.drillAlbum = null;
                 }
             },
             onAlbumGridClick: function(alb, ev) {
+                if (this.fusionClickBlocked()) {
+                    return;
+                }
+                if (this.fusionSwipeConsume()) {
+                    return;
+                }
                 if (ev && (ev.metaKey || ev.ctrlKey || ev.shiftKey || this.selectedCount > 0)) {
                     this.toggleSelect(alb, ev);
                     return;
@@ -2273,6 +3153,12 @@
                 this.openAlbum(alb);
             },
             onSongClick: function(item, ev) {
+                if (this.fusionClickBlocked()) {
+                    return;
+                }
+                if (this.fusionSwipeConsume()) {
+                    return;
+                }
                 if (ev && (ev.metaKey || ev.ctrlKey || ev.shiftKey || this.selectedCount > 0)) {
                     this.toggleSelect(item, ev);
                     return;
@@ -2310,6 +3196,7 @@
                     }
                     this.selectArtist(item);
                     if (this.isNarrow) {
+                        this.leaveFilteredPage();
                         this.drillLevel = 1;
                         this.drillAlbum = null;
                     }
@@ -2393,6 +3280,7 @@
                 }
                 if (e.key === 'ArrowRight') {
                     if (this.tab === 'artists' && this.isNarrow && this.drillLevel === 0 && this.selectedArtist) {
+                        this.leaveFilteredPage();
                         this.drillLevel = 1;
                         e.preventDefault();
                         return;
@@ -2484,23 +3372,44 @@
                 var base = '/material/svg/';
                 var dark = (typeof LMS_DARK_SVG !== 'undefined') ? LMS_DARK_SVG : 'fff';
                 var light = (typeof LMS_LIGHT_SVG !== 'undefined') ? LMS_LIGHT_SVG : '333';
-                // Prefer dark glyphs for cover overlay; theme-matched for inline rows
+                // Cover overlays: light glyphs on a dark glass chip.
+                // Row pills are theme glass, so their glyphs follow the theme.
                 var gridC = dark;
                 var listC = this.darkUi ? dark : light;
-                var qGrid = '?c=' + gridC + '&c2=333&r=' + r;
-                var qList = '?c=' + listC + '&r=' + r;
-                // Reuse grid icons; they work on both surfaces
+                var chromeC = listC;
+                try {
+                    var ink = getComputedStyle(document.documentElement).getPropertyValue('--primary-color') || '';
+                    ink = String(ink).trim();
+                    if (ink.indexOf('(') >= 0) {
+                        var rgb = ink.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+                        ink = rgb ? ((1<<24) + (parseInt(rgb[1], 10)<<16) + (parseInt(rgb[2], 10)<<8) + parseInt(rgb[3], 10)).toString(16).slice(1) : '';
+                    } else {
+                        ink = ink.replace(/#/g, '');
+                    }
+                    if (ink.length === 3) {
+                        ink = ink[0]+ink[0]+ink[1]+ink[1]+ink[2]+ink[2];
+                    }
+                    if (/^[0-9a-fA-F]{6}/.test(ink)) {
+                        chromeC = ink.slice(0, 6);
+                    }
+                } catch (eInk) {}
+                var qGrid = '?c=' + gridC + '&c2=333&r=' + r + '&g=1';
+                var qList = '?c=' + listC + '&r=' + r + '&g=1';
                 this.iconPlay = base + 'hover-play' + qGrid;
                 this.iconAdd = base + 'hover-add' + qGrid;
                 this.iconPlayNext = base + 'hover-playnext' + qGrid;
                 this.iconShuffle = base + 'hover-shuffle' + qGrid;
-                // Filter uses standard search-library glyph (no circular bg)
-                this.iconSearch = base + 'search-library?c=' + listC + '&r=' + r;
-                // Keep refs if we later split list vs grid palettes
-                this._iconQList = qList;
+                this.iconPlayRow = base + 'hover-play' + qList;
+                this.iconAddRow = base + 'hover-add' + qList;
+                this.iconPlayNextRow = base + 'hover-playnext' + qList;
+                this.iconShuffleRow = base + 'hover-shuffle' + qList;
+                // Same chrome tint as the browse header icons, not the list white.
+                this.iconSearch = base + 'search-library?c=' + chromeC + '&r=' + r;
             },
             fusionApplyZoom: function(level, persist) {
-                var z = Math.max(0.8, Math.min(1.3, Number(level) || 1));
+                var lo = (typeof BROWSE_ZOOM_MIN === 'number') ? BROWSE_ZOOM_MIN : 0.70;
+                var hi = (typeof BROWSE_ZOOM_MAX === 'number') ? BROWSE_ZOOM_MAX : 1.8;
+                var z = Math.max(lo, Math.min(hi, Number(level) || 1));
                 if (this.$el) {
                     this.$el.style.setProperty('--browse-zoom', String(z));
                     this.$el.style.setProperty('--browse-text-zoom', String(Math.min(1, z)));
@@ -2651,9 +3560,13 @@
                 }
             },
             setTab: function(t) {
+                if (this._suppressTabClick) {
+                    return;
+                }
                 if (!t || this.tab === t) {
                     return;
                 }
+                this.leaveFilteredPage();
                 var order = { artists: 0, albums: 1, songs: 2 };
                 var from = order[this.tab] != null ? order[this.tab] : 0;
                 var to = order[t] != null ? order[t] : 0;
@@ -2767,6 +3680,14 @@
                 if (!item) {
                     return;
                 }
+                /* Long-press and the synthetic contextmenu must not toggle the menu shut. */
+                var now = Date.now();
+                var cid = item.id != null ? String(item.id) : (item.key || item.title || '');
+                if (this._ctxOpenAt && (now - this._ctxOpenAt) < 500 && this._ctxOpenId === cid) {
+                    return;
+                }
+                this._ctxOpenAt = now;
+                this._ctxOpenId = cid;
                 if (ev && ev.preventDefault) {
                     try { ev.preventDefault(); } catch (e) {}
                 }
@@ -3396,6 +4317,12 @@
                 });
             },
             playTrack: function(tr) {
+                if (this.fusionClickBlocked()) {
+                    return;
+                }
+                if (this.fusionSwipeConsume()) {
+                    return;
+                }
                 if (tr && tr.id != null) {
                     this.playlistCmd('load', 'track_id', tr.id);
                 }
@@ -3414,6 +4341,7 @@
                 if (!item) {
                     return;
                 }
+                this.leaveFilteredPage();
                 // Jump to Artists tab and select matching / first filtered artist
                 var self = this;
                 var after = function() {

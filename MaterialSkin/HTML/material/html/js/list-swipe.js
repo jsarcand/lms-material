@@ -1,9 +1,11 @@
 /**
  * LMS-Material — list item swipe gestures
  *
- * Browse:  swipe left  → play next (INSERT)
- *          swipe right → append to queue (ADD)
- * Queue:   swipe left  → remove track
+ * Browse:  swipe left  → reveal play next, tap the button to insert
+ *          swipe right → reveal append, tap the button to add
+ *          One gesture stays on the side it opened. Closing stops at rest;
+ *          the other button needs a new swipe. The swipe itself does not add.
+ * Queue:   swipe left  → remove track (still commits on release)
  *
  * Provides shared constants + mixin helpers for browse/queue pages.
  */
@@ -54,6 +56,23 @@ function listSwipeCanQueue(item, view) {
     if (queryParams.party) { return false; }
     if (view && view.selection && view.selection.size>0) { return false; }
     return true;
+}
+
+/* Browse add/play-next: lock the gesture to one side of rest. */
+function listSwipeClampBrowse(s, travel) {
+    var base = s.open ? (s.origin || 0) : 0;
+    var dx = base + travel;
+    if (!s.side) {
+        if (dx > 1) { s.side = 1; }
+        else if (dx < -1) { s.side = -1; }
+    }
+    if (s.side > 0) {
+        return Math.max(0, Math.min(LIST_SWIPE_MAX, dx));
+    }
+    if (s.side < 0) {
+        return Math.max(-LIST_SWIPE_MAX, Math.min(0, dx));
+    }
+    return 0;
 }
 
 function listSwipePointFromEvent(ev) {
@@ -124,6 +143,11 @@ function listSwipeInstallIosSelectGuard() {
     };
     document.addEventListener('selectstart', block, { capture: true, passive: false });
     document.addEventListener('gesturestart', block, { capture: true, passive: false });
+    document.addEventListener('contextmenu', function(ev) {
+        if (!ev) { return; }
+        if (listSwipeFieldIsFocused() || listSwipeCanSelectText(ev.target)) { return; }
+        try { ev.preventDefault(); } catch (e) {}
+    }, true);
     var syncIosFieldClass = function() {
         try {
             document.documentElement.classList.toggle('msk-ios-field', listSwipeFieldIsFocused());
@@ -173,6 +197,40 @@ function listSwipeReleaseCapture(s, ev) {
     try { s.captureEl.releasePointerCapture(s.pointerId); } catch (e) {}
     if (ev && ev.pointerId===s.pointerId && ev.currentTarget && ev.currentTarget.releasePointerCapture) {
         try { ev.currentTarget.releasePointerCapture(s.pointerId); } catch (e2) {}
+    }
+}
+
+/* Non-passive follow so a list row can claim a horizontal finger swipe
+   before the scrolling list does. Element listeners are passive. */
+function listSwipeBindDoc(view) {
+    if (!view || view._listSwipeDocBound) { return; }
+    view._listSwipeDocBound = true;
+    view._listSwipeDocMove = function(ev) {
+        if (!view.listSwipe || !view.listSwipeMove) { return; }
+        view.listSwipeMove(ev);
+    };
+    view._listSwipeDocEnd = function(ev) {
+        listSwipeUnbindDoc(view);
+        if (view.listSwipe && view.listSwipeEnd) {
+            view.listSwipeEnd(ev);
+        }
+    };
+    document.addEventListener('touchmove', view._listSwipeDocMove, { capture: true, passive: false });
+    document.addEventListener('touchend', view._listSwipeDocEnd, { capture: true, passive: true });
+    document.addEventListener('touchcancel', view._listSwipeDocEnd, { capture: true, passive: true });
+}
+
+function listSwipeUnbindDoc(view) {
+    if (!view || !view._listSwipeDocBound) { return; }
+    view._listSwipeDocBound = false;
+    if (view._listSwipeDocMove) {
+        document.removeEventListener('touchmove', view._listSwipeDocMove, { capture: true });
+        view._listSwipeDocMove = undefined;
+    }
+    if (view._listSwipeDocEnd) {
+        document.removeEventListener('touchend', view._listSwipeDocEnd, { capture: true });
+        document.removeEventListener('touchcancel', view._listSwipeDocEnd, { capture: true });
+        view._listSwipeDocEnd = undefined;
     }
 }
 
@@ -307,7 +365,8 @@ var listSwipeMethods = {
         }
 
         // Mobile long-press → contextual drawer (never used for preview)
-        var wantMenuHold = mode==='browse' && !isDesktopLayout && !isSecondPress &&
+        var onSwipeBg = !!(ev && ev.target && ev.target.closest && ev.target.closest('.list-swipe-bg'));
+        var wantMenuHold = mode==='browse' && !isDesktopLayout && !isSecondPress && !onSwipeBg &&
             item && !item.header && item.type!='text' && item.type!='html' &&
             item.type!='search' && item.type!='entry';
         if (wantMenuHold) {
@@ -368,20 +427,35 @@ var listSwipeMethods = {
             return;
         }
 
+        var swipeKey = listSwipeKey(item, index, mode);
+        var prevSwipe = this.listSwipe;
+        var keepOpen = mode==='browse' && prevSwipe && prevSwipe.open && prevSwipe.key===swipeKey;
+        if (mode==='browse' && prevSwipe && prevSwipe.open && prevSwipe.key!==swipeKey) {
+            // Tap or swipe on another row dismisses the open action and does not activate.
+            this.listSwipeSuppress = true;
+            setTimeout(function() { this.listSwipeSuppress = false; }.bind(this), 380);
+        }
+        var keptDx = keepOpen ? (prevSwipe.origin || prevSwipe.dx || 0) : 0;
         this.listSwipe = {
-            key: listSwipeKey(item, index, mode),
+            key: swipeKey,
             mode: mode,
             item: item,
             index: index,
             x: pt.x,
             y: pt.y,
             t: Date.now(),
-            dx: 0,
+            dx: keptDx,
             active: false,
+            open: !!keepOpen,
+            side: keepOpen ? (prevSwipe.side || (keptDx > 0 ? 1 : (keptDx < 0 ? -1 : 0))) : 0,
+            origin: keptDx,
             pointer: !!(ev.pointerType || (ev.type && ev.type.indexOf('mouse')===0) || (ev.type && ev.type.indexOf('pointer')===0)),
             pointerId: ev && ev.pointerId!==undefined ? ev.pointerId : undefined,
             captureEl: pressEl
         };
+        if (mode==='browse' && ev && ev.touches && ev.touches.length===1) {
+            listSwipeBindDoc(this);
+        }
         // Do NOT capture pointer yet — early capture breaks click / double-click
         // (queue "play now") on desktop trackpads and mice.
     },
@@ -474,6 +548,27 @@ var listSwipeMethods = {
         }
         var dx = pt.x - s.x;
         var dy = pt.y - s.y;
+        if (s.pinDrag) {
+            bus.$emit('shortcutPinDrag', {phase:'move', index: s.index, x: pt.x, y: pt.y, icon: s.item && s.item.icon, svg: s.item && s.item.svg});
+            try { ev.preventDefault(); } catch (ePin) {}
+            return;
+        }
+        if (!s.active && s.mode==='browse' && s.item && !(this.$store && this.$store.state && this.$store.state.desktopLayout)) {
+            let nav = document.getElementById('nav-bar');
+            if (nav) {
+                let nr = nav.getBoundingClientRect();
+                if (dy > 22 && dy > Math.abs(dx) * 1.2 && pt.y > nr.top - 80) {
+                    this._listLongPressClear();
+                    s.pinDrag = true;
+                    s.longPressOnly = true;
+                    this.listSwipeSuppress = true;
+                    this.suppressBrowseClickUntil = Date.now() + 800;
+                    bus.$emit('shortcutPinDrag', {phase:'start', index: s.index, x: pt.x, y: pt.y, icon: s.item.icon, svg: s.item.svg});
+                    try { ev.preventDefault(); } catch (ePin2) {}
+                    return;
+                }
+            }
+        }
         if (!s.active) {
             // Phone finger jitter is larger than desktop — keep long-press alive
             // unless the user clearly scrolls or starts a swipe (~36px).
@@ -500,6 +595,10 @@ var listSwipeMethods = {
                     this.listSwipe = null;
                 }
                 return;
+            }
+            // Claim a horizontal finger swipe before the list scroll does.
+            if (s.mode==='browse' && absX >= 10 && absX > absY) {
+                try { ev.preventDefault(); } catch (eEarly) {}
             }
             // Not yet enough for swipe, but keep tracking (long-press may still fire)
             if (absX < 14 && absY < 14) { return; }
@@ -529,7 +628,13 @@ var listSwipeMethods = {
             // (preview hold is handled earlier and never reaches here)
             if (absY > absX * 1.15 && absY >= 36) {
                 this._listLongPressClear();
-                this.listSwipe = null;
+                if (s.mode==='browse' && s.open) {
+                    s.active = false;
+                    s.dx = s.origin || s.dx || 0;
+                    this.listSwipe = Object.assign({}, s);
+                } else {
+                    this.listSwipe = null;
+                }
                 return;
             }
             if (absY > absX * 1.15) {
@@ -552,11 +657,11 @@ var listSwipeMethods = {
                 } catch (e) {}
             }
         }
-        // Clamp
+        // Clamp. Browse cannot cross rest in the same gesture.
         if (s.mode==='queue') {
             dx = Math.max(-LIST_SWIPE_MAX, Math.min(0, dx));
         } else {
-            dx = Math.max(-LIST_SWIPE_MAX, Math.min(LIST_SWIPE_MAX, dx));
+            dx = listSwipeClampBrowse(s, dx);
         }
         s.dx = dx;
         // Force reactivity
@@ -564,6 +669,11 @@ var listSwipeMethods = {
         try { if (s.active) { ev.preventDefault(); } } catch (e) {}
     },
     listSwipeEnd: function(ev) {
+        if (this._listSwipeEnding) { return; }
+        this._listSwipeEnding = true;
+        var selfEnd = this;
+        setTimeout(function() { selfEnd._listSwipeEnding = false; }, 0);
+        listSwipeUnbindDoc(this);
         // Hold-to-preview: finger up → stop sample immediately (not sticky drawer preview)
         if ((this._previewHoldMode || (this.listSwipe && this.listSwipe.previewHold) || this._previewHoldActive) && !this._previewSticky) {
             this._listLongPressClear();
@@ -611,15 +721,27 @@ var listSwipeMethods = {
         this._listLongPressClear();
         var s = this.listSwipe;
         if (!s) { return; }
+        if (s.pinDrag) {
+            let endPt = listSwipePointFromEvent(ev) || {x:0, y:0};
+            bus.$emit('shortcutPinDrag', {phase:'end', index: s.index, x: endPt.x, y: endPt.y, icon: s.item && s.item.icon, svg: s.item && s.item.svg});
+            listSwipeReleaseCapture(s, ev);
+            this.listSwipe = null;
+            this._listLongPressOpened = true;
+            this.listSwipeSuppress = true;
+            this.suppressBrowseClickUntil = Date.now() + 400;
+            setTimeout(function() { this.listSwipeSuppress = false; this._listLongPressOpened = false; }.bind(this), 400);
+            bus.$emit('browseItemSwipeActive', false);
+            return;
+        }
         // Arm first-tap for double-tap-hold preview (browse only, non-swipe)
-        if (!wasSecondArm && s.mode==='browse' && s.item && !s.active &&
+        if (!wasSecondArm && s.mode==='browse' && s.item && !s.active && !s.open &&
             typeof browseItemCanPreviewHold==='function' && browseItemCanPreviewHold(s.item, this)) {
             this._previewTapArm = { id: listSwipePreviewKey(s.item, s.index), t: Date.now() };
             listSwipeArmPreviewNosel(this);
         } else if (wasSecondArm) {
             // Quick second tap: clear arm so a 3rd press does not re-preview by accident
             this._previewTapArm = undefined;
-            if (blockedSelect && !s.active && s.item) {
+            if (blockedSelect && !s.active && !s.open && s.item) {
                 if (this.clickTimer) {
                     clearTimeout(this.clickTimer);
                     this.clickTimer = undefined;
@@ -645,11 +767,11 @@ var listSwipeMethods = {
         var pt = listSwipePointFromEvent(ev);
         var dx = s.dx || 0;
         if (pt && s.active) {
-            dx = pt.x - s.x;
+            var travelEnd = pt.x - s.x;
             if (s.mode==='queue') {
-                dx = Math.max(-LIST_SWIPE_MAX, Math.min(0, dx));
+                dx = Math.max(-LIST_SWIPE_MAX, Math.min(0, travelEnd));
             } else {
-                dx = Math.max(-LIST_SWIPE_MAX, Math.min(LIST_SWIPE_MAX, dx));
+                dx = listSwipeClampBrowse(s, travelEnd);
             }
         }
         var active = !!s.active;
@@ -657,47 +779,53 @@ var listSwipeMethods = {
         var index = s.index;
         var mode = s.mode;
         var key = s.key;
+        var wasOpen = !!s.open;
+        var side = s.side || (dx > 0 ? 1 : (dx < 0 ? -1 : 0));
         listSwipeReleaseCapture(s, ev);
+        // Latched browse row, finger up without a new drag: leave it for the tap.
+        if (mode==='browse' && wasOpen && !active) {
+            bus.$emit('browseItemSwipeActive', false);
+            return;
+        }
         this.listSwipe = null;
         bus.$emit('browseItemSwipeActive', false);
         if (!active) { return; }
 
-        var committed = mode==='queue'
-            ? (dx <= -LIST_SWIPE_COMMIT)
-            : (dx <= -LIST_SWIPE_COMMIT || dx >= LIST_SWIPE_COMMIT);
-
-        // Only swallow the following click for a *committed* swipe.
-        // Incomplete drags used to set suppress and kill queue double-click / play.
-        if (committed) {
-            this.listSwipeSuppress = true;
-            setTimeout(function() { this.listSwipeSuppress = false; }.bind(this), 380);
-            // Prevent page swipe-back / nav from treating this gesture as go-back
-            bus.$emit('browseItemSwipeHandled');
-        }
-
         if (mode==='queue') {
-            if (committed) {
+            var queueCommit = dx <= -LIST_SWIPE_COMMIT;
+            if (queueCommit) {
+                this.listSwipeSuppress = true;
+                setTimeout(function() { this.listSwipeSuppress = false; }.bind(this), 380);
+                bus.$emit('browseItemSwipeHandled');
                 this.listSwipeDoRemove(item, index, key);
             }
             return;
         }
-        // browse
-        if (dx <= -LIST_SWIPE_COMMIT) {
-            // left → play next
-            this.listSwipeFlash(key, 'next');
-            try {
-                if (typeof this.itemAction === 'function') {
-                    this.itemAction(item.header ? INSERT_ALL_ACTION : INSERT_ACTION, item, index, ev);
-                }
-            } catch (e) {}
-        } else if (dx >= LIST_SWIPE_COMMIT) {
-            // right → append to queue
-            this.listSwipeFlash(key, 'add');
-            try {
-                if (typeof this.itemAction === 'function') {
-                    this.itemAction(item.header ? ADD_ALL_ACTION : ADD_ACTION, item, index, ev);
-                }
-            } catch (e) {}
+
+        // Browse: reveal and latch. The button tap performs add / play next.
+        var keep = Math.abs(dx) >= LIST_SWIPE_COMMIT;
+        if (!keep && wasOpen && Math.abs(dx) > LIST_SWIPE_MAX * 0.45) {
+            keep = true;
+        }
+        if (keep && side) {
+            var openDx = side > 0 ? LIST_SWIPE_MAX : -LIST_SWIPE_MAX;
+            this.listSwipeSuppress = true;
+            setTimeout(function() { this.listSwipeSuppress = false; }.bind(this), 380);
+            bus.$emit('browseItemSwipeHandled');
+            this.listSwipe = {
+                key: key,
+                mode: mode,
+                item: item,
+                index: index,
+                x: 0,
+                y: 0,
+                t: Date.now(),
+                dx: openDx,
+                active: false,
+                open: true,
+                side: side,
+                origin: openDx
+            };
         }
     },
     /** Mac trackpad: horizontal two-finger swipe arrives as wheel deltaX */
@@ -714,46 +842,97 @@ var listSwipeMethods = {
         }
         try { ev.preventDefault(); } catch (e) {}
         var key = listSwipeKey(item, index, mode);
-        // Accumulate small trackpad deltas into a commit
+        if (mode==='queue') {
+            if (!this._listSwipeWheelAcc || this._listSwipeWheelAcc.key!==key) {
+                this._listSwipeWheelAcc = { key: key, sum: 0, t: Date.now() };
+            }
+            if (Date.now() - this._listSwipeWheelAcc.t > 450) {
+                this._listSwipeWheelAcc.sum = 0;
+            }
+            this._listSwipeWheelAcc.t = Date.now();
+            this._listSwipeWheelAcc.sum += dx;
+            var qSum = this._listSwipeWheelAcc.sum;
+            this.listSwipe = {
+                key: key, mode: mode, item: item, index: index,
+                x: 0, y: 0,
+                dx: Math.max(-LIST_SWIPE_MAX, Math.min(0, -Math.abs(qSum))),
+                active: true
+            };
+            clearTimeout(this._listSwipeWheelTimer);
+            this._listSwipeWheelTimer = setTimeout(function() {
+                var acc = this._listSwipeWheelAcc ? this._listSwipeWheelAcc.sum : 0;
+                this._listSwipeWheelAcc = null;
+                this.listSwipe = null;
+                if (acc > 48 || acc < -48) {
+                    this.listSwipeDoRemove(item, index, key);
+                }
+            }.bind(this), 90);
+            return;
+        }
+        // Browse trackpad: same latch and side lock as a finger swipe. No auto-add.
+        var prevWheel = this.listSwipe;
         if (!this._listSwipeWheelAcc || this._listSwipeWheelAcc.key!==key) {
-            this._listSwipeWheelAcc = { key: key, sum: 0, t: Date.now() };
+            var wheelOrigin = (prevWheel && prevWheel.open && prevWheel.key===key) ? (prevWheel.origin || prevWheel.dx || 0) : 0;
+            this._listSwipeWheelAcc = {
+                key: key,
+                sum: 0,
+                t: Date.now(),
+                origin: wheelOrigin,
+                side: wheelOrigin > 0 ? 1 : (wheelOrigin < 0 ? -1 : 0)
+            };
         }
         if (Date.now() - this._listSwipeWheelAcc.t > 450) {
             this._listSwipeWheelAcc.sum = 0;
         }
         this._listSwipeWheelAcc.t = Date.now();
         this._listSwipeWheelAcc.sum += dx;
-        var sum = this._listSwipeWheelAcc.sum;
-        // Visual feedback
+        var accWheel = this._listSwipeWheelAcc;
+        var visual = (accWheel.origin || 0) - accWheel.sum;
+        if (!accWheel.side) {
+            if (visual > 12) { accWheel.side = 1; }
+            else if (visual < -12) { accWheel.side = -1; }
+        }
+        if (accWheel.side > 0) {
+            visual = Math.max(0, Math.min(LIST_SWIPE_MAX, visual));
+        } else if (accWheel.side < 0) {
+            visual = Math.max(-LIST_SWIPE_MAX, Math.min(0, visual));
+        } else {
+            visual = 0;
+        }
         this.listSwipe = {
             key: key, mode: mode, item: item, index: index,
             x: 0, y: 0,
-            dx: Math.max(-LIST_SWIPE_MAX, Math.min(LIST_SWIPE_MAX, mode==='queue' ? Math.min(0, -Math.abs(sum)) : -sum)),
-            active: true
+            dx: visual,
+            active: true,
+            open: !!(accWheel.origin),
+            side: accWheel.side || 0,
+            origin: accWheel.origin || 0
         };
         clearTimeout(this._listSwipeWheelTimer);
         this._listSwipeWheelTimer = setTimeout(function() {
-            var acc = this._listSwipeWheelAcc ? this._listSwipeWheelAcc.sum : 0;
+            var accObj = this._listSwipeWheelAcc;
             this._listSwipeWheelAcc = null;
-            this.listSwipe = null;
-            if (mode==='queue') {
-                if (acc > 48 || acc < -48) { // either direction maps to remove on queue for trackpad
-                    this.listSwipeDoRemove(item, index, key);
-                }
+            var origin = accObj ? (accObj.origin || 0) : 0;
+            var side = accObj ? (accObj.side || 0) : 0;
+            var endVisual = origin - (accObj ? accObj.sum : 0);
+            if (side > 0) { endVisual = Math.max(0, Math.min(LIST_SWIPE_MAX, endVisual)); }
+            else if (side < 0) { endVisual = Math.max(-LIST_SWIPE_MAX, Math.min(0, endVisual)); }
+            else { endVisual = 0; }
+            var keep = !!(side && (Math.abs(endVisual) >= LIST_SWIPE_COMMIT || (origin && Math.abs(endVisual) > LIST_SWIPE_MAX * 0.45)));
+            if (!keep) {
+                this.listSwipe = null;
                 return;
             }
-            if (acc > 48) {
-                // swipe content right? trackpad deltaX positive often means fingers moved right → content left visually
-                this.listSwipeFlash(key, 'next');
-                try { if (typeof this.itemAction === 'function') {
-                    this.itemAction(item.header ? INSERT_ALL_ACTION : INSERT_ACTION, item, index, ev);
-                } } catch (e) {}
-            } else if (acc < -48) {
-                this.listSwipeFlash(key, 'add');
-                try { if (typeof this.itemAction === 'function') {
-                    this.itemAction(item.header ? ADD_ALL_ACTION : ADD_ACTION, item, index, ev);
-                } } catch (e) {}
-            }
+            var openDx = side > 0 ? LIST_SWIPE_MAX : -LIST_SWIPE_MAX;
+            this.listSwipe = {
+                key: key, mode: mode, item: item, index: index,
+                x: 0, y: 0, t: Date.now(),
+                dx: openDx,
+                active: false,
+                open: true,
+                side: side,
+                origin: openDx
+            };
         }.bind(this), 90);
     },
     listSwipeFlash: function(key, kind) {
@@ -815,12 +994,51 @@ var listSwipeMethods = {
             cls['list-swipe-right'] = s.dx > 0;
             cls['list-swipe-armed'] = Math.abs(s.dx) >= LIST_SWIPE_COMMIT;
         }
+        if (s && s.key===key && s.open && !s.active) {
+            cls['list-swipe-open'] = true;
+        }
         return cls;
     },
-    listSwipeClickGuard: function() {
+    /* Tap the revealed browse button. The swipe only opens it. */
+    listSwipeAction: function(kind, item, index, ev) {
+        if (ev) {
+            try { ev.preventDefault(); } catch (e1) {}
+            try { ev.stopPropagation(); } catch (e2) {}
+        }
+        if (this.listSwipeSuppress) {
+            this.listSwipeSuppress = false;
+            return;
+        }
+        var s = this.listSwipe;
+        var key = listSwipeKey(item, index, 'browse');
+        if (!s || !s.open || s.active || s.mode!=='browse' || s.key!==key) {
+            return;
+        }
+        if (kind==='add' && !(s.dx > 0)) { return; }
+        if (kind==='next' && !(s.dx < 0)) { return; }
+        this.listSwipe = null;
+        this.listSwipeFlash(key, kind);
+        var act = kind==='add'
+            ? (item && item.header ? ADD_ALL_ACTION : ADD_ACTION)
+            : (item && item.header ? INSERT_ALL_ACTION : INSERT_ACTION);
+        try {
+            if (typeof this.itemAction === 'function') {
+                this.itemAction(act, item, index, ev);
+            }
+        } catch (eAct) {}
+    },
+    listSwipeClickGuard: function(ev) {
         if (this.listSwipeSuppress) {
             this.listSwipeSuppress = false;
             return true;
+        }
+        var s = this.listSwipe;
+        if (s && s.open && !s.active && s.mode==='browse') {
+            var t = ev && ev.target;
+            if (!(t && t.closest && t.closest('.list-swipe-bg'))) {
+                this.listSwipe = null;
+                return true;
+            }
         }
         return false;
     }

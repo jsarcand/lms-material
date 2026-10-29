@@ -18,11 +18,11 @@ Vue.component('lms-toolbar', {
  <div class="maintoolbar-subtitle subtext">{{date}}</div>
 </div>
 <v-layout @click.stop="openNavDrawer" @contextmenu.prevent="playerContextMenu" v-bind:class="{'navdrawer-selector':!mobileNoNowPlaying, 'link-item':!coloredToolbars, 'link-item-ct': coloredToolbars}">
- <v-btn icon class="toolbar-button" @click.stop="onToolbarNavClick" :aria-label="volMenuIsPlayers ? (volShowAllPlayers ? i18n('Hide other players') : i18n('Show other players')) : i18n('Main Menu')">
+ <v-btn icon class="toolbar-button" @click.native.stop="onToolbarNavClick" @touchend.native.stop="onToolbarNavTouchEnd" :aria-label="volMenuIsChevron ? (showVolChevron ? (volShowAllPlayers ? i18n('Hide other players') : i18n('Show other players')) : i18n('Close')) : i18n('Main Menu')">
   <v-icon v-if="!connected" class="red">error</v-icon>
   <img v-else-if="updatesAvailable" class="svg-img" :src="'update' | menuIcon(darkUi, coloredToolbars&&!nowPlayingFull)"></img>
   <img v-else-if="restartRequired" class="svg-img" :src="'restart' | menuIcon(darkUi, coloredToolbars&&!nowPlayingFull)"></img>
-  <span v-else class="tb-nav-morph" :class="{'is-chevron': volMenuIsPlayers, 'is-chevron-up': volMenuIsPlayers && volShowAllPlayers}" aria-hidden="true"><span></span><span></span><span></span></span>
+  <span v-else class="tb-nav-morph" :class="{'is-chevron': volMenuIsChevron, 'is-chevron-up': volMenuIsChevron && volShowAllPlayers, 'is-chevron-active': volMenuIsChevron && showVolChevron}" aria-hidden="true"><span></span><span></span><span></span></span>
  </v-btn>
  <!-- Always mounted: fades out when volume expands, fades back on close (no flash) -->
  <v-toolbar-title class="tb-player-title" v-bind:class="{'link-item':!coloredToolbars, 'link-item-ct': coloredToolbars, 'maintoolbar-title-clock':showClock, 'tb-player-title-out':volExpanded && !volExpandClosing, 'tb-player-title-in':!volExpanded || volExpandClosing}" @click.stop="openNavDrawer">
@@ -69,6 +69,9 @@ Vue.component('lms-toolbar', {
   <v-icon v-if="nowPlayingExpanded">keyboard_arrow_down</v-icon>
   <img class="svg-img" v-else :src="'expand-np' | svgIcon(darkUi, coloredToolbars)" oncontextmenu="return false;"></img>
  </v-btn>
+ <v-btn icon :title="npPlayerPrefsTitle" v-if="desktopLayout && npPlayerPrefsAvailable" @click.native.stop="togglePlayerPrefs($event)" class="toolbar-button hide-for-mini tb-player-prefs" id="tb-player-prefs">
+  <v-icon>tune</v-icon>
+ </v-btn>
  <v-btn icon :title="trans.toggleQueue | tooltip(LMS_TOGGLE_QUEUE_KEYBOARD,keyboardControl,true)" v-if="desktopLayout" @click.native.stop="toggleQueue()" class="toolbar-button hide-for-mini">
   <v-icon v-if="showQueue">queue_music</v-icon>
   <img v-else class="svg-img" :src="'queue_music_outline' | svgIcon(darkUi, coloredToolbars&&!nowPlayingFull)"></img>
@@ -93,6 +96,11 @@ Vue.component('lms-toolbar', {
  </div>
 </div>
 <!-- Mobile: darkened browse/queue surface (drawer scrim) + vertical volume swipe while expanded -->
+<div v-if="volExpanded && !desktopLayout && !showVolumeSlider && playerDvc!=VOL_HIDDEN"
+     class="tb-vol-swipe-frost"
+     :class="{'tb-vol-swipe-closing':volExpandClosing}"
+     :style="volSwipeZoneStyle"
+     aria-hidden="true"></div>
 <div v-if="volExpanded && !desktopLayout && !showVolumeSlider && playerDvc!=VOL_HIDDEN"
      class="tb-vol-swipe-zone noselect"
      :class="{'tb-vol-swipe-active':volSwipeActive, 'tb-vol-swipe-has-panel':showVolGroupPanel, 'tb-vol-swipe-closing':volExpandClosing}"
@@ -158,7 +166,9 @@ Vue.component('lms-toolbar', {
                  time: undefined,
                  navdrawerVisible: false,
                  windowControlsOverlayRight:0,
-                 menu: {show:false, items:[]}
+                 menu: {show:false, items:[]},
+                 npPlayerPrefsAvailable: false,
+                 npPlayerPrefsTitle: ''
                }
     },
     mounted() {
@@ -178,6 +188,14 @@ Vue.component('lms-toolbar', {
         bus.$on('navdrawer', function(visible) {
             this.navdrawerVisible = visible;
         }.bind(this));
+        this.npPlayerPrefsTitle = i18n('Player options');
+        bus.$on('npPlayerPrefsAvailable', function(available, title) {
+            this.npPlayerPrefsAvailable = !!available;
+            if (title) {
+                this.npPlayerPrefsTitle = title;
+            }
+        }.bind(this));
+        bus.$emit('requestNpPlayerPrefsAvailable');
         bus.$on('scanProgress', function(text) {
             if (undefined!=text) {
                 this.updateProgress.show=true;
@@ -345,6 +363,9 @@ Vue.component('lms-toolbar', {
                 bus.$emit('info');
             }
         },
+        togglePlayerPrefs(ev) {
+            bus.$emit('toggleNpPlayerPrefs', ev);
+        },
         expandNowPlaying() {
             if (this.$store.state.visibleMenus.size>0) {
                 return;
@@ -390,9 +411,10 @@ Vue.component('lms-toolbar', {
                 this._volIconLandTimer = undefined;
             }
             this.volIconFlyStyle = undefined;
-            // A sync / player-group never opens as "all players"
+            // Sync groups open with their member list showing. The chevron can hide it.
+            // Other players remember the last chevron choice.
             if (this.isVolGroupContext()) {
-                this.volShowAllPlayers = false;
+                this.volShowAllPlayers = true;
             } else {
                 this.volShowAllPlayers = getLocalStorageBool('volShowAllPlayers', false);
             }
@@ -586,6 +608,7 @@ Vue.component('lms-toolbar', {
                 // Stay open while interacting with volume UI (header strip, group panel, sliders, swipe zone)
                 if (t.closest('.tb-vol-expand') || t.closest('.tb-vol-group-panel') ||
                     t.closest('.tb-vol-swipe-zone') || t.closest('#vol-btn') ||
+                    t.closest('.tb-nav-morph') || t.closest('.navdrawer-selector') ||
                     t.closest('.v-slider') || t.closest('.v-input') || t.closest('.v-menu__content')) {
                     return;
                 }
@@ -728,21 +751,22 @@ Vue.component('lms-toolbar', {
             return ids;
         },
         toggleVolShowAllPlayers() {
-            if (this.isVolGroupContext()) {
-                return;
-            }
+            let grouped = this.isVolGroupContext();
             this.volShowAllPlayers = !this.volShowAllPlayers;
-            try { setLocalStorageVal('volShowAllPlayers', this.volShowAllPlayers); } catch (e) {}
+            // Remember the choice for loose players. A sync group always reopens with its members.
+            if (!grouped) {
+                try { setLocalStorageVal('volShowAllPlayers', this.volShowAllPlayers); } catch (e) {}
+            }
             this._volOutsideAt = Date.now() + 400;
             if (this.volShowAllPlayers) {
-                this.refreshAllPlayersVolumes();
-            } else if (this.isVolGroupContext()) {
-                this.refreshGroupPlayers();
+                if (grouped) {
+                    this.refreshGroupPlayers();
+                } else {
+                    this.refreshAllPlayersVolumes();
+                }
             } else {
-                // Collapsed + not a group → hide bottom list
                 this.groupPlayers = [];
                 this.volGroupPanelHeight = 0;
-                // Keep swipe target on current player
                 this.volTargetId = this.masterPlayerId;
             }
             this.$nextTick(function() {
@@ -1145,14 +1169,33 @@ Vue.component('lms-toolbar', {
                 bus.$emit('dlg.open', 'sleep', this.$store.state.player);
             }
         },
+        onToolbarNavTouchEnd(ev) {
+            // Only the volume chevron toggles on touchend. Opening the player
+            // drawer here makes the following click land on the scrim and close it.
+            if (this.desktopLayout || !this.volExpanded) {
+                return;
+            }
+            this.onToolbarNavClick(ev);
+        },
         onToolbarNavClick() {
-            if (this.volMenuIsPlayers) {
-                this.toggleVolShowAllPlayers();
+            let now = Date.now();
+            // touchend and the synthesized click both land here
+            if (now < (this._volChevronToggleAt || 0)) {
+                return;
+            }
+            this._volChevronToggleAt = now + 400;
+            if (!this.desktopLayout && this.volExpanded) {
+                if (this.showVolChevron || this.showVolGroupPanel || this.volShowAllPlayers) {
+                    this.toggleVolShowAllPlayers();
+                }
                 return;
             }
             this.openNavDrawer();
         },
         openNavDrawer() {
+            if (!this.desktopLayout && this.volExpanded) {
+                return;
+            }
             if (this.$store.state.visibleMenus.size>0) {
                 return;
             }
@@ -1221,8 +1264,11 @@ Vue.component('lms-toolbar', {
         volMenuIsClose() {
             return !this.desktopLayout && this.volExpanded && !this.volExpandClosing
         },
+        volMenuIsChevron() {
+            return !this.desktopLayout && this.volExpanded;
+        },
         volMenuIsPlayers() {
-            return !this.desktopLayout && this.volExpanded && !this.volExpandClosing && this.showVolChevron;
+            return this.volMenuIsChevron && this.showVolChevron;
         },
         volSwipeHintFaded() {
             return this.volSwipeActive || this.volSwipeShowPct
@@ -1244,28 +1290,31 @@ Vue.component('lms-toolbar', {
         masterPlayerId() {
             return this.$store.state.player ? this.$store.state.player.id : undefined;
         },
-        /** Chevron: other players, never on a sync/player-group (members list is automatic). */
+        /** Chevron hides and shows the other-player list, including sync-group members. */
         showVolChevron() {
             if (queryParams.single || queryParams.party || this.showVolumeSlider) {
                 return false;
             }
             if (this.isVolGroupContext()) {
-                return false;
+                return true;
             }
             return (this.$store.state.players || []).length > 1;
         },
         /**
-         * Bottom section: sync/player-group members, or chevron "other players".
-         * Collapsed + not grouped → header volume only.
+         * Bottom section follows the chevron for both loose players and sync groups.
+         * Closed → header volume only.
          */
         showVolGroupPanel() {
+            if (!this.volShowAllPlayers) {
+                return false;
+            }
+            if (queryParams.single || queryParams.party || this.showVolumeSlider) {
+                return false;
+            }
             if (this.isVolGroupContext()) {
                 return true;
             }
-            if (!this.showVolChevron) {
-                return false;
-            }
-            return !!this.volShowAllPlayers;
+            return (this.$store.state.players || []).length > 1;
         },
         volGroupPanelTitle() {
             if (this.isVolGroupContext()) {
