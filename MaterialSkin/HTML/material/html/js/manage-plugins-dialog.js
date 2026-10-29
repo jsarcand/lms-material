@@ -139,7 +139,7 @@ Vue.component('lms-manage-plugins', {
        :aria-selected="isMainTabOn(tab.key) ? 'true' : 'false'"
        @click.stop="selectMainTab(tab.key)">{{tab.label}}</button>
      </div>
-     <div class="manage-plugins-search-row">
+     <div class="manage-plugins-search-row" v-if="showMode!=='settings'">
       <div class="manage-plugins-search-field">
        <v-icon class="manage-plugins-search-ico">search</v-icon>
        <input ref="pluginSearchInput" type="search" class="manage-plugins-search-input"
@@ -188,7 +188,7 @@ Vue.component('lms-manage-plugins', {
     </div>
     <v-list-tile v-for="plug in visibleUpdates" :key="'upd-'+plug.name" class="manage-plugins-row manage-plugins-update-row" :class="{'manage-plugins-row-desc':showDescription}" :title="pluginHoverTitle(plug)" @click="pluginInfo(plug)">
      <v-list-tile-avatar class="manage-plugins-avatar">
-      <img v-if="pluginIconUrl(plug)" :src="pluginIconUrl(plug)" class="manage-plugins-icon" :class="{'manage-plugins-icon-mono':pluginIconIsMono(plug)}" :alt="plug.title" :title="pluginHoverTitle(plug)" @error="onPluginIconError($event, plug)" @dragstart.prevent="">
+      <img v-if="pluginIconUrl(plug)" :src="pluginIconUrl(plug)" class="manage-plugins-icon" :alt="plug.title" :title="pluginHoverTitle(plug)" @error="onPluginIconError($event, plug)" @dragstart.prevent="">
       <v-icon v-else>extension</v-icon>
      </v-list-tile-avatar>
      <v-list-tile-content class="manage-plugins-row-main">
@@ -208,7 +208,7 @@ Vue.component('lms-manage-plugins', {
      <div v-else :id="'mp-sec-'+section.key" :key="'hdr-anchor-'+section.key" class="manage-plugins-sec-anchor"></div>
      <v-list-tile v-for="plug in section.items" :key="'mp-'+plug.name" class="manage-plugins-row" :class="{'manage-plugins-row-desc':showDescription}" :title="pluginHoverTitle(plug)" @click="pluginInfo(plug)">
       <v-list-tile-avatar class="manage-plugins-avatar">
-       <img v-if="pluginIconUrl(plug)" :src="pluginIconUrl(plug)" class="manage-plugins-icon" :class="{'manage-plugins-icon-mono':pluginIconIsMono(plug)}" :alt="plug.title" :title="pluginHoverTitle(plug)" @error="onPluginIconError($event, plug)" @dragstart.prevent="">
+       <img v-if="pluginIconUrl(plug)" :src="pluginIconUrl(plug)" class="manage-plugins-icon" :alt="plug.title" :title="pluginHoverTitle(plug)" @error="onPluginIconError($event, plug)" @dragstart.prevent="">
        <v-icon v-else>extension</v-icon>
       </v-list-tile-avatar>
       <v-list-tile-content class="manage-plugins-row-main">
@@ -236,7 +236,7 @@ Vue.component('lms-manage-plugins', {
      <v-header v-if="section.title" class="dialog-section-header" :key="'cat-hdr-'+section.repo">{{section.title}}</v-header>
      <v-list-tile v-for="plug in section.items" :key="'cat-'+plug.name" class="manage-plugins-row manage-plugins-catalog-row" :class="{'manage-plugins-row-desc':showDescription}" :title="pluginHoverTitle(plug)" @click="pluginInfo(plug)">
       <v-list-tile-avatar class="manage-plugins-avatar">
-       <img v-if="pluginIconUrl(plug)" :src="pluginIconUrl(plug)" class="manage-plugins-icon" :class="{'manage-plugins-icon-mono':pluginIconIsMono(plug)}" :alt="plug.title" :title="pluginHoverTitle(plug)" @error="onPluginIconError($event, plug)" @dragstart.prevent="">
+       <img v-if="pluginIconUrl(plug)" :src="pluginIconUrl(plug)" class="manage-plugins-icon" :alt="plug.title" :title="pluginHoverTitle(plug)" @error="onPluginIconError($event, plug)" @dragstart.prevent="">
        <v-icon v-else>extension</v-icon>
       </v-list-tile-avatar>
       <v-list-tile-content class="manage-plugins-row-main">
@@ -259,10 +259,8 @@ Vue.component('lms-manage-plugins', {
     </template>
    </template>
 
-   <!-- Hide repo/auto-update prefs while searching so filter results stay clear -->
-   <template v-if="!hasSearchQuery && showSettingsBlock">
-    <v-divider v-if="showMode!='settings'"></v-divider>
-    <v-header id="mp-sec-settings" class="dialog-section-header">{{i18n('Plugin settings')}}</v-header>
+   <div v-if="showSettingsBlock" id="mp-sec-settings" class="manage-plugins-settings-block">
+    <v-header class="dialog-section-header">{{i18n('Plugin settings')}}</v-header>
     <v-list-tile class="manage-plugins-settings-tile">
      <v-list-tile-content @click="setAutoUpdate(!settings.auto)" class="switch-label">
       <v-list-tile-title>{{i18n('Update plugins automatically')}}</v-list-tile-title>
@@ -284,12 +282,15 @@ Vue.component('lms-manage-plugins', {
      </v-list-tile-content>
     </v-list-tile>
     <v-list-tile v-for="(repo, index) in settings.repos" :key="'repo-'+index" class="manage-plugins-repo-row">
-     <v-text-field clearable autocorrect="off" :label="i18n('Repository URL')" v-model="settings.repos[index]" class="lms-search manage-plugins-repo-field" hide-details @blur="saveSettings" @keyup.enter="saveSettings"></v-text-field>
+     <v-text-field autocorrect="off" :label="i18n('Repository URL')" v-model="settings.repos[index]" class="lms-search manage-plugins-repo-field" hide-details @blur="saveSettings" @keyup.enter="saveSettings"></v-text-field>
+     <button v-if="repoHasUrl(repo)" type="button" class="manage-plugins-repo-remove" :title="i18n('Remove')" @click.stop="removeRepo(index)">
+      <v-icon small>close</v-icon>
+     </button>
     </v-list-tile>
     <v-list-tile>
      <v-btn flat @click="addRepoSlot"><v-icon left>add</v-icon>{{i18n('Add repository')}}</v-btn>
     </v-list-tile>
-   </template>
+   </div>
    <div v-if="hasSearchQuery && noSearchHits" class="manage-plugins-empty-search">{{i18n('No plugins match your search.')}}</div>
 
    <div class="dialog-bottom-pad"></div>
@@ -613,6 +614,19 @@ Vue.component('lms-manage-plugins', {
                 apply();
             }
         },
+        repoHasUrl(repo) {
+            return !!(repo && String(repo).trim());
+        },
+        removeRepo(index) {
+            if (index < 0 || index >= this.settings.repos.length) {
+                return;
+            }
+            this.settings.repos.splice(index, 1);
+            if (!this.settings.repos.length) {
+                this.settings.repos.push('');
+            }
+            this.saveSettings();
+        },
         addRepoSlot() {
             this.settings.repos.push('');
         },
@@ -851,10 +865,10 @@ Vue.component('lms-manage-plugins', {
             });
         },
         restartServer() {
+            bus.$emit('serverRestartReload');
             lmsCommand('', ['restartserver']).then(() => {
                 this.close();
                 bus.$emit('showMessage', i18n('Server is being restarted.'));
-                setTimeout(function() { location.reload(); }, 2500);
             }).catch(() => {
                 this.close();
                 bus.$emit('showMessage', i18n('Server is being restarted.'));
@@ -1548,6 +1562,7 @@ Vue.component('lms-manage-plugins', {
         },
         selectMainTab(key) {
             if (key === 'settings') {
+                this.closeChromeMenus(true);
                 this.setShowMode('settings');
                 this.$nextTick(function() {
                     let page = document.getElementById('manage-plugins-page');
@@ -1685,20 +1700,6 @@ Vue.component('lms-manage-plugins', {
                 return '';
             }
             return pluginIconSrc(plug.icon);
-        },
-        pluginIconIsMono(plug) {
-            // Invert likely monochrome icons on dark UI (black SVG/PNG glyphs on transparent)
-            let s = plug && plug.icon ? String(plug.icon).toLowerCase() : '';
-            if (!s) {
-                return false;
-            }
-            if (s.indexOf('http://') === 0 || s.indexOf('https://') === 0 || s.indexOf('data:') === 0) {
-                return false;
-            }
-            return s.indexOf('.svg') >= 0
-                || s.indexOf('html/images/') >= 0
-                || /icon(_svg)?\.png$/.test(s)
-                || /\/icon\.png$/.test(s);
         },
         onPluginIconError(ev, plug) {
             if (plug) {
@@ -1870,8 +1871,7 @@ Vue.component('lms-manage-plugins', {
             return 'updates' != this.showMode && 'available' != this.showMode && 'settings' != this.showMode;
         },
         showSettingsBlock() {
-            // Always with other views (at bottom); alone when Settings tab selected
-            return !this.hasSearchQuery;
+            return this.showMode === 'settings';
         },
         unsupportedDisclaimer() {
             return i18n('WARNING - These are third-party plugins that are not guaranteed to work with the current version of Lyrion Music Server. They have been abandoned by their authors and are no longer maintained. In the worst case, they could prevent your Lyrion Music Server from working. Use at your own risk.');

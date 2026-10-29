@@ -7,6 +7,7 @@
 (function(global) {
     var CAP_TTL_MS = 60000;
     var capCache = {}; /* playerId -> { ts, wiim, dsp, denon } */
+    var activePresetNum = {}; /* playerId -> preset number chosen in this session */
 
     function now() {
         return Date.now ? Date.now() : (new Date()).getTime();
@@ -190,21 +191,49 @@
     }
 
     function loadWiimLineouts(playerId) {
-        return lmsCommand(playerId, ['wiimintegration', 'lineouts', 0, 20]).then(function(r) {
+        return lmsCommand(playerId, ['wiimintegration', 'lineouts', 0, 80]).then(function(r) {
             var res = rpcResult(r);
             var current = res && res.current != null ? String(res.current) : '';
-            return parseItemLoop(res).map(function(it) {
-                var mode = (it.cmd && it.cmd.length >= 3) ? String(it.cmd[2]) : null;
+            var items = parseItemLoop(res).map(function(it) {
+                var cmd = (it.cmd && it.cmd.length) ? it.cmd.slice() : null;
+                var verb = cmd && cmd.length >= 2 ? String(cmd[1]) : '';
+                var mode = cmd && cmd.length >= 3 ? String(cmd[2]) : '';
                 var label = String(it.text || '').replace(/\s*✓\s*$/, '');
+                var isLineout = verb === 'lineout';
                 return {
                     id: it.id,
                     label: label,
-                    mode: mode,
-                    selected: it.radio || (current !== '' && mode === current),
+                    mode: mode || verb,
+                    verb: verb,
+                    selected: isLineout
+                        ? !!(it.radio || (current !== '' && mode === current))
+                        : !!it.radio,
                     section: 'output',
-                    apply: ['wiimintegration', 'lineout', mode]
+                    apply: cmd,
+                    exclusive: isLineout
                 };
-            }).filter(function(it) { return it.mode; });
+            }).filter(function(it) {
+                if (!it.apply || it.apply.length < 2 || !it.verb) { return false; }
+                if (it.verb === 'lineout' && it.apply.length < 3) { return false; }
+                return true;
+            });
+            var rows = [];
+            var sawLineout = false;
+            var split = false;
+            for (var i = 0; i < items.length; i++) {
+                var row = items[i];
+                if (!split && sawLineout && row.verb !== 'lineout') {
+                    rows.push({
+                        id: 'wiim-output-sep',
+                        divider: true,
+                        section: 'output'
+                    });
+                    split = true;
+                }
+                if (row.verb === 'lineout') { sawLineout = true; }
+                rows.push(row);
+            }
+            return rows;
         }).catch(function() { return []; });
     }
 
@@ -256,18 +285,32 @@
                 if (!num || isNaN(num)) {
                     return null;
                 }
-                var label = String(it.text || '').replace(/\s*✓\s*$/, '') || ('Preset ' + num);
+                var raw = it.raw || {};
+                var rawName = String(raw.wiim_name || it.text || '').replace(/\s*✓\s*$/, '');
+                var url = raw.url || it.url || '';
+                var lmsSlot = parseInt(raw.lms_slot, 10) || 0;
                 return {
                     id: it.id || ('wiim_preset_' + num),
-                    label: label,
+                    /* Same title as the editor row. The detail keeps what the button plays. */
+                    label: 'Preset ' + num,
+                    name: rawName,
+                    url: url,
                     number: num,
-                    selected: it.radio,
+                    kind: raw.kind || '',
+                    source: raw.source || '',
+                    sourceLabel: wiimSourceLabel(raw.source),
+                    lmsSlot: lmsSlot,
+                    copyable: raw.copyable === 1 || raw.copyable === '1',
+                    selected: activePresetNum[playerId] === num || !!it.radio,
                     section: 'presets',
+                    /* Server decides: remote → MCUKey, local → the slot named by the URL. */
                     apply: ['wiimintegration', 'preset', String(num)]
                 };
             }).filter(function(it) { return it; }).sort(function(a, b) {
                 return (a.number || 0) - (b.number || 0);
             });
+        }).then(function(list) {
+            return enrichWiimPresetsWithLmsSlots(playerId, list);
         }).catch(function() {
             // Fallback static 1–6 if query fails but player is WiiM
             var out = [];
@@ -276,12 +319,124 @@
                     id: 'wiim_preset_' + n,
                     label: 'Preset ' + n,
                     number: n,
-                    selected: false,
+                    selected: activePresetNum[playerId] === n,
                     section: 'presets',
+                    kind: '',
                     apply: ['wiimintegration', 'preset', String(n)]
                 });
             }
-            return out;
+            return enrichWiimPresetsWithLmsSlots(playerId, out);
+        });
+    }
+
+    function humanizePresetUrl(url) {
+        var u = String(url || '').trim();
+        if (!u) {
+            return '';
+        }
+        if (/^spotify:playlist/i.test(u)) { return (typeof i18n==='function' ? i18n('Spotify playlist') : 'Spotify playlist'); }
+        if (/^spotify:album/i.test(u)) { return (typeof i18n==='function' ? i18n('Spotify album') : 'Spotify album'); }
+        if (/^spotify:artist/i.test(u)) { return (typeof i18n==='function' ? i18n('Spotify artist') : 'Spotify artist'); }
+        if (/^spotify:/i.test(u)) { return 'Spotify'; }
+        if (/tunein|radio\.|aac|mp3/i.test(u) && /http/i.test(u)) { return (typeof i18n==='function' ? i18n('Radio') : 'Radio'); }
+        try {
+            var parsed = new URL(u);
+            var host = (parsed.hostname || '').replace(/^www\./, '');
+            var path = (parsed.pathname || '').replace(/\/+$/, '');
+            if (path && path !== '/') {
+                var last = path.split('/').filter(Boolean).pop() || '';
+                last = decodeURIComponent(last).replace(/[-_+]/g, ' ');
+                if (last && last.length > 2 && !/\.(m3u8?|pls|mp3|aac)$/i.test(last)) {
+                    return last;
+                }
+            }
+            return host;
+        } catch (e) {
+            return u.length > 42 ? u.slice(0, 40) + '…' : u;
+        }
+    }
+
+    function isGenericPresetName(s) {
+        return !s || /^preset\s*\d+$/i.test(String(s).trim());
+    }
+
+    function wiimSourceLabel(source) {
+        var s = String(source || '').toUpperCase();
+        if (s === 'SPOTIFY') { return 'Spotify'; }
+        if (s === 'TIDAL') { return 'TIDAL'; }
+        if (s === 'QOBUZ') { return 'Qobuz'; }
+        if (s === 'ROUTINE') { return (typeof i18n === 'function') ? i18n('Routine') : 'Routine'; }
+        return '';
+    }
+
+    function presetTargetDetail(it) {
+        if (!it) { return ''; }
+        if (it.kind === 'remote') {
+            var parts = [(typeof i18n === 'function') ? i18n('Remote preset') : 'Remote preset'];
+            if (it.sourceLabel) { parts.push(it.sourceLabel); }
+            if (it.name && !isGenericPresetName(it.name)) { parts.push(it.name); }
+            return parts.join(' · ');
+        }
+        var target = '';
+        if (it.lmsText && !isGenericPresetName(it.lmsText)) {
+            target = it.lmsText;
+        } else {
+            target = humanizePresetUrl(it.lmsUrl || '');
+        }
+        if (!target && it.name && !isGenericPresetName(it.name)) {
+            target = it.name;
+        }
+        if (it.kind === 'local' && it.lmsSlot && it.lmsSlot !== it.number) {
+            var via = (typeof i18n === 'function')
+                ? i18n('Button plays preset %1', it.lmsSlot)
+                : ('Button plays preset ' + it.lmsSlot);
+            return target ? (via + ' · ' + target) : via;
+        }
+        return target;
+    }
+
+    function enrichWiimPresetsWithLmsSlots(playerId, list) {
+        if (!list || !list.length || typeof lmsCommand !== 'function') {
+            return Promise.resolve((list || []).map(function(it) {
+                it.detail = presetTargetDetail(it);
+                return it;
+            }));
+        }
+        return lmsCommand('', ['material-skin', 'player-presets', 'player:' + playerId, 'part:slots']).then(function(r) {
+            var res = rpcResult(r);
+            var slots = (res && res.presets_loop) ? res.presets_loop : [];
+            var byIndex = {};
+            slots.forEach(function(s) {
+                var idx = parseInt(s.index, 10);
+                if (idx) { byIndex[idx] = s; }
+            });
+            return list.map(function(it) {
+                var row = byIndex[it.number] || {};
+                it.rowText = row.text || '';
+                if (it.rowText && !isGenericPresetName(it.rowText)) {
+                    it.label = it.rowText;
+                } else if (it.name && !isGenericPresetName(it.name)) {
+                    it.label = it.name;
+                }
+                if (it.kind === 'remote') {
+                    it.detail = presetTargetDetail(it);
+                    if (it.detail === it.label) { it.detail = ''; }
+                    return it;
+                }
+                var slotNum = (it.kind === 'local' && it.lmsSlot) ? it.lmsSlot : it.number;
+                var slot = byIndex[slotNum] || {};
+                it.lmsText = slot.text || '';
+                it.lmsUrl = slot.url || '';
+                if (!it.url) { it.url = it.lmsUrl; }
+                it.detail = presetTargetDetail(it);
+                if (it.detail === it.label) { it.detail = ''; }
+                return it;
+            });
+        }).catch(function() {
+            return list.map(function(it) {
+                it.detail = presetTargetDetail(it);
+                return it;
+            });
         });
     }
 
@@ -497,13 +652,18 @@
                     var sid = order[i];
                     var currentLabel = '';
                     var currentNum = null;
+                    var diffuseLabel = '';
                     for (var j = 0; j < items.length; j++) {
-                        if (items[j].selected) {
+                        if (!items[j].selected) { continue; }
+                        if (!currentLabel) {
                             currentLabel = items[j].label || '';
                             currentNum = items[j].number != null ? items[j].number : null;
-                            break;
+                        }
+                        if (items[j].verb === 'diffuse') {
+                            diffuseLabel = items[j].label || diffuseLabel;
                         }
                     }
+                    if (diffuseLabel) { currentLabel = diffuseLabel; }
                     sections.push({
                         id: sid,
                         title: titles[sid] || sid,
@@ -616,12 +776,34 @@
         });
     }
 
+    /**
+     * Play the editor slot the same way GET /preset/N does: LMS button, then
+     * Wi-Fi so a WiiM on Bluetooth or optical actually outputs that stream.
+     */
+    function applyWiimPreset(playerId, item) {
+        var num = parseInt(item && item.number, 10);
+        if (!playerId || !num) {
+            return Promise.resolve(false);
+        }
+        activePresetNum[playerId] = num;
+        // Remote stays on the WiiM. Local plays the Lyrion slot the button
+        // actually names, and the plugin returns the renderer to wifi itself.
+        return lmsCommand(playerId, ['wiimintegration', 'preset', String(num)]).then(function() {
+            return true;
+        }).catch(function() {
+            return false;
+        });
+    }
+
     function applyItem(playerId, item) {
         if (!item || typeof lmsCommand !== 'function') {
             return Promise.resolve(false);
         }
         if (item.applyDsp || item.section === 'dsp') {
             return applyDspPreset(playerId, item);
+        }
+        if (item.section === 'presets' && item.number) {
+            return applyWiimPreset(playerId, item);
         }
         if (!item.apply || !item.apply.length) {
             return Promise.resolve(false);

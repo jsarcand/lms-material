@@ -95,6 +95,26 @@ Vue.component('lms-ui-settings', {
      </v-list-tile-content>
      <v-list-tile-action><m3-switch v-model="autoCollapseShortcuts"></m3-switch></v-list-tile-action>
     </v-list-tile>
+    <v-list-tile class="settings-slider-tile">
+     <v-list-tile-content>
+      <v-list-tile-title>{{i18n('Shortcut size')}}</v-list-tile-title>
+      <v-list-tile-sub-title>{{i18n('Size of the mobile shortcut bar. Drag an item from the library onto the bar to pin it.')}}</v-list-tile-sub-title>
+      <v-slider class="uisettings-shortcut-size" v-model="shortcutSize" min="1" max="5" step="1" ticks="always" tick-size="4" thumb-label="always" :thumb-size="28" @input="previewShortcutSize">
+       <template slot="thumb-label" slot-scope="{ value }">{{shortcutSizeName(value)}}</template>
+      </v-slider>
+      <div class="uisettings-shortcut-size-ticks subtext">
+       <span>{{i18n('S')}}</span><span>{{i18n('M')}}</span><span>{{i18n('L')}}</span>
+      </div>
+     </v-list-tile-content>
+    </v-list-tile>
+    <v-list-tile>
+     <v-select menu-props="auto" :items="contextMenuStyles" :label="i18n('Item menus')" v-model="mobileContextStyle" item-text="label" item-value="key"></v-select>
+    </v-list-tile>
+    <v-list-tile-sub-title style="padding-bottom:12px">{{i18n('On mobile, long-press can open a bottom drawer or a classic context menu.')}}</v-list-tile-sub-title>
+    <v-list-tile v-if="!desktopLayout">
+     <v-select menu-props="auto" :items="npDetailStyles" :label="i18n('Now playing details')" v-model="npMobileDetailStyle" item-text="label" item-value="key"></v-select>
+    </v-list-tile>
+    <v-list-tile-sub-title v-if="!desktopLayout" style="padding-bottom:12px">{{i18n('Lyrics, artist, and album can follow the controls, or stay on their own cards.')}}</v-list-tile-sub-title>
     <v-divider></v-divider>
 
     <v-list-tile v-if="advanced">
@@ -634,6 +654,11 @@ Vue.component('lms-ui-settings', {
             autoCloseQueue: false,
             ndShortcuts: false,
             autoCollapseShortcuts: false,
+            shortcutSize: 3,
+            mobileContextStyle: 'drawer',
+            contextMenuStyles: [],
+            npMobileDetailStyle: 'scroll',
+            npDetailStyles: [],
             nativeManagePlugins: true,
 
             maiIntegrated: true,
@@ -813,6 +838,19 @@ Vue.component('lms-ui-settings', {
         this.initItems();
     },
     methods: {
+        shortcutSizeName(v) {
+            let n = clampShortcutSize(v);
+            if (n<=1) { return i18n('XS'); }
+            if (n==2) { return i18n('S'); }
+            if (n==3) { return i18n('M'); }
+            if (n==4) { return i18n('L'); }
+            return i18n('XL');
+        },
+        previewShortcutSize(v) {
+            if (typeof applyShortcutSize==='function') {
+                applyShortcutSize(v);
+            }
+        },
         themePairFor(key) {
             if (!key || key===AUTO_THEME) {
                 return null;
@@ -935,6 +973,9 @@ Vue.component('lms-ui-settings', {
             this.autoCloseQueue = this.$store.state.autoCloseQueue;
             this.ndShortcuts = this.$store.state.ndShortcuts;
             this.autoCollapseShortcuts = !!this.$store.state.autoCollapseShortcuts;
+            this.shortcutSize = clampShortcutSize(this.$store.state.shortcutSize);
+            this.mobileContextStyle = this.$store.state.mobileContextStyle==='menu' ? 'menu' : 'drawer';
+            this.npMobileDetailStyle = this.$store.state.npMobileDetailStyle==='cards' ? 'cards' : 'scroll';
             this.nativeManagePlugins = lmsOptions.nativeManagePlugins;
             this.maiIntegrated = this.$store.state.maiIntegrated;
             this.showItems=[{id: TOP_MYMUSIC_ID, name:i18n("My Music"), show:!this.hidden.has(TOP_MYMUSIC_ID)},
@@ -954,6 +995,7 @@ Vue.component('lms-ui-settings', {
                 { key:'dark',        label:i18n('Dark')},
                 { key:'black',       label:i18n('Black')},
                 { key:'neon',        label:'Neon'},
+                { key:'glass',       label:'Glass'},
                 { key:'dark-lyrion', label:'Lyrion'},
                 // Always list Mojave (works on mobile + desktop)
                 { key:'mac/light/Mojave', label:'Mojave'},
@@ -974,6 +1016,14 @@ Vue.component('lms-ui-settings', {
                 { key:MBAR_THIN,    label:i18n("Slim")},
                 { key:MBAR_THICK,   label:i18n("Medium")},
                 { key:MBAR_REP_NAV, label:i18n("Large")},
+                ];
+            this.contextMenuStyles=[
+                { key:'drawer', label:i18n('Bottom drawer')},
+                { key:'menu',   label:i18n('Context menu')}
+                ];
+            this.npDetailStyles=[
+                { key:'scroll', label:i18n('On the player')},
+                { key:'cards',  label:i18n('Separate cards')}
                 ];
             this.colorUsages=[
                 { key:COLOR_USE_STANDARD,   label:i18n("For all players ") },
@@ -1031,6 +1081,36 @@ Vue.component('lms-ui-settings', {
                 this.detailedHomeValues[entry.id]=entry;
             }
             this.detailedHomeValues[DETAILED_HOME_EXPLORE] = {title:i18n("Explore"), icon:"music_note"};
+        },
+        mobileContextStyleValue(val) {
+            if (val && typeof val==='object') {
+                val = val.key || val.value;
+            }
+            return val==='menu' ? 'menu' : 'drawer';
+        },
+        npMobileDetailStyleValue(val) {
+            if (val && typeof val==='object') {
+                val = val.key || val.value;
+            }
+            return val==='cards' ? 'cards' : 'scroll';
+        },
+        commitNpMobileDetailStyle(val) {
+            let style = this.npMobileDetailStyleValue(val);
+            if (this.npMobileDetailStyle!==style) {
+                this.npMobileDetailStyle = style;
+            }
+            if (this.$store && this.$store.state.npMobileDetailStyle!==style) {
+                this.$store.commit('setUiSettings', { npMobileDetailStyle: style });
+            }
+        },
+        commitMobileContextStyle(val) {
+            let style = this.mobileContextStyleValue(val);
+            if (this.mobileContextStyle!==style) {
+                this.mobileContextStyle = style;
+            }
+            if (this.$store && this.$store.state.mobileContextStyle!==style) {
+                this.$store.commit('setUiSettings', { mobileContextStyle: style });
+            }
         },
         close() {
             mskSortableDestroy(this.scrollableSortable);
@@ -1121,6 +1201,9 @@ Vue.component('lms-ui-settings', {
                       autoCloseQueue:this.autoCloseQueue,
                       ndShortcuts:this.ndShortcuts,
                       autoCollapseShortcuts:this.autoCollapseShortcuts,
+                      shortcutSize:clampShortcutSize(this.shortcutSize),
+                      mobileContextStyle:this.mobileContextStyleValue(this.mobileContextStyle),
+                      npMobileDetailStyle:this.npMobileDetailStyleValue(this.npMobileDetailStyle),
                       detailedHomeItems:this.detailedHomeItems
                   };
             if (withSorts) {
@@ -1427,6 +1510,18 @@ Vue.component('lms-ui-settings', {
         },
         'showMenu': function(newVal) {
             this.$store.commit('menuVisible', {name:'uisettings', shown:newVal});
+        },
+        mobileContextStyle: function(val) {
+            if (!this.show) {
+                return;
+            }
+            this.commitMobileContextStyle(val);
+        },
+        npMobileDetailStyle: function(val) {
+            if (!this.show) {
+                return;
+            }
+            this.commitNpMobileDetailStyle(val);
         }
     }
 })

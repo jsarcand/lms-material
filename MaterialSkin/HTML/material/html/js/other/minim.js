@@ -140,6 +140,58 @@
             bus.$emit('iframe-href', href, true, undefined, '/material/settings/server/debugging.html');
           }
         } catch (e2) {}
+      } else if (d.type === 'library-cmd') {
+        try {
+          var libAction = d.action || '';
+          var fusionEl = document.querySelector('.lib-fusion');
+          var fusion = fusionEl && fusionEl.__vue__;
+          if (fusion && typeof fusion.setSort === 'function') {
+            if (libAction === 'filter') {
+              if (typeof fusion.openFilter === 'function') fusion.openFilter();
+              return;
+            }
+            if (libAction === 'reverse') {
+              if (typeof fusion.toggleSortRev === 'function') fusion.toggleSortRev();
+              return;
+            }
+            var tab = fusion.tab || 'albums';
+            var sortId = null;
+            if (tab === 'artists') {
+              sortId = (libAction === 'name' || libAction === 'default') ? 'name' : null;
+            } else if (tab === 'songs') {
+              sortId = libAction === 'name' ? 'title' : libAction === 'date' ? 'year' : libAction === 'added' ? 'added' : 'title';
+            } else {
+              sortId = libAction === 'date' ? 'year' : libAction === 'added' ? 'added' : 'album';
+            }
+            if (sortId) fusion.setSort(sortId);
+            return;
+          }
+          var browseEl = document.querySelector('#browse-view');
+          var view = browseEl && browseEl.__vue__;
+          if (!view) return;
+          if (libAction === 'filter') {
+            view.searchActive = 2;
+            return;
+          }
+          var params = view.command && view.command.params;
+          if (!params || !params.length) return;
+          var revKey = 'msk-revsort:1';
+          if (libAction === 'reverse') {
+            var ri = params.indexOf(revKey);
+            if (ri >= 0) params.splice(ri, 1);
+            else params.push(revKey);
+            if (typeof view.refreshList === 'function') view.refreshList(false);
+            return;
+          }
+          var sortKey = libAction === 'date' ? 'yearalbum' : libAction === 'added' ? 'new' : 'album';
+          for (var si = 0; si < params.length; si++) {
+            if (typeof params[si] === 'string' && (params[si].indexOf('sort:') === 0 || params[si].indexOf('msk-sort:') === 0)) {
+              params[si] = 'sort:' + sortKey;
+              if (typeof view.refreshList === 'function') view.refreshList(false);
+              return;
+            }
+          }
+        } catch (e4) {}
       } else if (d.type === 'browse-nav') {
         try {
           var action = d.action || '';
