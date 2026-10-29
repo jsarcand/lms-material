@@ -113,3 +113,11 @@ DLNA_SSDP_OFF
 DLNA_NO_PLAYERS
 	EN	No other Lyrion player is connected
 	FR	Aucune autre platine Lyrion n’est connectée
+
+DLNA_OUTPUT_TO
+	EN	To
+	FR	Vers
+
+DLNA_RESET
+	EN	Stop diffusion
+	FR	Arrêter la diffusion

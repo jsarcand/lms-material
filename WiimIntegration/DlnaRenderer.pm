@@ -732,7 +732,7 @@ sub _device_xml {
 <manufacturerURL>https://lyrion.org/</manufacturerURL>
 <modelDescription>WiiM stream redistribution</modelDescription>
 <modelName>Wiim Integration</modelName>
-<modelNumber>1.0.47</modelNumber>
+<modelNumber>1.0.49</modelNumber>
 <UDN>uuid:$uuid</UDN>
 <serviceList>
 <service>
@@ -880,9 +880,15 @@ sub _http_text {
 }
 
 sub _friendly_name {
+    # Prefer the explicit LMS server name. Otherwise use the name LMS shows
+    # for itself: library name, then host name.
     my $server = eval { preferences('server')->get('serverName') } || '';
     $server =~ s/^\s+|\s+$//g;
-    return $server ? "$server Diffusion" : 'Lyrion Diffusion';
+    if ($server eq '') {
+        $server = eval { Slim::Utils::Misc::getLibraryName() } || '';
+        $server =~ s/^\s+|\s+$//g;
+    }
+    return $server ? "$server - Lyrion Music Server" : 'Lyrion Music Server';
 }
 
 sub _uuid {

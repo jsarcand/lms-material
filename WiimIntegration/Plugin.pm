@@ -147,7 +147,7 @@ my @LINEOUT_MODES = (
 );
 
 sub getDisplayName { 'PLUGIN_WIIMINTEGRATION' }
-sub getVersion     { '1.0.47' }
+sub getVersion     { '1.0.49' }
 
 # project / priv_prj from getStatusEx. Longer names are tested first.
 # Unknown projects keep the streamer jacks and omit HDMI, which the bitmask
@@ -994,6 +994,12 @@ sub initPlugin {
     Slim::Control::Request::addDispatch(
         ['wiimintegration', 'listen', '_wiimid'], [1, 0, 1, \&listenCommand]
     );
+    Slim::Control::Request::addDispatch(
+        ['wiimintegration', 'diffuse', '_dest'], [1, 0, 1, \&diffuseCommand]
+    );
+    Slim::Control::Request::addDispatch(
+        ['wiimintegration', 'diffusereset'], [1, 0, 0, \&diffuseResetCommand]
+    );
     $originalMixerVolume = Slim::Control::Request::addDispatch(
         ['mixer', 'volume', '_newvalue'], [1, 0, 1, \&wiimMixerVolume]
     );
@@ -1043,7 +1049,7 @@ sub initPlugin {
         refresh_on        => \&_dlnaRefreshOn,
         base_url          => \&_lmsListenBaseUrl,
     });
-    $log->warn("Wiim Integration v1.0.47 loaded");
+    $log->warn("Wiim Integration v1.0.49 loaded");
 
     foreach my $client (Slim::Player::Client::clients()) {
         _registerWiimPlayer($client);
@@ -1903,6 +1909,9 @@ sub _playDirectOn {
     return 0 unless $dest && $wiim;
     my $url = _directStreamUrl($wiim);
     return 0 unless $url;
+    # Remember the WiiM input before the first destination starts. A later
+    # reset puts that input back and drops the relay from those queues.
+    _diffuseRememberSource($wiim);
     my $st = eval { Plugins::WiimIntegration::DlnaRenderer::status() } || {};
     _dlnaSetTarget(lc($dest->id() || ''), 1);
     _dlnaPlayOn($dest, $url, {
@@ -3445,16 +3454,24 @@ sub _dlnaIsOwnRenderer {
 }
 
 sub _dlnaCandidates {
-    my @out;
+    my $with_groups = shift;
+    my (@players, @groups);
     foreach my $client (Slim::Player::Client::clients()) {
         next if !$client || $client->disconnected();
         next if isWiimPlayer($client);
         next if _dlnaIsOwnRenderer($client);
         my $model = eval { $client->model() } || '';
-        next if $model eq 'group';
-        push @out, $client;
+        if ($model eq 'group') {
+            push @groups, $client if $with_groups;
+            next;
+        }
+        push @players, $client;
     }
-    return sort { lc($a->name() || '') cmp lc($b->name() || '') } @out;
+    my $by_name = sub { lc($a->name() || '') cmp lc($b->name() || '') };
+    @players = sort $by_name @players;
+    return @players unless $with_groups;
+    @groups = sort $by_name @groups;
+    return (@players, @groups);
 }
 
 sub _dlnaCurrentUrl {
@@ -3511,6 +3528,8 @@ sub _dlnaPlayOn {
     }
     if ($wiim_id) {
         $url = 'wiimrelay://' . $wiim_id;
+        my $src = _wiimClientById($wiim_id);
+        _diffuseRememberSource($src) if $src;
     }
     my $title = $meta->{title} || 'WiiM';
     _dlnaPublishMeta($url, $meta);
@@ -4991,6 +5010,7 @@ sub wiimStatusQuery {
     # Destination of a redistributed stream: paint the WiiM cover and length
     # onto this player. The WiiM's own status inject below stays separate.
     _overlayRelayDestination($request, $client);
+    _annotateDiffuseStatus($request, $client);
     return unless isWiimPlayer($client);
 
     my $id = $client->id();
@@ -5431,6 +5451,253 @@ sub sourceCommand {
     $request->setStatusDone();
 }
 
+# switchmode cmd for the input the WiiM is on now. App streams (Spotify, AirPlay,
+# TIDAL) have no switchmode of their own, so they are not restorable.
+sub _sourceCmdFromMode {
+    my $mode = shift // '';
+    $mode =~ s/\D//g;
+    return 'bluetooth' if $mode eq '5' || $mode eq '41';
+    return 'line-in'   if $mode eq '4' || $mode eq '40' || $mode eq '60';
+    return 'optical'   if $mode eq '6' || $mode eq '43';
+    return 'hdmi'      if $mode eq '49';
+    return 'wifi'      if $mode eq '10' || $mode eq '0';
+    return '';
+}
+
+sub _diffuseRememberSource {
+    my $wiim = shift || return;
+    return unless isWiimPlayer($wiim);
+    my $id = $wiim->id() || return;
+    return if ref $playerState{$id}{diffuse} eq 'HASH';
+    my $mode = $playerState{$id}{mode};
+    $mode = '' unless defined $mode;
+    my $cmd = _sourceCmdFromMode($mode);
+    $playerState{$id}{diffuse} = {
+        source_cmd => $cmd,
+        mode       => $mode,
+        mode_name  => $playerState{$id}{mode_name} || '',
+        at         => time(),
+    };
+    $log->info('Diffusion snapshot ' . ($wiim->name() || $id)
+        . " mode=$mode cmd=" . ($cmd ne '' ? $cmd : '-'));
+}
+
+sub _relayWiimIdFromUrl {
+    my $url = shift || return '';
+    return lc($1) if $url =~ m{^wiimrelay://([0-9a-f:]+)}i;
+    if ($url =~ m{/plugins/WiimIntegration/relay\.}i && $url =~ /(?:^|[?&])wiim=([^&#]+)/i) {
+        my $id = eval { Slim::Utils::Misc::unescape($1, 1) } || $1;
+        return lc $id;
+    }
+    return '';
+}
+
+sub _urlIsRelayFor {
+    my ($url, $wiim_id) = @_;
+    return 0 unless $url && $wiim_id;
+    my $id = _relayWiimIdFromUrl($url);
+    return $id ne '' && $id eq lc($wiim_id);
+}
+
+# Checked only while this destination is actually playing the relay.
+sub _destPlayingRelay {
+    my ($dest, $wiim_id) = @_;
+    return 0 unless $dest && $wiim_id;
+    return 0 if eval { $dest->disconnected() };
+    return 0 unless eval { $dest->power() };
+    return 0 unless eval { $dest->isPlaying() && !$dest->isPaused() };
+    return _urlIsRelayFor(_dlnaCurrentUrl($dest), $wiim_id) ? 1 : 0;
+}
+
+sub _destHoldingRelay {
+    my ($dest, $wiim_id) = @_;
+    return 0 unless $dest && $wiim_id;
+    return _urlIsRelayFor(_dlnaCurrentUrl($dest), $wiim_id) ? 1 : 0;
+}
+
+sub _playlistHasRelay {
+    my ($client, $wiim_id) = @_;
+    return 0 unless $client && $wiim_id;
+    my $count = eval { Slim::Player::Playlist::count($client) } || 0;
+    for (my $i = 0; $i < $count; $i++) {
+        my $url = eval { Slim::Player::Playlist::url($client, $i) } || '';
+        return 1 if _urlIsRelayFor($url, $wiim_id);
+    }
+    return 0;
+}
+
+sub _removeRelayTracks {
+    my ($client, $wiim_id) = @_;
+    return 0 unless $client && $wiim_id;
+    my $count = eval { Slim::Player::Playlist::count($client) } || 0;
+    my @drop;
+    for (my $i = 0; $i < $count; $i++) {
+        my $url = eval { Slim::Player::Playlist::url($client, $i) } || '';
+        push @drop, $i if _urlIsRelayFor($url, $wiim_id);
+    }
+    return 0 unless @drop;
+    my $id = $client->id() || '';
+    $playerState{$id}{suppress_playlist_hook} = 1 if $id && isWiimPlayer($client);
+    for my $i (reverse @drop) {
+        eval { Slim::Control::Request::executeRequest($client, ['playlist', 'delete', $i]); };
+    }
+    delete $playerState{$id}{suppress_playlist_hook} if $id;
+    $log->info('Removed relay from ' . ($client->name() || $id) . ' (' . scalar(@drop) . ')');
+    return scalar @drop;
+}
+
+sub _diffuseSourceChanged {
+    my $wiim = shift || return 0;
+    my $id = $wiim->id() || return 0;
+    my $snap = $playerState{$id}{diffuse};
+    return 0 unless ref $snap eq 'HASH' && ($snap->{source_cmd} || '') ne '';
+    my $now = _sourceCmdFromMode($playerState{$id}{mode});
+    return $snap->{source_cmd} ne $now ? 1 : 0;
+}
+
+# List context: destinations that are playing, paused on, or (if asked) queuing this relay.
+sub _diffuseActiveDests {
+    my ($wiim, $scan_queue) = @_;
+    my $wid = lc($wiim && $wiim->id() || '');
+    return unless $wid;
+    my @out;
+    for my $dest (_dlnaCandidates(1)) {
+        my $play = _destPlayingRelay($dest, $wid);
+        my $hold = $play || _destHoldingRelay($dest, $wid);
+        my $queued = ($scan_queue && !$hold && _playlistHasRelay($dest, $wid)) ? 1 : 0;
+        next unless $play || $hold || $queued;
+        push @out, { client => $dest, play => $play ? 1 : 0 };
+    }
+    return @out;
+}
+
+sub _diffuseForgetIfIdle {
+    my $wiim = shift || return;
+    my $id = $wiim->id() || return;
+    return if _diffuseSourceChanged($wiim);
+    return if _diffuseActiveDests($wiim, 1);
+    delete $playerState{$id}{diffuse};
+}
+
+sub _diffuseReset {
+    my $wiim = shift || return;
+    return unless isWiimPlayer($wiim);
+    my $id = $wiim->id() || return;
+    my $wid = lc $id;
+    for my $dest (_dlnaCandidates(1)) {
+        my $did = lc($dest->id() || '');
+        next unless $did;
+        my $has = _playlistHasRelay($dest, $wid) || _destHoldingRelay($dest, $wid);
+        _removeRelayTracks($dest, $wid) if $has;
+        # The target list is the diffusion itself. Clear it even if play has not started.
+        _dlnaSetTarget($did, 0) if $has || _dlnaTargetOn($did);
+    }
+    my $snap = delete $playerState{$id}{diffuse};
+    my $saved = (ref $snap eq 'HASH' && $snap->{source_cmd}) ? $snap->{source_cmd} : '';
+    my $now = _sourceCmdFromMode($playerState{$id}{mode});
+    if ($saved ne '' && $saved ne $now && _validSource($wiim, $saved)) {
+        $log->info('Diffusion reset restores ' . ($wiim->name() || $id) . " to $saved");
+        switchSource($wiim, $saved);
+    }
+    elsif ($saved ne '' && $saved ne $now) {
+        $log->info('Diffusion reset left ' . ($wiim->name() || $id)
+            . " on current source (cannot restore $saved)");
+    }
+    else {
+        $log->info('Diffusion reset on ' . ($wiim->name() || $id));
+    }
+}
+
+sub _wiimForRelayClient {
+    my $client = shift || return;
+    my $id = _relayWiimIdFromUrl(_dlnaCurrentUrl($client));
+    return _wiimClientById($id) if $id;
+    my $count = eval { Slim::Player::Playlist::count($client) } || 0;
+    for (my $i = 0; $i < $count; $i++) {
+        my $url = eval { Slim::Player::Playlist::url($client, $i) } || '';
+        my $found = _relayWiimIdFromUrl($url);
+        return _wiimClientById($found) if $found;
+    }
+    return;
+}
+
+sub diffuseCommand {
+    my ($request) = @_;
+    my $wiim = $request->client();
+    return $request->setStatusBadParams() unless $wiim && isWiimPlayer($wiim);
+    my $dest_id = lc($request->getParam('_dest') || $request->getRequest(2) || '');
+    $dest_id =~ s/\s+//g;
+    my $dest;
+    for my $cand (_dlnaCandidates(1)) {
+        if (lc($cand->id() || '') eq $dest_id) {
+            $dest = $cand;
+            last;
+        }
+    }
+    return $request->setStatusBadParams() unless $dest;
+    my $wid = lc($wiim->id() || '');
+    if (_destPlayingRelay($dest, $wid)) {
+        _removeRelayTracks($dest, $wid);
+        _dlnaSetTarget(lc($dest->id() || ''), 0);
+        _diffuseForgetIfIdle($wiim);
+        $request->setStatusDone();
+        return;
+    }
+    unless (_playDirectOn($dest, $wiim)) {
+        return $request->setStatusBadParams();
+    }
+    $request->setStatusDone();
+}
+
+sub diffuseResetCommand {
+    my ($request) = @_;
+    my $client = $request->client();
+    my $wiim;
+    if ($client && isWiimPlayer($client)) {
+        $wiim = $client;
+    }
+    elsif ($client) {
+        $wiim = _wiimForRelayClient($client);
+    }
+    unless ($wiim) {
+        $request->setStatusBadParams();
+        return;
+    }
+    _diffuseReset($wiim);
+    $request->setStatusDone();
+}
+
+sub _annotateDiffuseStatus {
+    my ($request, $client) = @_;
+    return unless $request && $client;
+    my ($role, $source_name, $source_id, $dests) = ('', '', '', '');
+    if (isWiimPlayer($client)) {
+        my @rows = _diffuseActiveDests($client, 0);
+        my @names = map { $_->{client}->name() || $_->{client}->id() } @rows;
+        return unless @names || _diffuseSourceChanged($client);
+        $role = 'source';
+        $source_id = lc($client->id() || '');
+        $source_name = $client->name() || '';
+        $dests = join(', ', @names);
+    }
+    else {
+        my $url = _dlnaCurrentUrl($client);
+        my $wid = _relayWiimIdFromUrl($url);
+        return unless $wid;
+        my $wiim = _wiimClientById($wid);
+        $role = 'dest';
+        $source_id = $wid;
+        $source_name = $wiim ? ($wiim->name() || $source_id) : $source_id;
+        $dests = $client->name() || '';
+    }
+    $request->addResult('wiim_diffuse', {
+        role      => $role,
+        source    => $source_name,
+        source_id => $source_id,
+        dests     => $dests,
+    });
+}
+
 sub lineoutsQuery {
     my ($request) = @_;
     my $client = $request->client();
@@ -5438,14 +5705,18 @@ sub lineoutsQuery {
 
     my $current = _getLineoutMode($client);
     $current =~ s/\D//g if defined $current;
+    my $wid = lc($client->id() || '');
+    my $to = _menuText($client, 'DLNA_OUTPUT_TO', 'To');
+    my @items;
+    my $show_reset = _diffuseSourceChanged($client) ? 1 : 0;
 
-    _addMenuItems($request, map {
-        my $cmd = $_->{cmd};
+    for my $mode (_lineoutModes($client)) {
+        my $cmd = $mode->{cmd};
         my $isCurrent = (defined $current && $current ne '' && $cmd eq $current) ? 1 : 0;
-        {
+        push @items, {
             id         => 'wiim_lineout_' . $cmd,
-            text       => $_->{label} . ($isCurrent ? ' ✓' : ''),
-            icon_id    => $_->{icon_id},
+            text       => $mode->{label} . ($isCurrent ? ' ✓' : ''),
+            icon_id    => $mode->{icon_id},
             radio      => $isCurrent,
             nextWindow => 'parent',
             actions    => {
@@ -5455,8 +5726,49 @@ sub lineoutsQuery {
                     nextWindow => 'parent',
                 },
             },
-        }
-    } _lineoutModes($client));
+        };
+    }
+
+    for my $dest (_dlnaCandidates(1)) {
+        my $did = lc($dest->id() || '');
+        next unless $did;
+        my $on = _destPlayingRelay($dest, $wid) ? 1 : 0;
+        my $queued = $on || _playlistHasRelay($dest, $wid);
+        $show_reset = 1 if $on || $queued;
+        my $name = $dest->name() || $did;
+        push @items, {
+            id         => 'wiim_diffuse_' . $did,
+            text       => $to . ' ' . $name . ($on ? ' ✓' : ''),
+            icon_id    => 'MTL_svg_stream',
+            radio      => $on,
+            nextWindow => 'parent',
+            actions    => {
+                do => {
+                    cmd        => ['wiimintegration', 'diffuse', $did],
+                    player     => 0,
+                    nextWindow => 'parent',
+                },
+            },
+        };
+    }
+
+    if ($show_reset) {
+        push @items, {
+            id         => 'wiim_diffuse_reset',
+            text       => _menuText($client, 'DLNA_RESET', 'Stop diffusion'),
+            radio      => 0,
+            nextWindow => 'parent',
+            actions    => {
+                do => {
+                    cmd        => ['wiimintegration', 'diffusereset'],
+                    player     => 0,
+                    nextWindow => 'parent',
+                },
+            },
+        };
+    }
+
+    _addMenuItems($request, @items);
 
     # Expose current mode for Material / JSON clients
     $request->addResult('current', $current) if defined $current && $current ne '';

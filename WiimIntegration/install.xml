@@ -2,7 +2,7 @@
 <extensions>
   <name>PLUGIN_WIIMINTEGRATION</name>
   <module>Plugins::WiimIntegration::Plugin</module>
-  <version>1.0.47</version>
+  <version>1.0.49</version>
   <description>PLUGIN_WIIMINTEGRATION_DESC</description>
   <creator>JS Arcand assisted by Grok</creator>
   <email>info@jsarcand.com</email>
