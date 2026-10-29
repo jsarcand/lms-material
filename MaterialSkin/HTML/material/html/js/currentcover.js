@@ -63,9 +63,25 @@ function swatchRgb(swatches, name) {
 
 function defaultPalette(darkUi) {
     if (darkUi) {
-        return [[38, 48, 54], [24, 32, 36], [52, 64, 72]];
+        return [[38, 48, 54], [24, 32, 36], [52, 64, 72], [44, 38, 62], [28, 48, 46]];
     }
-    return [[144, 164, 174], [176, 190, 197], [207, 216, 220]];
+    return [[144, 164, 174], [176, 190, 197], [207, 216, 220], [168, 156, 186], [150, 186, 176]];
+}
+
+/* Fourth and fifth cover colors for the Glass mesh. Hue is shifted so a
+   one-swatch cover still reads as five blobs. */
+function glassPaletteExtra(rgb, hueShift, value) {
+    let src = (undefined==rgb || isGrey(rgb)) ? [70, 110, 150] : rgb;
+    let hsv = rgb2Hsv(src);
+    hsv[0] = hsv[0] + hueShift;
+    if (hsv[0] < 0) {
+        hsv[0] += 1;
+    } else if (hsv[0] >= 1) {
+        hsv[0] -= 1;
+    }
+    hsv[1] = Math.max(0.34, Math.min(0.78, hsv[1] < 0.2 ? 0.45 : hsv[1]));
+    hsv[2] = value;
+    return hsv2Rgb(hsv);
 }
 
 function normalizePaletteColor(rgb, role, darkUi) {
@@ -105,10 +121,21 @@ function extractPalette(swatches, darkUi, avRgb) {
         tertiary = swatchRgb(swatches, 'DarkVibrant') || swatchRgb(swatches, 'DarkMuted') || secondary;
     }
 
+    let pRgb = normalizePaletteColor(primary, 'primary', darkUi);
+    let sRgb = normalizePaletteColor(secondary, 'secondary', darkUi);
+    let tRgb = normalizePaletteColor(tertiary, 'tertiary', darkUi);
+    let fourthSrc = darkUi
+        ? (swatchRgb(swatches, 'Muted') || swatchRgb(swatches, 'LightMuted') || primary)
+        : (swatchRgb(swatches, 'LightVibrant') || swatchRgb(swatches, 'Vibrant') || primary);
+    let fifthSrc = darkUi
+        ? (swatchRgb(swatches, 'DarkMuted') || swatchRgb(swatches, 'Vibrant') || secondary)
+        : (swatchRgb(swatches, 'DarkVibrant') || swatchRgb(swatches, 'DarkMuted') || secondary);
     return [
-        normalizePaletteColor(primary, 'primary', darkUi),
-        normalizePaletteColor(secondary, 'secondary', darkUi),
-        normalizePaletteColor(tertiary, 'tertiary', darkUi)
+        pRgb,
+        sRgb,
+        tRgb,
+        glassPaletteExtra(fourthSrc, 0.07, darkUi ? 0.36 : 0.68),
+        glassPaletteExtra(fifthSrc, -0.09, darkUi ? 0.22 : 0.5)
     ];
 }
 
@@ -355,7 +382,9 @@ var lmsCurrentCover = Vue.component('lms-currentcover', {
             let targets = {
                 palette1: palette[0],
                 palette2: palette[1],
-                palette3: palette[2]
+                palette3: palette[2],
+                palette4: palette[3] || palette[0],
+                palette5: palette[4] || palette[2]
             };
             let themeRgb = undefined;
             let hexColor = undefined;

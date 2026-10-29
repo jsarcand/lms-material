@@ -25,9 +25,11 @@ var colorMorph = {
     onComplete: undefined,
     target: undefined,
     current: {
-        palette1: [25, 118, 210],
-        palette2: [92, 107, 192],
-        palette3: [57, 73, 171],
+        palette1: [38, 48, 54],
+        palette2: [24, 32, 36],
+        palette3: [52, 64, 72],
+        palette4: [44, 38, 62],
+        palette5: [28, 48, 46],
         primary: [25, 118, 210],
         accent: [25, 118, 210],
         highlight: [25, 118, 210],
@@ -117,6 +119,8 @@ var colorMorph = {
         document.documentElement.style.setProperty('--np-bar-palette-1', morphRgb2Hex(c.palette1));
         document.documentElement.style.setProperty('--np-bar-palette-2', morphRgb2Hex(c.palette2));
         document.documentElement.style.setProperty('--np-bar-palette-3', morphRgb2Hex(c.palette3));
+        document.documentElement.style.setProperty('--np-bar-palette-4', morphRgb2Hex(c.palette4 || c.palette1));
+        document.documentElement.style.setProperty('--np-bar-palette-5', morphRgb2Hex(c.palette5 || c.palette2));
 
         if (this.morphingTheme || undefined != this.target && undefined != this.target.primary) {
             document.documentElement.style.setProperty('--primary-color', morphRgb2Hex(c.primary));

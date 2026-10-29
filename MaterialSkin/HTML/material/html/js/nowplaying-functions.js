@@ -140,6 +140,7 @@ function nowplayingSetWindowTitle(view) {
 }
 
 function nowplayingOnPlayerStatus(view, playerStatus) {
+    view.playerStatus.wiimDiffuse = playerStatus && playerStatus.wiimDiffuse ? playerStatus.wiimDiffuse : undefined;
     let playStateChanged = false;
     let trackChanged = false;
     let prevPlaylistIndex = view.playerStatus.playlist.current;
@@ -348,6 +349,13 @@ function nowplayingOnPlayerStatus(view, playerStatus) {
     let technical = formatTechInfo(playerStatus.current, source, true);
     if (technical!=view.playerStatus.current.technicalInfo) {
         view.playerStatus.current.technicalInfo = technical;
+    }
+    let quality = formatNpQuality(playerStatus.current);
+    let prevQuality = view.playerStatus.current.qualityLabel;
+    let qualitySame = (!quality && !prevQuality) ||
+        (quality && prevQuality && quality.kind===prevQuality.kind && quality.rate===prevQuality.rate);
+    if (!qualitySame) {
+        view.playerStatus.current.qualityLabel = quality;
     }
 
     let maiComposer = lmsOptions.maiComposer && view.playerStatus.current.composer && undefined!=view.playerStatus.current.composer_id && useComposerTag;
@@ -700,6 +708,7 @@ function nowplayingFetchTrackInfo(view) {
         view.info.tabs[TRACK_TAB].texttitle=nowPlayingHeader(view.infoTrack.title);
         view.info.tabs[TRACK_TAB].text=i18n("Fetching...");
         view.info.tabs[TRACK_TAB].lines=undefined;
+        view.info.tabs[TRACK_TAB].lyricsReady=false;
         view.info.tabs[TRACK_TAB].track_id=view.infoTrack.track_id;
         view.info.tabs[TRACK_TAB].artist=view.infoTrack.artist;
         view.info.tabs[TRACK_TAB].artist_id=view.infoTrack.artist_id;
@@ -726,6 +735,7 @@ function nowplayingFetchTrackInfo(view) {
         }
         if (3==command.length) { // No details?
             view.info.tabs[TRACK_TAB].text=undefined;
+            view.info.tabs[TRACK_TAB].lyricsReady=true;
         } else {
             lmsCommand(view.playerId(), command, view.info.tabs[TRACK_TAB].reqId).then(({data}) => {
                 logJsonMessage("RESP", data);
@@ -747,13 +757,20 @@ function nowplayingFetchTrackInfo(view) {
                             setTimeout(function () { view.updateLyricsPosition(); }.bind(view), 100);
                         }
                     }
+                    view.info.tabs[TRACK_TAB].lyricsReady=true;
+                } else if (data && view.isCurrent(data, TRACK_TAB)) {
+                    view.info.tabs[TRACK_TAB].text=undefined;
+                    view.info.tabs[TRACK_TAB].lines=undefined;
+                    view.info.tabs[TRACK_TAB].lyricsReady=true;
                 }
             }).catch(error => {
                 view.info.tabs[TRACK_TAB].text=undefined;
+                view.info.tabs[TRACK_TAB].lyricsReady=true;
             });
         }
     } else if (undefined==view.infoTrack.artist && undefined==view.infoTrack.title && undefined==view.infoTrack.track_id && undefined==view.infoTrack.artist_id) {
         view.info.tabs[TRACK_TAB].text=undefined;
+        view.info.tabs[TRACK_TAB].lyricsReady=true;
     }
 
     let html="";
