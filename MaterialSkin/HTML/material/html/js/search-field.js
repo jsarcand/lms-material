@@ -131,8 +131,8 @@ Vue.component('lms-search-field', {
     template: `
 <v-layout class="lms-search-field">
  <form class="lms-search-list-form" @submit.prevent="submitSearch">
-  <input type="search" class="lms-search-native lms-search lib-search" ref="entry" id="browse-search-input"
-   :placeholder="searchLabel" enterkeyhint="search" autocorrect="off" autocomplete="off" autocapitalize="off" spellcheck="false"
+  <input type="text" inputmode="search" class="lms-search-native lms-search lib-search" ref="entry" id="browse-search-input"
+   :placeholder="searchLabel" enterkeyhint="search" autocorrect="off" autocomplete="off" autocapitalize="none" spellcheck="false"
    @input="textChanged($event)" @keydown="searchNavKeyDown($event)" @focus="onFocus" @blur="onBlur">
  </form>
  <v-btn v-if="term && term.length>0" flat icon class="toolbar-button" :title="i18n('Clear')" @mousedown.prevent="clearTerm()"><v-icon>cancel</v-icon></v-btn>
@@ -197,6 +197,10 @@ Vue.component('lms-search-field', {
         bus.$on('search-for', this._onSearchFor);
         bus.$on('search-initial', this._onSearchInitial);
         bus.$on('search-focus', this._onSearchFocus);
+        this._onSearchDismiss = function() {
+            this.cancel();
+        }.bind(this);
+        bus.$on('lib-search-dismiss', this._onSearchDismiss);
     },
     methods: {
         cancel() {
@@ -265,15 +269,67 @@ Vue.component('lms-search-field', {
             this.term = this.termValueFromEvent(event);
             this.scheduleSearch();
         },
-        onFocus() {
-            let host = document.querySelector('.browse-lib-search-host');
-            if (host) {
-                host.classList.add('active');
+        blurSearchInput() {
+            try {
+                let away = this.getInputEl();
+                if (away && away.blur) {
+                    away.blur();
+                }
+            } catch (e) {}
+        },
+        onFocus(event) {
+            if (this.view && this.view.$store && this.view.$store.state.page!='browse') {
+                this.blurSearchInput();
+                return;
             }
-            if (this.view && this.view.searchActive!=1) {
-                this.view.searchActive = 1;
-                bus.$emit('search-initial');
+            let armed = !!(window._mskLibSearchArm || (this.view && this.view._libSearchArm));
+            let open = !!(this.view && 1==this.view.searchActive);
+            let trusted = !!(event && event.isTrusted);
+            // Already in library search, or the button armed this tap: show the bar.
+            if (open || armed) {
+                let host = document.querySelector('.browse-lib-search-host');
+                if (host) {
+                    host.classList.add('active');
+                }
+                if (this.view && this.view.searchActive!=1) {
+                    this.view.searchActive = 1;
+                    bus.$emit('search-initial');
+                }
+                return;
             }
+            // Programmatic focus after leaving the results. Do not paint the bar.
+            if (!trusted) {
+                this.blurSearchInput();
+                if (this.view && typeof this.view.clearLibSearchHostChrome==='function') {
+                    this.view.clearLibSearchHostChrome();
+                }
+                return;
+            }
+            // Label tap focuses the field before the click handler opens search.
+            // Keep that caret for this turn. A restored focus with no search
+            // button behind it must not leave the header on the next page.
+            let view = this.view;
+            let epoch = view ? (view._libSearchEpoch||0) : 0;
+            let self = this;
+            setTimeout(function() {
+                if (!view) {
+                    return;
+                }
+                if (1==view.searchActive || view._libSearchArm || window._mskLibSearchArm) {
+                    return;
+                }
+                if ((view._libSearchEpoch||0)!=epoch) {
+                    self.blurSearchInput();
+                    if (typeof view.clearLibSearchHostChrome==='function') {
+                        view.clearLibSearchHostChrome();
+                    }
+                    return;
+                }
+                self.blurSearchInput();
+                if (typeof view.clearLibSearchHostChrome==='function') {
+                    view.clearLibSearchHostChrome();
+                }
+            }, 0);
         },
         onBlur() {
             this.stopDebounce();
@@ -282,8 +338,19 @@ Vue.component('lms-search-field', {
             }
             this.searchNow();
         },
+        retractSearchKeyboard() {
+            if (!IS_MOBILE) {
+                return;
+            }
+            let self = this;
+            this.blurSearchInput();
+            setTimeout(function() {
+                self.blurSearchInput();
+            }, 0);
+        },
         submitSearch() {
             this.searchNow(true);
+            this.retractSearchKeyboard();
         },
         searchNavKeyDown(e) {
             if (!e) {
@@ -293,6 +360,7 @@ Vue.component('lms-search-field', {
                 try { e.preventDefault(); } catch (ex) {}
                 try { e.stopPropagation(); } catch (ex2) {}
                 this.searchNow(true);
+                this.retractSearchKeyboard();
                 return;
             }
             if (this.view && this.view.browseListNavFromKey(e)) {
@@ -300,6 +368,11 @@ Vue.component('lms-search-field', {
             }
         },
         searchNow(force) {
+            if (this.view && 1!=this.view.searchActive && !window._mskLibSearchArm && !this.view._libSearchArm) {
+                this.cancel();
+                return;
+            }
+            this._libSearchEpoch = this.view ? (this.view._libSearchEpoch||0) : 0;
             try {
                 let el = this.getInputEl();
                 if (el && undefined!=el.value) {
@@ -375,6 +448,16 @@ Vue.component('lms-search-field', {
                 return;
             }
             if (0==this.commands.length) {
+                if (this.view && (1!=this.view.searchActive || (this.view._libSearchEpoch||0)!=this._libSearchEpoch)) {
+                    this.searching = false;
+                    this.commands = [];
+                    this.results = [];
+                    if (this.view.fetchingItem==SEARCH_ID) {
+                        this.view.fetchingItem = undefined;
+                    }
+                    this.view.browseSearching = false;
+                    return;
+                }
                 let item = {cancache:false, title:i18n("Search") + SEPARATOR + this.str, id:SEARCH_ID, type:"search", libsearch:true};
                 if (0==this.results.length) {
                     bus.$emit('showMessage', i18n('No results found'));
@@ -452,6 +535,7 @@ Vue.component('lms-search-field', {
         if (this._onSearchFor) { bus.$off('search-for', this._onSearchFor); }
         if (this._onSearchInitial) { bus.$off('search-initial', this._onSearchInitial); }
         if (this._onSearchFocus) { bus.$off('search-focus', this._onSearchFocus); }
+        if (this._onSearchDismiss) { bus.$off('lib-search-dismiss', this._onSearchDismiss); }
     }
 })
 

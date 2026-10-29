@@ -6,16 +6,19 @@
  */
 'use strict';
 
-const BROWSE_ZOOM_MIN = 0.8;  /* -20% */
+const BROWSE_ZOOM_MIN = 0.70; /* -30% */
 const BROWSE_ZOOM_MAX = 1.8;  /* +80% */
 const BROWSE_ZOOM_DEFAULT = 1;
 const BROWSE_ZOOM_STORAGE_KEY = 'browseZoom';
 const BROWSE_ZOOM_HOME_STORAGE_KEY = 'browseZoomHome';
+const BROWSE_ZOOM_EXPLORE_STORAGE_KEY = 'browseZoomExplore';
 const BROWSE_ZOOM_PINCH_SENS = 0.85;
 
 var _browseZoomSub = BROWSE_ZOOM_DEFAULT;
 var _browseZoomHome = BROWSE_ZOOM_DEFAULT;
+var _browseZoomExplore = BROWSE_ZOOM_DEFAULT;
 var _browseZoomLevel = BROWSE_ZOOM_DEFAULT;
+var _browseZoomFocus = 'home';
 var _browseZoomHandlersBound = false;
 var _browseZoomGesture = null;
 var _browseZoomWheelOpts = PASSIVE_SUPPORTED ? { passive: false, capture: true } : false;
@@ -79,6 +82,26 @@ function browseZoomContextIsHome(vm) {
 function browseZoomLoadBoth() {
     _browseZoomSub = browseZoomReadStoredKey(BROWSE_ZOOM_STORAGE_KEY);
     _browseZoomHome = browseZoomReadStoredKey(BROWSE_ZOOM_HOME_STORAGE_KEY);
+    _browseZoomExplore = browseZoomReadStoredKey(BROWSE_ZOOM_EXPLORE_STORAGE_KEY);
+}
+
+function browseZoomExploreLevel() {
+    return _browseZoomExplore;
+}
+
+function browseZoomEventIsExplore(ev) {
+    if (!ev || !ev.target || !ev.target.closest) {
+        return false;
+    }
+    return !!ev.target.closest('.explore-zoom-scope');
+}
+
+function browseZoomSetExploreCss(zoom) {
+    let z = browseZoomClamp(undefined!==zoom ? zoom : _browseZoomExplore);
+    let browseView = document.getElementById('browse-view');
+    if (browseView) {
+        browseView.style.setProperty('--browse-zoom-explore', ''+z);
+    }
 }
 
 function browseZoomActiveStorageKey(vm) {
@@ -173,13 +196,37 @@ function browseZoomEmitLayout() {
     bus.$emit('browseZoomChanged', _browseZoomLevel);
 }
 
-function browseZoomApplyLevel(zoom, persist) {
+function browseZoomApplyLevel(zoom, persist, focus) {
     if (!browseZoomGridModeActive()) {
         return false;
+    }
+    if (!focus) {
+        focus = _browseZoomFocus || (browseZoomContextIsHome() ? 'home' : 'sub');
     }
     let next = browseZoomClamp(zoom);
     let live = persist===false;
     browseZoomSetLiveClass(live);
+    if (focus==='explore') {
+        if (next===_browseZoomExplore && live) {
+            browseZoomSetExploreCss(next);
+            return false;
+        }
+        _browseZoomExplore = next;
+        browseZoomSetExploreCss(next);
+        if (live) {
+            if (!_browseZoomLayoutRaf) {
+                _browseZoomLayoutRaf = requestAnimationFrame(browseZoomEmitLayout);
+            }
+            return true;
+        }
+        if (_browseZoomLayoutRaf) {
+            cancelAnimationFrame(_browseZoomLayoutRaf);
+            _browseZoomLayoutRaf = 0;
+        }
+        setLocalStorageVal(BROWSE_ZOOM_EXPLORE_STORAGE_KEY, next);
+        bus.$emit('browseZoomChanged', next);
+        return true;
+    }
     if (next===_browseZoomLevel) {
         return false;
     }
@@ -284,7 +331,11 @@ function browseZoomSchedulePersist() {
     _browseZoomPersistT = setTimeout(function() {
         _browseZoomPersistT = 0;
         browseZoomSetLiveClass(false);
-        browseZoomPersist(_browseZoomLevel);
+        if (_browseZoomFocus==='explore') {
+            setLocalStorageVal(BROWSE_ZOOM_EXPLORE_STORAGE_KEY, browseZoomClamp(_browseZoomExplore));
+        } else {
+            browseZoomPersist(_browseZoomLevel);
+        }
         if (_browseZoomLayoutRaf) {
             cancelAnimationFrame(_browseZoomLayoutRaf);
             _browseZoomLayoutRaf = 0;
@@ -311,7 +362,10 @@ function browseZoomWheelGlobal(ev) {
     if (Math.abs(step) < 0.012) {
         step = step < 0 ? -0.012 : 0.012;
     }
-    browseZoomApplyLevel(_browseZoomLevel + step, false);
+    let focus = (browseZoomContextIsHome() && browseZoomEventIsExplore(ev)) ? 'explore' : (browseZoomContextIsHome() ? 'home' : 'sub');
+    _browseZoomFocus = focus;
+    let base = focus==='explore' ? _browseZoomExplore : _browseZoomLevel;
+    browseZoomApplyLevel(base + step, false, focus);
     browseZoomSchedulePersist();
 }
 
@@ -321,8 +375,13 @@ function browseZoomGestureStartGlobal(ev) {
         return;
     }
     try { ev.preventDefault(); } catch (e) {}
-    _browseZoomGesture = { base: _browseZoomLevel };
-    browseZoomSuppressMenus(browseZoomGetBrowseVm());
+    let vm = browseZoomGetBrowseVm();
+    _browseZoomFocus = (browseZoomContextIsHome(vm) && browseZoomEventIsExplore(ev)) ? 'explore' : (browseZoomContextIsHome(vm) ? 'home' : 'sub');
+    _browseZoomGesture = {
+        base: _browseZoomFocus==='explore' ? _browseZoomExplore : _browseZoomLevel,
+        focus: _browseZoomFocus
+    };
+    browseZoomSuppressMenus(vm);
 }
 
 function browseZoomGestureChangeGlobal(ev) {
@@ -331,7 +390,7 @@ function browseZoomGestureChangeGlobal(ev) {
     }
     try { ev.preventDefault(); } catch (e) {}
     let scale = ev.scale || 1;
-    browseZoomApplyLevel(_browseZoomGesture.base * scale, false);
+    browseZoomApplyLevel(_browseZoomGesture.base * scale, false, _browseZoomGesture.focus);
 }
 
 function browseZoomGestureEndGlobal(ev) {
@@ -340,7 +399,11 @@ function browseZoomGestureEndGlobal(ev) {
     }
     try { ev.preventDefault(); } catch (e) {}
     browseZoomSetLiveClass(false);
-    browseZoomPersist(_browseZoomLevel);
+    if (_browseZoomGesture.focus==='explore') {
+        setLocalStorageVal(BROWSE_ZOOM_EXPLORE_STORAGE_KEY, browseZoomClamp(_browseZoomExplore));
+    } else {
+        browseZoomPersist(_browseZoomLevel);
+    }
     if (_browseZoomLayoutRaf) {
         cancelAnimationFrame(_browseZoomLayoutRaf);
         _browseZoomLayoutRaf = 0;
@@ -465,6 +528,7 @@ var browseZoomMethods = {
         browseZoomLoadBoth();
         _browseZoomLevel = this.isTop ? _browseZoomHome : _browseZoomSub;
         browseZoomSetCss(_browseZoomLevel);
+        browseZoomSetExploreCss(_browseZoomExplore);
         this.browseZoom = _browseZoomLevel;
         this._browseZoomPinch = null;
         browseZoomBindGlobalHandlers();

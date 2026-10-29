@@ -276,6 +276,62 @@ function addDivider(item, addedDivider) {
     return addedDivider;
 }
 
+/* Photographic cover, not a skin or plugin glyph. */
+function browseImageUrlIsArtwork(url) {
+    if (undefined==url || typeof url !== "string" || url.length<1) {
+        return false;
+    }
+    let u = url.toLowerCase();
+    if (u.indexOf("imageproxy")>=0 || u.indexOf("/music/")>=0 || u.startsWith("music/")) {
+        return true;
+    }
+    if (u.indexOf("html/images/")>=0 || u.indexOf("favorites.png")>=0 || u.indexOf("radio.png")>=0 || u.indexOf("plugins/")>=0) {
+        return false;
+    }
+    if (u.indexOf("material/genres/")>=0 || u.indexOf("material/playlists/")>=0) {
+        return true;
+    }
+    if (u.startsWith("http://") || u.startsWith("https://")) {
+        return true;
+    }
+    return u.indexOf("/cover")>=0 || u.indexOf(".jpg")>=0 || u.indexOf(".jpeg")>=0 || u.indexOf(".webp")>=0 || u.indexOf(".png")>=0;
+}
+
+function browseItemHasArtwork(item) {
+    if (!item || item.header) {
+        return false;
+    }
+    if (item.images && item.images.length>0) {
+        for (let i=0, len=item.images.length; i<len; ++i) {
+            if (browseImageUrlIsArtwork(item.images[i])) {
+                return true;
+            }
+        }
+    }
+    return browseImageUrlIsArtwork(item.image);
+}
+
+function browseItemsHaveArtwork(items) {
+    if (!items) {
+        return false;
+    }
+    for (let i=0, len=items.length; i<len; ++i) {
+        if (browseItemHasArtwork(items[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Favorites is a mixed icon/cover strip: keep the heart on the header.
+   Cover carousels (new music, recent albums) stay title-only. */
+function browseHomeExtraNoArt(list, items) {
+    if (list && (list.key=="favorites" || list.section==SECTION_FAVORITES || list.isFavFolder)) {
+        return true;
+    }
+    return !browseItemsHaveArtwork(items);
+}
+
 function parseBrowseResp(data, parent, options, cacheKey) {
     // NOTE: If add key to resp, then update addToCache in utils.js
     var resp = {items: [], allTracksItem:undefined, baseActions:[], canUseGrid: false, gridType: GRID_STANDARD, jumplist:[], numAudioItems:0, canDrop:false, itemCustomActions:undefined, extra:undefined, numHeaders:0, currentRoleIds: new Set() };
@@ -2854,7 +2910,7 @@ function parseBrowseResp(data, parent, options, cacheKey) {
                          {key:'artists_playcount', loop:"artists", title:i18n('Most Played Artists'), svg:"artiststar", command:["artists"], params:["sort:playcount", ARTIST_TAGS_PLACEHOLDER]},
                          {key:'artists_popular', loop:"artists", title:i18n('Popular Artists'), svg:"artistpopular", command:["artists"], params:["sort:popular", ARTIST_TAGS_PLACEHOLDER]},
                          {key:'radios', loop:"radios", title:i18n('Radios'), svg:"radio", command:["material-skin-query","radios"], params:[], limit:200},
-                         {key:'playlists', loop:"playlists", title:i18n('Playlists'), icon:"list", command:["material-skin-query","playlists"], params:[PLAYLIST_TAGS, "menu:1"], limit:200},
+                         {key:'playlists', loop:"playlists", title:i18n('Playlists'), icon:"list", command:["material-skin-query","playlists"], params:[PLAYLIST_TAGS, "menu:1"], limit:200, section:SECTION_PLAYLISTS},
                          {key:'changed', loop:"albums", title:lmsOptions.supportReleaseTypes ? i18n("Recently Updated Releases") : i18n("Recently Updated Albums"), svg:"updated-music", command:["albums"], params:["sort:changed", ALBUM_TAGS_ALL_ARTISTS]},
                          {key:'favorites', loop:"item", title:i18n("Favorites"), icon:"favorite", command:["favorites", "items"], params:["menu:favorites", "menu:1"], section:SECTION_FAVORITES, isFavFolder:true},
                          {id:DETAILED_HOME_EXPLORE}
@@ -2878,7 +2934,7 @@ function parseBrowseResp(data, parent, options, cacheKey) {
             for (let s=0, len=lists.length; s<len; ++s) {
                 if (lists[s].id==DETAILED_HOME_EXPLORE) {
                     if (haveExplore) {
-                        resp.items.push({title:i18n("Explore"), id:DETAILED_HOME_EXPLORE, header:true, ihe:1, icon:"music_note"});
+                        resp.items.push({title:i18n("Explore"), id:DETAILED_HOME_EXPLORE, header:true, ihe:1, icon:"music_note", noArt:true});
                     }
                     continue;
                 }
@@ -2921,7 +2977,8 @@ function parseBrowseResp(data, parent, options, cacheKey) {
                         if (undefined!=obj) { // 3rd party => slimbrowse...
                             let header = {title:lists[s].title, id:lists[s].id, header:true, ihe:1, icon:lists[s].icon, svg: lists[s].svg, limit: lists[s].limit,
                                           morecmd:undefined, baseActions:undefined!=obj['base'] ? obj['base']['actions'] : undefined,
-                                          section:lists[s].section, isFavFolder:lists[s].isFavFolder, slimbrowse:true}
+                                          section:lists[s].section, isFavFolder:lists[s].isFavFolder, slimbrowse:true,
+                                          noArt:browseHomeExtraNoArt(lists[s], newResp.items)}
                             mapIcon(header);
                             if (undefined==header.icon && undefined==header.svg) {
                                 if (undefined!=lists[s].svg) {
@@ -2949,9 +3006,13 @@ function parseBrowseResp(data, parent, options, cacheKey) {
                             let all = JSON.parse(JSON.stringify(newResp.items))
                             newResp.items = newResp.items.splice(0, count);
                             resp.items.push({title:lists[s].title, id:lists[s].id, header:true, ihe:1, icon:lists[s].icon, svg: lists[s].svg, limit: lists[s].limit,
+                                section:lists[s].section,
+                                noArt:browseHomeExtraNoArt(lists[s], newResp.items),
                                 morecmd:"-", all:{items:all, subtitle:newResp.subtitle, command:{ismore:false, command:["albums"], params:["sort:random", ALBUM_TAGS_ALL_ARTISTS]}}});
                         } else {
                             resp.items.push({title:lists[s].title, id:lists[s].id, header:true, ihe:1, icon:lists[s].icon, svg: lists[s].svg, limit: lists[s].limit,
+                                section:lists[s].section,
+                                noArt:browseHomeExtraNoArt(lists[s], newResp.items),
                                 morecmd:parseInt(data.result[loop_name+"_len"])>count ? {command:lists[s].command, params:lists[s].params} : undefined});
                         }
                         resp.items=resp.items.concat(newResp.items);
@@ -2960,7 +3021,7 @@ function parseBrowseResp(data, parent, options, cacheKey) {
             }
             if (resp.items.length>0) {
                 if (!haveExplore) {
-                    resp.items.push({title:i18n("Explore"), id:DETAILED_HOME_EXPLORE+"_std", header:true, ihe:1, icon:"music_note"});
+                    resp.items.push({title:i18n("Explore"), id:DETAILED_HOME_EXPLORE+"_std", header:true, ihe:1, icon:"music_note", noArt:true});
                 }
             }
             resp.listSize=resp.items.length;

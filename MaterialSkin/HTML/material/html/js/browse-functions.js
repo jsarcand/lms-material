@@ -234,6 +234,117 @@ function browseInjectRadioScrollList(view) {
     }).catch(function() { /* ignore — radio strip is optional */ });
 }
 
+/* Folder listings on the network disk are slow (tag reads). Keep a short
+ * session cache and share one in-flight request so a tap does not scan twice. */
+var browseRespCache = new Map();
+var browseRespInflight = new Map();
+var browsePrefetchQueue = [];
+var browsePrefetchBusy = false;
+
+function browseRespCacheKey(playerId, command, params, start, count) {
+    return (playerId||'')+'|'+(start||0)+'|'+count+'|'+(command||[]).join('\u0001')+'|'+(params||[]).join('\u0001');
+}
+
+function browseCopyRespData(data) {
+    try {
+        return JSON.parse(JSON.stringify(data));
+    } catch (e) {
+        return data;
+    }
+}
+
+function browseRememberRespData(key, data) {
+    browseRespCache.set(key, {t: Date.now(), data: browseCopyRespData(data)});
+    if (browseRespCache.size>30) {
+        let oldest = browseRespCache.keys().next().value;
+        browseRespCache.delete(oldest);
+    }
+}
+
+function browseLoadListData(view, command, item, start, count) {
+    let key = browseRespCacheKey(view.playerId(), command.command, command.params, start, count);
+    let hit = browseRespCache.get(key);
+    if (hit && (Date.now()-hit.t)<5*60*1000) {
+        return Promise.resolve(browseCopyRespData(hit.data));
+    }
+    let pending = browseRespInflight.get(key);
+    if (pending) {
+        return pending;
+    }
+    let req = lmsList(view.playerId(), command.command, command.params, start, count, item && item.cancache, 0).then(function(res) {
+        browseRespInflight.delete(key);
+        let data = res && res.data;
+        if (data) {
+            browseRememberRespData(key, data);
+        }
+        return data;
+    }).catch(function(err) {
+        browseRespInflight.delete(key);
+        throw err;
+    });
+    browseRespInflight.set(key, req);
+    return req;
+}
+
+function browseItemIsFolderNav(item) {
+    if (!item || item.header || !item.actions || !item.actions.go || !item.actions.go.cmd) {
+        return false;
+    }
+    let cmd = item.actions.go.cmd[0];
+    if (cmd!='browselibrary' && cmd!='musicfolder') {
+        return false;
+    }
+    let p = item.actions.go.params || {};
+    if (p.folder_id!=undefined || p.mode=='filesystem' || p.mode=='bmf') {
+        return true;
+    }
+    return !!(p.url && (''+p.url).indexOf('tmp:')===0);
+}
+
+function browseCancelFolderPrefetch() {
+    browsePrefetchQueue = [];
+}
+
+function browsePumpFolderPrefetch() {
+    if (browsePrefetchBusy) {
+        return;
+    }
+    let job = browsePrefetchQueue.shift();
+    if (!job) {
+        return;
+    }
+    browsePrefetchBusy = true;
+    browseLoadListData(job.view, job.command, job.item, 0, 400).then(function() {
+        browsePrefetchBusy = false;
+        browsePumpFolderPrefetch();
+    }).catch(function() {
+        browsePrefetchBusy = false;
+        browsePumpFolderPrefetch();
+    });
+}
+
+function browseScheduleFolderPrefetch(view) {
+    if (!view || !view.items || view.items.length<1 || view.items.length>40) {
+        return;
+    }
+    let queued = 0;
+    for (let i=0, len=view.items.length; i<len && queued<3; ++i) {
+        let it = view.items[i];
+        if (!browseItemIsFolderNav(it)) {
+            continue;
+        }
+        let cmd = browseBuildCommand(view, it);
+        if (!cmd || !cmd.command || cmd.command.length<1) {
+            continue;
+        }
+        browsePrefetchQueue.push({view: view, command: cmd, item: it});
+        queued++;
+    }
+    if (queued) {
+        browsePumpFolderPrefetch();
+    }
+}
+
 /** Hide list items until fade-in. Used so RecycleScroller can rebuild off-screen. */
 function browseItemsHide(view) {
     try {
@@ -305,6 +416,40 @@ function browseNavAnim(view, dir, opts) {
     } catch (e) { }
 }
 
+function browseHistorySearchActive(view) {
+    var onSearchPage = view.current && view.current.id && (''+view.current.id).indexOf(SEARCH_ID_PREFIX)===0;
+    return (onSearchPage && 1==view.searchActive) ? 1 : 0;
+}
+
+/* Library-search header is results chrome only. Strip it even when
+ * searchActive is already 0: focusBrowseSearchInput paints the host with
+ * inline opacity, and a later home/drill does not toggle the flag again. */
+function browseDismissLibSearchChrome(view) {
+    if (!view) {
+        return;
+    }
+    view._libSearchEpoch = (view._libSearchEpoch||0)+1;
+    view._libSearchArm = false;
+    try { window._mskLibSearchArm = false; } catch (e) {}
+    try { bus.$emit('lib-search-dismiss'); } catch (e2) {}
+    if (typeof view.blurLibSearchField==='function') {
+        view.blurLibSearchField();
+    } else {
+        try {
+            var el = document.getElementById('browse-search-input');
+            if (el && el.blur) {
+                el.blur();
+            }
+        } catch (e3) {}
+    }
+    if (typeof view.clearLibSearchHostChrome==='function') {
+        view.clearLibSearchHostChrome();
+    }
+    if (1==view.searchActive) {
+        view.searchActive = 0;
+    }
+}
+
 function browseAddHistory(view) {
     if (view._homePaneNav) {
         view._homePaneNav = false;
@@ -314,10 +459,10 @@ function browseAddHistory(view) {
     }
     addBrowserHistoryItem();
     var prev = {};
-    prev.items = view.items;
+    prev.items = view.items ? view.items.slice() : [];
     prev.listSize = view.listSize;
     prev.allTracksItem = view.allTracksItem;
-    prev.jumplist = view.jumplist;
+    prev.jumplist = view.jumplist ? view.jumplist.slice() : [];
     prev.numHeaders = view.numHeaders;
     prev.baseActions = view.baseActions;
     prev.current = view.current;
@@ -341,7 +486,8 @@ function browseAddHistory(view) {
     prev.prevPage = view.prevPage;
     prev.allItems = view.allItems;
     prev.inGenre = view.inGenre;
-    prev.searchActive = view.searchActive;
+    prev.searchActive = browseHistorySearchActive(view);
+    prev.enteredTerm = view.enteredTerm;
     prev.canDrop = view.canDrop;
     prev.itemCustomActions = view.itemCustomActions;
     view.prevPage = undefined;
@@ -530,6 +676,11 @@ function browseGetCurrent(view) {
 }
 
 function browseHandleListResponse(view, item, command, resp, prevPage, appendItems) {
+    // A library search that finished after the user left must not put the
+    // search header (or the results page) back on top of the page they opened.
+    if (item && item.id==SEARCH_ID && view && 1!=view.searchActive && !view._libSearchArm && !window._mskLibSearchArm) {
+        return;
+    }
     if (resp && resp.items) {
         if (appendItems) {
             view.items.push.apply(view.items, resp.items);
@@ -592,14 +743,12 @@ function browseHandleListResponse(view, item, command, resp, prevPage, appendIte
                         }
                     }
                 }
-            } else if (view.current && view.current.id.startsWith(SEARCH_ID_PREFIX) ) {
-                // Try to ensure there is only one "Search - XXX" entry in history.
-                for (let i=0, len=view.history.length; i<len; ++i) {
-                    if (view.history[i].current && view.history[i].current.id.startsWith(SEARCH_ID_PREFIX)) {
-                        // Found "Search..." in history stack, so remove
-                        view.history.splice(i, len-i);
-                        break;
-                    }
+            } else if (view.current && view.current.id && (''+view.current.id).indexOf(SEARCH_ID_PREFIX)===0) {
+                // A refreshed search stays one page. Only drop the previous
+                // snapshot of this same page. Drill levels use other ids.
+                let top = view.history.length ? view.history[view.history.length-1] : null;
+                if (top && top.current && top.current.id===view.current.id) {
+                    view.history.pop();
                 }
             }
             if (addToHistory && !view._skipNextAddHistory) {
@@ -633,7 +782,15 @@ function browseHandleListResponse(view, item, command, resp, prevPage, appendIte
         if (fromShell || view._browseItemsPending) {
             browseItemsFadeIn(view);
         }
-        if (!appendItems && (resp.listSize||0)>view.items.length && typeof view.fetchItems==='function') {
+        if (!appendItems) {
+            browseScheduleFolderPrefetch(view);
+        }
+        let isFavorites = command && command.command && command.command[0]=='favorites';
+        if (isFavorites && item) {
+            // Page on scroll. Pulling the whole list at once is what made Favorites feel stuck.
+            item.slimbrowse = true;
+        }
+        if (!isFavorites && !appendItems && (resp.listSize||0)>view.items.length && typeof view.fetchItems==='function') {
             view.$nextTick(function() {
                 if (view.current && item && view.current.id==item.id) {
                     view.fetchItems(command, item, undefined, view.items.length, true);
@@ -1479,7 +1636,7 @@ function browseClick(view, item, index, event, ignoreOpenMenu, forceNav) {
         } else {
             clearTimeout(view.clickTimer);
             view.clickTimer = undefined;
-            browseItemAction(view, PLAY_ACTION, item, index, event);
+            browseDoubleClickPlay(view, item, index, event);
         }
         return;
     }
@@ -1522,6 +1679,11 @@ function browseClick(view, item, index, event, ignoreOpenMenu, forceNav) {
         return;
     }
     if (TOP_MYMUSIC_ID==item.id) {
+        /* My Music shortcut/link is the classic library. Unify sets _fusionEntry first. */
+        if (!view._fusionEntry && view.fusionMode) {
+            view.fusionMode = false;
+            setLocalStorageVal('browseFusion', false);
+        }
         browseAddHistory(view);
         view.items = view.myMusic;
         view.myMusicMenu();
@@ -1546,6 +1708,10 @@ function browseClick(view, item, index, event, ignoreOpenMenu, forceNav) {
         view.fetchItems({command:["material-skin", "rndmix", "act:list"], params:[]}, item);
     } else if (START_RANDOM_MIX_ID==item.id) {
         bus.$emit('dlg.open', 'rndmix', undefined, true);
+    } else if (UNIFY_BROWSE_ID==item.id) {
+        if (typeof view.setFusionMode==='function') {
+            view.setFusionMode(true);
+        }
     } else if (STD_ITEM_GENRE==item.stdItem && view.current && (getField(item, "genre_id") || getField(item, "year"))) {
         browseAddCategories(view, item, true);
         browseCheckExpand(view);
@@ -1678,7 +1844,7 @@ function browseEnterPageShell(view, item) {
     view.current = item;
     view.currentItemImage = item.image || undefined;
     view.isTop = false;
-    view.searchActive = 0;
+    browseDismissLibSearchChrome(view);
     view.listFilterTerm = '';
     view._gridFilterTerm = undefined;
     view.items = [];
@@ -1717,6 +1883,12 @@ function browseDoClick(view, item, index, event, forceNav) {
     // Defense in depth: mobile double-tap delay can land here if canPlayQuick misfires
     if (item && item.type=="extra") {
         browseOpenExtraIframe(view, item);
+        return;
+    }
+    if (item && item.id==UNIFY_BROWSE_ID) {
+        if (typeof view.setFusionMode==='function') {
+            view.setFusionMode(true);
+        }
         return;
     }
     var command = browseBuildCommand(view, item);
@@ -1762,11 +1934,42 @@ function browseDoClick(view, item, index, event, forceNav) {
     view.fetchItems(command, item, undefined, undefined, forceNav);
 }
 
+/* Spotty menus reuse item_id (0, 8.4, …). Stay on the open page only when it
+ * is this pin: same id, same title when we know it, and the stored command's
+ * params are the ones that built the page. */
+function browseShortcutAlreadyOpen(view, item, hint) {
+    if (!view || !item || !view.current || view.current.id!=item.id) {
+        return false;
+    }
+    let title = (hint && hint.title) ? hint.title : item.title;
+    if (title && view.headerTitle && title!=view.headerTitle && title!=view.current.title) {
+        return false;
+    }
+    if (item.isPinned && item.command && item.command.length && view.command && view.command.command) {
+        if (item.command.length!=view.command.command.length) {
+            return false;
+        }
+        for (let i=0, len=item.command.length; i<len; ++i) {
+            if (item.command[i]!=view.command.command[i]) {
+                return false;
+            }
+        }
+        let have = view.command.params || [];
+        let need = item.params || [];
+        for (let i=0, len=need.length; i<len; ++i) {
+            if (have.indexOf(need[i])<0) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 function browseHomePaneNavigate(view, item, index, event) {
     if (!item) {
         return;
     }
-    view.searchActive = 0;
+    browseDismissLibSearchChrome(view);
     view.listFilterTerm = '';
     view.listFilterSelPos = -1;
     view._gridFilterTerm = undefined;
@@ -1784,11 +1987,16 @@ function browseHomePaneNavigate(view, item, index, event) {
     storeClickOrTouchPos(event, view.menu);
     let target = item;
     let clickIndex = index;
-    if (view.isTop) {
+    if (view.isTop && typeof view.homePaneMainIndex==='function') {
         let idx = view.homePaneMainIndex(item);
         if (idx>=0) {
-            target = view.items[idx];
-            clickIndex = idx;
+            let row = view.items[idx];
+            // A pinned Spotty command must not be replaced by another home row
+            // that only shares item_id.
+            if (row===item || !(item.isPinned && item.command && item.command.length)) {
+                target = row;
+                clickIndex = idx;
+            }
         }
     }
     view.$nextTick(function() {
@@ -1928,6 +2136,8 @@ function browseItemAction(view, act, origItem, index, event, slimBrowseBaseActio
     } else if (act==SEARCH_LIB_ACTION) {
         if (view.$store.state.visibleMenus.size<1 || (origItem && origItem.id==SEARCH_SHORTCUT)) {
             setLocalStorageVal('search', '');
+            window._mskLibSearchArm = true;
+            view._libSearchArm = true;
             view.searchActive = 1;
             if (typeof focusBrowseSearchInput==='function') {
                 focusBrowseSearchInput();
@@ -2202,6 +2412,9 @@ function browseItemAction(view, act, origItem, index, event, slimBrowseBaseActio
             logAndShowError(err, undefined, ["albums"], params, 0, 1);
         });
     } else if (SELECT_ACTION===act) {
+        if (index<0 || !view.items || !view.items[index]) {
+            return;
+        }
         if (item.header) {
             for (var i=index+1, len=view.items.length; i<len; ++i) {
                 if (view.items[i].header) {
@@ -2639,6 +2852,110 @@ function browseItemAction(view, act, origItem, index, event, slimBrowseBaseActio
     }
 }
 
+/** LMS player pref playtrackalbum: 1 = album/playlist from this track, 0 = this track only. */
+function browseReadPlayTrackAlbum(view) {
+    let pid = view && typeof view.playerId==='function' ? view.playerId() : undefined;
+    if (!pid) {
+        return Promise.resolve(1);
+    }
+    return lmsCommand(pid, ["playerpref", "playtrackalbum", "?"]).then(function(resp) {
+        let data = resp && resp.data ? resp.data : resp;
+        let v = 1;
+        if (data && data.result && undefined!=data.result._p2) {
+            v = parseInt(data.result._p2, 10) ? 1 : 0;
+        }
+        return v;
+    }).catch(function() {
+        return 1;
+    });
+}
+
+/** Track ids from the clicked row through the end of the visible list, in list order. */
+function browseTrackIdsFromHere(view, item, index) {
+    let items = view && view.items ? view.items : [];
+    let ids = [];
+    let started = false;
+    for (let i=0, len=items.length; i<len; ++i) {
+        let it = items[i];
+        if (!it || it.header || it.type==='html' || it.type==='text' || !isAudioTrack(it)) {
+            continue;
+        }
+        if (!started) {
+            if (!(i===index || it===item || (item && it.id && it.id===item.id))) {
+                continue;
+            }
+            started = true;
+        }
+        let raw = it.id ? originalId(it.id) : '';
+        if (raw.indexOf('track_id:')!==0 && it.params && it.params.track_id) {
+            raw = 'track_id:'+it.params.track_id;
+        }
+        if (raw.indexOf('track_id:')===0) {
+            ids.push(ids.length ? raw.split(':')[1] : raw);
+        }
+    }
+    return ids;
+}
+
+/** After a play command, seek to 0. Repeat so a late track change still starts at the beginning. */
+function browseSeekTrackStart(pid) {
+    if (!pid) {
+        return;
+    }
+    let n = 0;
+    let kick = function() {
+        lmsCommand(pid, ['time', 0]).catch(function(){});
+        if (++n < 3) {
+            setTimeout(kick, 320);
+        }
+    };
+    setTimeout(kick, 180);
+}
+
+/**
+ * Double-click / double-tap a track.
+ * Honors LMS "Play Other Songs In Album" (playtrackalbum): start the album or
+ * playlist at this track, or play only this track. Always from time 0.
+ */
+function browseDoubleClickPlay(view, item, index, event) {
+    if (!view || !item) {
+        return;
+    }
+    let pid = typeof view.playerId==='function' ? view.playerId() : undefined;
+    browseReadPlayTrackAlbum(view).then(function(playRest) {
+        let cur = view.current;
+        let inAlbum = !!(cur && (cur.stdItem==STD_ITEM_ALBUM || (cur.id && String(cur.id).indexOf('album_id:')===0)));
+        let inPlaylist = !!(cur && (cur.stdItem==STD_ITEM_PLAYLIST || cur.stdItem==STD_ITEM_REMOTE_PLAYLIST ||
+            (cur.id && String(cur.id).indexOf('playlist_id:')===0)));
+        let ids = (inAlbum || inPlaylist) ? browseTrackIdsFromHere(view, item, index) : [];
+        if (ids.length>0 && (playRest ? ids.length>0 : true) && (inAlbum || inPlaylist)) {
+            if (!playRest) {
+                ids = [ids[0]];
+            }
+            let cmd = ["playlistcontrol", "cmd:load", "track_id:"+ids.join(',')];
+            let libId = view.currentLibId ? view.currentLibId : (view.$store && view.$store.state && view.$store.state.library ? view.$store.state.library : undefined);
+            if (libId) {
+                cmd.push("library_id:"+libId);
+            }
+            lmsCommand(pid, cmd).then(function() {
+                browseSeekTrackStart(pid);
+                bus.$emit('refreshStatus');
+                if (typeof view.clearSelection==='function') {
+                    view.clearSelection();
+                }
+                browseSwitchToNowPlaying(view);
+            }).catch(function(err) {
+                logError(err);
+                view._seekZeroAfterPlay = true;
+                browseItemAction(view, PLAY_ACTION, item, index, event);
+            });
+            return;
+        }
+        view._seekZeroAfterPlay = true;
+        browseItemAction(view, PLAY_ACTION, item, index, event);
+    });
+}
+
 function browsePerformAction(view, item, act, slimBrowseBaseActions) {
     var command = browseBuildFullCommand(view, item, act, slimBrowseBaseActions);
     if (command.command.length===0) {
@@ -2650,6 +2967,10 @@ function browsePerformAction(view, item, act, slimBrowseBaseActions) {
     }
     lmsCommand(view.playerId(), command.command).then(({data}) => {
         logJsonMessage("RESP", data);
+        if (view._seekZeroAfterPlay && (act===PLAY_ACTION || act===PLAY_ALL_ACTION)) {
+            view._seekZeroAfterPlay = false;
+            browseSeekTrackStart(view.playerId());
+        }
         bus.$emit('refreshStatus');
         view.clearSelection();
         if (!view.$store.state.desktopLayout || !view.$store.state.showQueue) {
@@ -3015,8 +3336,73 @@ function browsePreviewUnbindSelectBlock(view) {
     browsePreviewSetNoSelect(false);
 }
 
-function browseItemCanPreviewHold(item, view) {
+function browseItemPreviewUrl(item) {
+    if (!item) {
+        return '';
+    }
+    let url = (item.presetParams && (item.presetParams.favorites_url || item.presetParams.url)) ||
+        item.url || item.favUrl || '';
+    return url ? String(url).replace(/^spotify:\/\//i, 'spotify:') : '';
+}
+
+/** Spotty new-release tracks and service playlists often have no stdItem. */
+function browseItemIsAppPreviewable(item) {
+    if (!item || item.header || item.isRadio) {
+        return false;
+    }
+    let t = item.type;
+    if (t==='search' || t==='entry' || t==='text' || t==='html' || t==='group' || t==='textarea') {
+        return false;
+    }
+    if (typeof SECTION_PODCASTS!=='undefined' && item.section==SECTION_PODCASTS) {
+        return false;
+    }
+    if (item.actions && item.actions.play && item.actions.play.params && item.actions.play.params.folder_id) {
+        return false;
+    }
+    let url = browseItemPreviewUrl(item);
+    if (/^spotify:(track|episode|playlist|album):/i.test(url)) {
+        return true;
+    }
+    if (/^(deezer|qobuz|tidal):\/\/(track|playlist|album)/i.test(url)) {
+        return true;
+    }
+    if (t==='playlist' || t==='audio' || t==='track') {
+        return !!(url || (item.menu && (item.menu.indexOf(PLAY_ACTION)>=0 || item.menu.indexOf(PLAY_ALL_ACTION)>=0)) ||
+            item.goAction==='play' || item.goAction==='playControl');
+    }
+    if ((item.goAction==='play' || item.goAction==='playControl' || item.style==='itemplay' || item.style==='item_play') &&
+        url && !/^https?:/i.test(url)) {
+        return true;
+    }
+    return false;
+}
+
+/** Songs, albums, artists, and playlists only — not genres, radios, folders, or apps. */
+function browseItemIsPreviewable(item) {
     if (!item || item.header) {
+        return false;
+    }
+    if (undefined!=item.stdItem) {
+        return item.stdItem==STD_ITEM_ARTIST || item.stdItem==STD_ITEM_ALBUM ||
+            item.stdItem==STD_ITEM_PLAYLIST || item.stdItem==STD_ITEM_REMOTE_PLAYLIST ||
+            item.stdItem==STD_ITEM_TRACK || item.stdItem==STD_ITEM_ALBUM_TRACK ||
+            item.stdItem==STD_ITEM_PLAYLIST_TRACK || item.stdItem==STD_ITEM_REMOTE_PLAYLIST_TRACK ||
+            item.stdItem==STD_ITEM_ONLINE_ARTIST || item.stdItem==STD_ITEM_ONLINE_ALBUM;
+    }
+    if (item.cstatsCard && item.cstatsCard.type) {
+        let t = item.cstatsCard.type;
+        return t=='album' || t=='playlist' || t=='track' || t=='song' || t=='artist';
+    }
+    if (item.metadata && item.metadata.type) {
+        let mt = item.metadata.type;
+        return mt=='track' || mt=='album' || mt=='playlist' || mt=='artist';
+    }
+    return browseItemIsAppPreviewable(item);
+}
+
+function browseItemCanPreviewHold(item, view) {
+    if (!browseItemIsPreviewable(item)) {
         return false;
     }
     if (typeof queryParams!=='undefined' && queryParams.party) {
@@ -3026,47 +3412,14 @@ function browseItemCanPreviewHold(item, view) {
     if (typeof browseHasPreviewPlayer==='function' && !browseHasPreviewPlayer(view)) {
         return false;
     }
-    // Do not use browseItemCanPlayQuick here — it used to treat extras/etc. as
-    // playable and double-tap-hold must stay limited to real audio items.
-    if (undefined!=item.stdItem && (
-        item.stdItem==STD_ITEM_ALBUM || item.stdItem==STD_ITEM_PLAYLIST ||
-        item.stdItem==STD_ITEM_REMOTE_PLAYLIST || item.stdItem==STD_ITEM_ARTIST ||
-        item.stdItem==STD_ITEM_ONLINE_ALBUM || item.stdItem==STD_ITEM_ONLINE_ARTIST ||
-        item.stdItem==STD_ITEM_WORK || item.stdItem==STD_ITEM_RANDOM_MIX ||
-        item.stdItem==STD_ITEM_TRACK || item.stdItem==STD_ITEM_ALBUM_TRACK ||
-        item.stdItem==STD_ITEM_PLAYLIST_TRACK || item.stdItem==STD_ITEM_REMOTE_PLAYLIST_TRACK)) {
-        return true;
-    }
-    if (item.cstatsCard && item.cstatsCard.playCmd) {
-        return true;
-    }
-    if (item.metadata && (item.metadata.type=='track' || item.metadata.type=='album' || item.metadata.type=='playlist')) {
-        return true;
-    }
-    if (item.type=='audio' || item.type=='playlist' || item.type=='album' || item.style=='itemplay') {
-        return true;
-    }
-    if (item.actions && (item.actions.play || item.actions.add ||
-            (item.actions.go && (item.goAction=='play' || item.goAction=='playControl')))) {
-        return true;
-    }
-    if (item.isRadio || (item.url && item.type!='extra') ||
-        (item.presetParams && item.presetParams.favorites_url)) {
-        return true;
-    }
-    if (item.menu && item.menu.length>0 &&
-        (item.menu.indexOf(PLAY_ACTION)>=0 || item.menu.indexOf(PLAY_ALL_ACTION)>=0)) {
-        return true;
-    }
-    return false;
+    return true;
 }
 
 function browsePreviewItemUrl(item) {
     if (!item) {
         return '';
     }
-    let url = (item.presetParams && (item.presetParams.favorites_url || item.presetParams.url)) ||
-        item.url || item.favUrl || '';
+    let url = browseItemPreviewUrl(item);
     if (!url && item.cstatsCard) {
         let pp = item.cstatsCard.playParams || [];
         for (let i=0; i<pp.length; ++i) {
@@ -3610,9 +3963,9 @@ function browsePreviewHoldScrub(view, x, y) {
     browsePreviewHoldStart(view, found.item);
 }
 
-/** Insert Preview after Play when app provides a local preview player. */
-function browseMenuWithPreview(menu, view) {
-    if (!menu || !browseHasPreviewPlayer(view)) {
+/** Insert Preview after Play only for songs, albums, artists, and playlists. */
+function browseMenuWithPreview(menu, view, item) {
+    if (!menu || !item || !browseHasPreviewPlayer(view) || !browseItemCanPreviewHold(item, view)) {
         return menu;
     }
     if (menu.indexOf(PREVIEW_ACTION)>=0) {
@@ -3673,22 +4026,30 @@ function browseItemMenu(view, item, index, event) {
                     : undefined!=itm.maxBeforeLarge && view.listSize>itm.maxBeforeLarge
                         ? itm.largeListMenu
                         : itm.menu;
+            let pinned = view.options && view.options.pinned;
+            if (!menu || !menu.filter) {
+                menu = [];
+            } else if (index<0) {
+                menu = menu.filter(function(a) {
+                    return a!==SELECT_ACTION && a!==UNSELECT_ACTION && a!==MOVE_HERE_ACTION;
+                });
+            }
             for (let m=0, len=menu.length; m<len; ++m) {
-                if (menu[m]==PIN_ACTION && view.options.pinned.has(item.id)) {
+                if (menu[m]==PIN_ACTION && pinned && pinned.has(item.id)) {
                     menu[m]=UNPIN_ACTION;
                     break;
                 }
-                if (menu[m]==UNPIN_ACTION && !view.options.pinned.has(item.id)) {
+                if (menu[m]==UNPIN_ACTION && !(pinned && pinned.has(item.id))) {
                     menu[m]=PIN_ACTION;
                     break;
                 }
             }
             showMenu(view, {show:true, item:item, x:pos.x, y:pos.y, index:index,
-                            itemMenu:browseMenuWithPreview(menu, view)});
+                            itemMenu:browseMenuWithPreview(menu, view, item)});
         } else if (TOP_MYMUSIC_ID==item.id) {
             browseSelectVLib(view);
         } else if (item.url || item.isRadio || (item.presetParams && item.presetParams.favorites_url)) {
-            let menu = browseMenuWithPreview([PLAY_ACTION, INSERT_ACTION, ADD_ACTION], view);
+            let menu = browseMenuWithPreview([PLAY_ACTION, INSERT_ACTION, ADD_ACTION], view, item);
             showMenu(view, {show:true, item:item, x:pos.x, y:pos.y, index:index, itemMenu:menu});
         } else if (item.command || item.actions || item.type=='group' || item.type=='favorites' ||
                    (item.id && (''+item.id).startsWith(TOP_ID_PREFIX))) {
@@ -3726,7 +4087,7 @@ function browseItemMenu(view, item, index, event) {
             });
         }
     } else {
-        showMenu(view, {show:true, item:item, itemMenu:browseMenuWithPreview(item.menu, view), x:pos.x, y:pos.y, index:index});
+        showMenu(view, {show:true, item:item, itemMenu:browseMenuWithPreview(item.menu, view, item), x:pos.x, y:pos.y, index:index});
     }
 }
 
@@ -3736,7 +4097,7 @@ function browseHeaderAction(view, act, event, ignoreOpenMenus) {
     }
     let item = undefined!=view.current && view.current.stdItem==STD_ITEM_MAI ? view.history[view.history.length-1].current : view.current;
     if (USE_LIST_ACTION==act || USE_GRID_ACTION==act || USE_ALT_GRID_ACTION==act) {
-        // My Music: list → grid → fusion panel → list
+        // My Music: list ↔ grid. Unify is a separate browse item.
         if (view.current && view.current.id==TOP_MYMUSIC_ID && typeof view.cycleMyMusicView==='function') {
             view.cycleMyMusicView();
         } else if (USE_LIST_ACTION==act) {
@@ -3869,7 +4230,7 @@ function browsePushHomeHistory(view) {
     prev.pinnedItemLibName = undefined;
     prev.currentBaseActions = [];
     prev.currentItemImage = undefined;
-    prev.currentActions = [{action:VLIB_ACTION}, {action:(view.grid.use ? USE_LIST_ACTION : view.$store.state.detailedHomeItems.length>0 ? USE_ALT_GRID_ACTION : USE_GRID_ACTION)}];
+    prev.currentActions = [{action:VLIB_ACTION}];
     prev.headerTitle = null;
     prev.headerSubTitle = null;
     prev.historyExtra = undefined;
@@ -3878,7 +4239,7 @@ function browsePushHomeHistory(view) {
     prev.extraInfo = undefined;
     prev.tbarActions = [];
     prev.pos = 0;
-    prev.grid = {allowed:true, use:view.$store.state.gridPerView ? isSetToUseGrid(GRID_TOP) : view.grid.use, numColumns:0, ih:GRID_MIN_HEIGHT, rows:[], few:false, haveSubtitle:true, multiSize:false, type:GRID_STANDARD};
+    prev.grid = {allowed:true, use:view.$store.state.gridPerView ? isSetToUseGrid(GRID_TOP) : getHomeGridUse(), numColumns:0, ih:GRID_MIN_HEIGHT, rows:[], few:false, haveSubtitle:true, multiSize:false, type:GRID_STANDARD};
     prev.hoverBtns = !IS_MOBILE;
     prev.command = undefined;
     prev.subtitleClickable = false;
@@ -3893,10 +4254,10 @@ function browsePushHomeHistory(view) {
 
 function browseCaptureHistoryState(view) {
     var prev = {};
-    prev.items = view.items;
+    prev.items = view.items ? view.items.slice() : [];
     prev.listSize = view.listSize;
     prev.allTracksItem = view.allTracksItem;
-    prev.jumplist = view.jumplist;
+    prev.jumplist = view.jumplist ? view.jumplist.slice() : [];
     prev.numHeaders = view.numHeaders;
     prev.baseActions = view.baseActions;
     prev.current = view.current;
@@ -3920,19 +4281,15 @@ function browseCaptureHistoryState(view) {
     prev.prevPage = view.prevPage;
     prev.allItems = view.allItems;
     prev.inGenre = view.inGenre;
-    prev.searchActive = view.searchActive;
+    prev.searchActive = browseHistorySearchActive(view);
+    prev.enteredTerm = view.enteredTerm;
     prev.canDrop = view.canDrop;
     prev.itemCustomActions = view.itemCustomActions;
     return prev;
 }
 
 function browsePrepareHomePaneNav(view) {
-    let searchSnap = undefined;
-    if (view.current && view.current.id && (''+view.current.id).indexOf(SEARCH_ID_PREFIX)===0 && view.items && view.items.length>0) {
-        searchSnap = browseCaptureHistoryState(view);
-        searchSnap.searchActive = 1;
-    }
-    view.searchActive = 0;
+    browseDismissLibSearchChrome(view);
     view.browseSearching = false;
     if (view.fetchingItem!=undefined) {
         view.nextReqId();
@@ -3944,9 +4301,6 @@ function browsePrepareHomePaneNav(view) {
     view.filteredJumplist = [];
     view.history = [];
     browsePushHomeHistory(view);
-    if (searchSnap) {
-        view.history.push(searchSnap);
-    }
     view.listFilterTerm = '';
     view.listFilterSelPos = -1;
     view._homePaneNav = true;
@@ -3959,7 +4313,7 @@ function browsePrepareHomePaneNav(view) {
 function browseGoHome(view, refresh) {
     let hadListFilter = 2==view.searchActive && (view.listFilterTerm || view._gridFilterTerm);
     view._skipNextAddHistory = false;
-    view.searchActive = 0;
+    browseDismissLibSearchChrome(view);
     view.listFilterTerm = '';
     view.listFilterSelPos = -1;
     view._gridFilterTerm = undefined;
@@ -3998,9 +4352,9 @@ function browseGoHome(view, refresh) {
     view.currentItemImage=undefined;
     view.tbarActions=[];
     view.isTop = true;
-    view.grid = {allowed:true, use:view.$store.state.gridPerView ? isSetToUseGrid(GRID_TOP) : view.grid.use, numColumns:0, ih:GRID_MIN_HEIGHT, rows:[], few:false, haveSubtitle:true, multiSize:false, type:GRID_STANDARD};
+    view.grid = {allowed:true, use:view.$store.state.gridPerView ? isSetToUseGrid(GRID_TOP) : getHomeGridUse(), numColumns:0, ih:GRID_MIN_HEIGHT, rows:[], few:false, haveSubtitle:true, multiSize:false, type:GRID_STANDARD};
     view.items = view.$store.state.detailedHomeItems.length>0 && view.grid.use ? view.topExtra.concat(view.top) : view.top;
-    view.currentActions=[{action:VLIB_ACTION}, {action:(view.grid.use ? USE_LIST_ACTION : view.$store.state.detailedHomeItems.length>0 ? USE_ALT_GRID_ACTION : USE_GRID_ACTION)}];
+    view.currentActions=[{action:VLIB_ACTION}];
     view.hoverBtns = !IS_MOBILE;
     view.command = undefined;
     view.subtitleClickable = false;
@@ -4028,6 +4382,17 @@ function browseGoHome(view, refresh) {
     }
 }
 
+function browseHistoryIsSearchPage(entry) {
+    if (!entry || !entry.current || !entry.current.id) {
+        return false;
+    }
+    return (''+entry.current.id).indexOf(SEARCH_ID_PREFIX)===0;
+}
+
+function browseHistoryIsBlankSearch(entry) {
+    return browseHistoryIsSearchPage(entry) && (!entry.items || entry.items.length<1);
+}
+
 function browseGoBack(view, refresh) {
     if (view.fetchingItem!=undefined) {
         view.nextReqId();
@@ -4038,10 +4403,16 @@ function browseGoBack(view, refresh) {
         view._browseShellNav = false;
         view._skipNextAddHistory = false;
     }
+    // Captured before the clear below. Truthy while the bar is on this page
+    // (library search or in-list filter), so backing out of it does not
+    // reopen the field on the page underneath.
     let searchWasActive = view.searchActive;
     // 0 = not active
     // 1 = library search
     // 2 = search within list
+    if (1==view.searchActive) {
+        browseDismissLibSearchChrome(view);
+    }
     if (2==view.searchActive) {
         view.searchActive = 0;
         view.listFilterTerm = '';
@@ -4060,6 +4431,16 @@ function browseGoBack(view, refresh) {
             view.applyListFilterClasses();
         }
     }
+    // Unified search lives in the header. Back closes it and restores the list
+    // position instead of leaving My Music.
+    if (view.fusionMode && view.$children) {
+        for (var ci=0, clen=view.$children.length; ci<clen; ++ci) {
+            var fusionChild = view.$children[ci];
+            if (fusionChild && typeof fusionChild.consumeHeaderSearch==='function' && fusionChild.consumeHeaderSearch()) {
+                return;
+            }
+        }
+    }
     if (view.prevPage) {
         var nextPage = ""+view.prevPage;
         if (view.$store.state.desktopLayout) {
@@ -4075,6 +4456,10 @@ function browseGoBack(view, refresh) {
         }
     }
     let next = undefined==view.current ? undefined : {id:view.current.id, pos:view.scrollElement.scrollTop};
+    // Drop the empty search field. A results list stays, and is shown as a normal page.
+    while (view.history.length>1 && browseHistoryIsBlankSearch(view.history[view.history.length-1])) {
+        view.history.pop();
+    }
     if (view.history.length<2) {
         browseGoHome(view);
         view.next = next;
@@ -4123,7 +4508,12 @@ function browseGoBack(view, refresh) {
     view.prevPage = prev.prevPage;
     view.allItems = prev.allItems;
     view.inGenre = prev.inGenre;
-    view.searchActive = 1==prev.searchActive && !searchWasActive ? prev.searchActive : 0;
+    if (prev.enteredTerm) {
+        view.enteredTerm = prev.enteredTerm;
+    }
+    // Reopen the library search field only when returning to that results
+    // page from a deeper level. In-list filter stays cleared.
+    view.searchActive = (1==prev.searchActive && !searchWasActive) ? 1 : 0;
     view.canDrop = prev.canDrop;
     view.itemCustomActions = prev.itemCustomActions;
     if (!view.$store.state.gridPerView && gridWasActive!=gridWillBeActive) {
@@ -4352,6 +4742,39 @@ function browseBuildCommand(view, item, commandName, doReplacements, allowLibId,
     return cmd;
 }
 
+/** My Music → Other row for the unified browse panel. Pinned like any other mode. */
+function browseEnsureUnifyBrowseItem(view) {
+    if (!view || !view.myMusic || !view.myMusicOther) {
+        return;
+    }
+    for (var i=0, len=view.myMusic.length; i<len; ++i) {
+        if (view.myMusic[i] && view.myMusic[i].id==UNIFY_BROWSE_ID) {
+            return;
+        }
+    }
+    var item = {
+        title: i18n("Unify browse"),
+        icon: "view_column",
+        id: UNIFY_BROWSE_ID,
+        type: "app",
+        // After server modes so it stays at the bottom of Other
+        weight: 100000
+    };
+    view.myMusic.push(item);
+    view.myMusicOther.push(item);
+}
+
+/** Highlight the pinned unified-browse row while that panel is the one opened from the pin. */
+function browseFusionPinActiveId(view) {
+    if (!view || !view.fusionMode || !view.current || view.current.id!=TOP_MYMUSIC_ID) {
+        return undefined;
+    }
+    if (view.homePaneSelectedId!=UNIFY_BROWSE_ID) {
+        return undefined;
+    }
+    return UNIFY_BROWSE_ID;
+}
+
 function browseMyMusicMenu(view) {
     if (view.myMusic.length>0 && !view.myMusic[0].needsUpdating) {
         browseCheckExpand(view);
@@ -4369,6 +4792,7 @@ function browseMyMusicMenu(view) {
             view.myMusicRelease = resp.release;
             view.myMusicOther = resp.other;
             view.stdItems = resp.stdItems;
+            browseEnsureUnifyBrowseItem(view);
 
             if (resp.listWorks!=lmsOptions.listWorks) {
                 lmsOptions.listWorks = resp.listWorks;
@@ -4654,6 +5078,10 @@ function browsePin(view, item, add, mapped) {
         } else if (item.id==START_RANDOM_MIX_ID) {
             view.top.splice(lastPinnedIndex+1, 0,
                 {id: item.id, title: item.title, svg: item.svg, isPinned: true, menu: [RENAME_ACTION, UNPIN_ACTION], weight: 10000});
+        } else if (item.id==UNIFY_BROWSE_ID) {
+            view.top.splice(lastPinnedIndex+1, 0,
+                {id: item.id, title: item.title, icon: item.icon, svg: item.svg, isPinned: true,
+                 menu: [RENAME_ACTION, UNPIN_ACTION], weight: 10000});
         } else if (item.type=='extra') {
             view.top.splice(lastPinnedIndex+1, 0,
                             {id: item.id, title: item.title, icon: item.icon, svg: item.svg, url: item.url, isPinned: true, type:item.type,
@@ -5426,12 +5854,12 @@ function browseSortCategories(all, artist, release, other) {
     if (lmsOptions.groupMyMusicCategories && undefined!=artist && undefined!=release && undefined!=other && (artist.length>1 || release.length>1)) {
         let items = [];
         if (artist.length>0) {
-            items.push({title:i18n("By Artist"), id:"car", header:true, svg:"artist"});
+            items.push({title:i18n("Artists"), id:"car", header:true, svg:"artist"});
             artist.sort(weightSort);
             items.push(...artist);
         }
         if (release.length>0) {
-            items.push({title:lmsOptions.supportReleaseTypes ? i18n("By Release") :  i18n("By Album"), id:"cal", header:true, svg:"release"});
+            items.push({title:lmsOptions.supportReleaseTypes ? i18n("Releases") : i18n("Albums"), id:"cal", header:true, svg:"release"});
             release.sort(weightSort);
             items.push(...release);
         }

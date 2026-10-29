@@ -23,45 +23,6 @@ Vue.component('lms-navdrawer', {
 <v-navigation-drawer v-model="show" app temporary touchless :width="maxWidth" class="nd-glass" v-bind:class="{'nd-closing':drawerClosing}" style="display:flex;flex-direction:column">
  <div class="nd-top"></div>
  <div class="nd-header">
-  <v-menu v-if="enableMenuButton" bottom left v-model="showMenu" style="position:absolute; right:40px; z-index:5">
-   <v-btn icon slot="activator" :title="i18n('Menu')"><v-icon>more_vert</v-icon></v-btn>
-   <v-list>
-    <v-subheader v-if="multipleStandardPlayers">{{i18n("All players")}}</v-subheader>
-    <v-list-tile v-if="multipleStandardPlayers" role="menuitem" @click="sleepAll()" class="menu-group-item">
-     <v-list-tile-avatar><v-icon>hotel</v-icon></v-list-tile-avatar>
-     <v-list-tile-content><v-list-tile-title>{{i18n('Sleep')}}</v-list-tile-title></v-list-tile-content>
-    </v-list-tile>
-    <v-list-tile v-if="multipleStandardPlayers" role="menuitem" @click="powerAll(0)" class="menu-group-item">
-     <v-list-tile-avatar><v-icon class="dimmed">power_settings_new</v-icon></v-list-tile-avatar>
-     <v-list-tile-content><v-list-tile-title>{{i18n('Switch off')}}</v-list-tile-title></v-list-tile-content>
-    </v-list-tile>
-    <v-list-tile v-if="multipleStandardPlayers" role="menuitem" @click="powerAll(1)" class="menu-group-item">
-     <v-list-tile-avatar><v-icon>power_settings_new</v-icon></v-list-tile-avatar>
-     <v-list-tile-content><v-list-tile-title>{{i18n('Switch on')}}</v-list-tile-title></v-list-tile-content>
-    </v-list-tile>
-    <v-divider v-if="multipleStandardPlayers"></v-divider>
-    <v-list-tile v-if="numPlayers>1" role="menuitem" @click="configurePlayerList">
-     <v-list-tile-avatar><img class="svg-img" :src="'list-configure' | svgIcon(darkUi)"></img></v-list-tile-avatar>
-     <v-list-tile-content><v-list-tile-title>{{i18n('Configure player list')}}</v-list-tile-title></v-list-tile-content>
-    </v-list-tile>
-    <v-list-tile v-if="numPlayers!=numEnabledPlayers" role="menuitem" @click="toggleShowAllPlayers">
-     <v-list-tile-avatar><v-icon>{{showAllPlayers ? 'check_box' : 'check_box_outline_blank'}}</v-icon></v-list-tile-avatar>
-     <v-list-tile-content><v-list-tile-title>{{i18n('Show all players')}}</v-list-tile-title></v-list-tile-content>
-    </v-list-tile>
-    <v-divider v-if="LMS_P_USERS || showCustomSystemActions"></v-divider>
-    <v-list-tile role="menuitem" @click="switchUser" v-if="LMS_P_USERS">
-     <v-list-tile-avatar><img class="svg-img" :src="'user-switch' | svgIcon(darkUi)"></img>
-     </v-list-tile-avatar>
-     <v-list-tile-content><v-list-tile-title>{{i18n('Switch user')}}</v-list-tile-title></v-list-tile-content>
-    </v-list-tile>
-    <template v-if="showCustomSystemActions" v-for="(action, index) in customSystemActions">
-     <v-list-tile role="menuitem" @click="doCustomAction(action)" v-if="undefined==action.players || action.players.indexOf(player.id)>=0">
-      <v-list-tile-avatar><v-icon v-if="action.icon">{{action.icon}}</v-icon><img v-else-if="action.svg" class="svg-img" :src="action.svg | svgIcon(darkUi)"></img></v-list-tile-avatar>
-      <v-list-tile-content><v-list-tile-title>{{action.title}}</v-list-tile-title></v-list-tile-content>
-     </v-list-tile>
-    </template>
-   </v-list>
-  </v-menu>
   <v-list-tile class="nd-header-tile" @click.prevent="close">
    <v-list-tile-avatar v-if="(undefined==queryParams.dragleft || queryParams.dragleft<=48) && ('l'!=queryParams.tbarBtnsPos)" class="nd-header-back" :title="i18n('Close')"><v-btn icon flat @click.stop="show=false"><v-icon>{{BACK_ICON}}</v-icon></v-btn></v-list-tile-avatar>
    <div v-if="LMS_P_USERS" class="nd-user">
@@ -73,7 +34,46 @@ Vue.component('lms-navdrawer', {
     <div class="ellipsis">{{userName}}</div>
    </div>
    <div v-else class="lyrion-logo" v-longpress:nomove="clickLogo"><img :src="'lyrion-logo' | svgIcon(darkUi)"></img></div>
-   <v-list-tile-action class="nd-header-info">
+   <v-list-tile-action class="nd-header-info" @click.stop>
+    <v-menu v-if="enableMenuButton" bottom left v-model="showMenu">
+     <v-btn icon slot="activator" @click.stop :title="i18n('Menu')"><v-icon>more_vert</v-icon></v-btn>
+     <v-list>
+      <v-subheader v-if="multipleStandardPlayers">{{i18n("All players")}}</v-subheader>
+      <v-list-tile v-if="multipleStandardPlayers" role="menuitem" @click="sleepAll()" class="menu-group-item">
+       <v-list-tile-avatar><v-icon>hotel</v-icon></v-list-tile-avatar>
+       <v-list-tile-content><v-list-tile-title>{{i18n('Sleep')}}</v-list-tile-title></v-list-tile-content>
+      </v-list-tile>
+      <v-list-tile v-if="multipleStandardPlayers" role="menuitem" @click="powerAll(0)" class="menu-group-item">
+       <v-list-tile-avatar><v-icon class="dimmed">power_settings_new</v-icon></v-list-tile-avatar>
+       <v-list-tile-content><v-list-tile-title>{{i18n('Switch off')}}</v-list-tile-title></v-list-tile-content>
+      </v-list-tile>
+      <v-list-tile v-if="multipleStandardPlayers" role="menuitem" @click="powerAll(1)" class="menu-group-item">
+       <v-list-tile-avatar><v-icon>power_settings_new</v-icon></v-list-tile-avatar>
+       <v-list-tile-content><v-list-tile-title>{{i18n('Switch on')}}</v-list-tile-title></v-list-tile-content>
+      </v-list-tile>
+      <v-divider v-if="multipleStandardPlayers"></v-divider>
+      <v-list-tile v-if="numPlayers>1" role="menuitem" @click="configurePlayerList">
+       <v-list-tile-avatar><img class="svg-img" :src="'list-configure' | svgIcon(darkUi)"></img></v-list-tile-avatar>
+       <v-list-tile-content><v-list-tile-title>{{i18n('Configure player list')}}</v-list-tile-title></v-list-tile-content>
+      </v-list-tile>
+      <v-list-tile v-if="numPlayers!=numEnabledPlayers" role="menuitem" @click="toggleShowAllPlayers">
+       <v-list-tile-avatar><v-icon>{{showAllPlayers ? 'check_box' : 'check_box_outline_blank'}}</v-icon></v-list-tile-avatar>
+       <v-list-tile-content><v-list-tile-title>{{i18n('Show all players')}}</v-list-tile-title></v-list-tile-content>
+      </v-list-tile>
+      <v-divider v-if="LMS_P_USERS || showCustomSystemActions"></v-divider>
+      <v-list-tile role="menuitem" @click="switchUser" v-if="LMS_P_USERS">
+       <v-list-tile-avatar><img class="svg-img" :src="'user-switch' | svgIcon(darkUi)"></img>
+       </v-list-tile-avatar>
+       <v-list-tile-content><v-list-tile-title>{{i18n('Switch user')}}</v-list-tile-title></v-list-tile-content>
+      </v-list-tile>
+      <template v-if="showCustomSystemActions" v-for="(action, index) in customSystemActions">
+       <v-list-tile role="menuitem" @click="doCustomAction(action)" v-if="undefined==action.players || action.players.indexOf(player.id)>=0">
+        <v-list-tile-avatar><v-icon v-if="action.icon">{{action.icon}}</v-icon><img v-else-if="action.svg" class="svg-img" :src="action.svg | svgIcon(darkUi)"></img></v-list-tile-avatar>
+        <v-list-tile-content><v-list-tile-title>{{action.title}}</v-list-tile-title></v-list-tile-content>
+       </v-list-tile>
+      </template>
+     </v-list>
+    </v-menu>
     <v-btn icon @click.stop="menuAction(TB_INFO.id)" :title="updatesAvailable ? trans.updatesAvailable : restartRequired ? trans.restartRequired : TB_INFO.title">
      <img v-if="updatesAvailable" class="svg-img" :src="'update' | infoIcon(darkUi, true)"></img>
      <img v-else-if="restartRequired" class="svg-img" :src="'restart' | infoIcon(darkUi, true)">
@@ -91,7 +91,7 @@ Vue.component('lms-navdrawer', {
    <template v-for="(item, index) in visiblePlayers" v-if="connected">
     <v-subheader v-if="index==0 && !item.isgroup && visiblePlayers[visiblePlayers.length-1].isgroup">{{trans.standardPlayers}}</v-subheader>
     <v-subheader v-else-if="index>0 && item.isgroup && !visiblePlayers[index-1].isgroup">{{trans.groupPlayers}}</v-subheader>
-    <v-list-tile @click="setPlayer(item.id)" v-bind:class="{'nd-active-player':player && item.id === player.id, 'nd-player-glow':glowPlayerId==item.id && !glowPlayerOnce, 'nd-player-glow-once':glowPlayerId==item.id && glowPlayerOnce, 'nd-player-picked':pickedPlayerId==item.id}" :id="'nd-player-'+index">
+    <v-list-tile @click="setPlayer(item.id)" @contextmenu.prevent.stop="playerContextMenu(item, $event)" v-bind:class="{'nd-active-player':player && item.id === player.id, 'nd-player-glow':glowPlayerId==item.id && !glowPlayerOnce, 'nd-player-glow-once':glowPlayerId==item.id && glowPlayerOnce, 'nd-player-picked':pickedPlayerId==item.id}" :id="'nd-player-'+index">
      <v-list-tile-avatar v-longpress:nomove="syncPlayer" :id="index+'-icon'">
       <v-icon v-if="item.icon.icon">{{item.icon.icon}}</v-icon><img v-else class="svg-img" :src="item.icon.svg | svgIcon(darkUi)"></img>
      </v-list-tile-avatar>
@@ -145,7 +145,7 @@ Vue.component('lms-navdrawer', {
   <v-subheader>{{trans.shortcuts}}</v-subheader>
   <ul class="nd-shortcuts" v-bind:class="{'nd-shortcuts-wide':maxWidth>320}">
    <li v-for="(item, index) in shortcuts">
-    <v-btn icon class="toolbar-button" @click.stop="show=false; bus.$emit('browse-shortcut', item.id)" v-if="!homeButton || item.id!=HOME_SHORTCUT" :title="item.title">
+    <v-btn icon class="toolbar-button" @click.stop="show=false; bus.$emit('browse-shortcut', item.id, {title: item.title, isPinned: !!item.isPinned})" v-if="!homeButton || item.id!=HOME_SHORTCUT" :title="item.title">
      <v-icon v-if="undefined!=item.icon">{{item.icon}}</v-icon>
      <img v-else class="svg-img" :src="item.svg | svgIcon(darkUi)"></img>
     </v-btn>
@@ -157,7 +157,7 @@ Vue.component('lms-navdrawer', {
   <ul class="nd-shortcuts" v-bind:class="{'nd-shortcuts-wide':maxWidth>320}">
    <template v-for="(item, index) in menuItems">
     <li :title="item.title" v-if="item!=DIVIDER && !item.hdr && (TB_PLAYER_SETTINGS.id==item.id ? (player && connected) : (TB_SERVER_SETTINGS.id!=item.id || (unlockAll && connected)))">
-     <v-btn v-if="TB_APP_SETTINGS.id==item.id" icon class="toolbar-button" @click="menuAction(item.id)">
+     <v-btn v-if="TB_APP_SETTINGS.id==item.id" :href="hostAppSettingsHref()" icon class="toolbar-button" @click="openHostAppSettings">
       <img class="svg-img" :src="TB_APP_SETTINGS.svg | svgIcon(darkUi)"></img>
      </v-btn>
      <v-btn v-else-if="TB_CUSTOM_SETTINGS_ACTIONS.id!=item.id" icon class="toolbar-button" @click="menuAction(item.id)">
@@ -189,7 +189,7 @@ Vue.component('lms-navdrawer', {
     </v-list-tile-content>
     <v-list-tile-action v-if="item.shortcut && keyboardControl" class="menu-shortcut">{{item.shortcut}}</v-list-tile-action>
    </v-list-tile>
-   <v-list-tile v-else-if="TB_APP_SETTINGS.id==item.id" @click="menuAction(item.id)">
+   <v-list-tile v-else-if="TB_APP_SETTINGS.id==item.id" :href="hostAppSettingsHref()" @click="openHostAppSettings">
     <v-list-tile-avatar><img class="svg-img" :src="TB_APP_SETTINGS.svg | svgIcon(darkUi)"></img></v-list-tile-avatar>
     <v-list-tile-content><v-list-tile-title>{{TB_APP_SETTINGS.stitle}}</v-list-tile-title></v-list-tile-content>
    </v-list-tile>
@@ -208,6 +208,26 @@ Vue.component('lms-navdrawer', {
  </v-list>
  <div class="nd-bottom"></div>
  </div>
+ <v-menu v-model="playerMenu.show" :position-x="playerMenu.x" :position-y="playerMenu.y" absolute offset-y content-class="nd-player-ctx" :z-index="400">
+  <v-list v-if="playerMenu.player">
+   <v-list-tile role="menuitem" @click="playerMenuSleep()">
+    <v-list-tile-avatar><v-icon>hotel</v-icon></v-list-tile-avatar>
+    <v-list-tile-content><v-list-tile-title>{{i18n('Sleep')}}</v-list-tile-title></v-list-tile-content>
+   </v-list-tile>
+   <v-list-tile role="menuitem" @click="playerMenuAlarms()">
+    <v-list-tile-avatar><v-icon>alarm</v-icon></v-list-tile-avatar>
+    <v-list-tile-content><v-list-tile-title>{{i18n('Alarms')}}</v-list-tile-title></v-list-tile-content>
+   </v-list-tile>
+   <v-list-tile role="menuitem" v-if="canTransferPlayerQueue" @click="playerMenuTransfer()">
+    <v-list-tile-avatar><v-icon>swap_horiz</v-icon></v-list-tile-avatar>
+    <v-list-tile-content><v-list-tile-title>{{i18n('Transfer queue')}}</v-list-tile-title></v-list-tile-content>
+   </v-list-tile>
+   <v-list-tile role="menuitem" @click="playerMenuPresets()">
+    <v-list-tile-avatar><v-icon>dialpad</v-icon></v-list-tile-avatar>
+    <v-list-tile-content><v-list-tile-title>{{i18n('Presets')}}</v-list-tile-title></v-list-tile-content>
+   </v-list-tile>
+  </v-list>
+ </v-menu>
 </v-navigation-drawer>
 `,
     props: [],
@@ -236,7 +256,8 @@ Vue.component('lms-navdrawer', {
             pickedPlayerId: undefined,
             closeDrawerTimer: undefined,
             drawerClosing: false,
-            shortcutModHeld: false
+            shortcutModHeld: false,
+            playerMenu: { show:false, x:0, y:0, player:undefined }
         }
     },
     created() {
@@ -514,6 +535,143 @@ Vue.component('lms-navdrawer', {
             }
             this.animateDrawerClose();
         },
+        playerContextMenu(item, event) {
+            if (!item) {
+                return;
+            }
+            if (event) {
+                try { event.preventDefault(); } catch (e) {}
+                try { event.stopPropagation(); } catch (e2) {}
+            }
+            // Right-click must not select the player or close the device list.
+            this.cancelDrawerClose();
+            this.playerMenu = {
+                show: false,
+                x: event ? event.clientX : 0,
+                y: event ? event.clientY : 0,
+                player: item
+            };
+            this.$nextTick(function() {
+                this.playerMenu.show = true;
+                setTimeout(function() {
+                    this.placePlayerContextMenu();
+                }.bind(this), 30);
+            }.bind(this));
+        },
+        placePlayerContextMenu() {
+            let content = document.querySelector('.v-menu__content.nd-player-ctx');
+            if (!content) {
+                return;
+            }
+            // Drawer overflow + transform would clip an in-flow menu.
+            if (content.parentElement !== document.body) {
+                document.body.appendChild(content);
+            }
+            let w = content.offsetWidth || 240;
+            let h = content.offsetHeight || 220;
+            let x = this.playerMenu.x || 0;
+            let y = this.playerMenu.y || 0;
+            if (x + w > window.innerWidth - 8) {
+                x = Math.max(8, window.innerWidth - w - 8);
+            }
+            if (y + h > window.innerHeight - 8) {
+                y = Math.max(8, window.innerHeight - h - 8);
+            }
+            content.style.position = 'fixed';
+            content.style.left = x + 'px';
+            content.style.top = y + 'px';
+            content.style.zIndex = '400';
+        },
+        closeForPlayerMenu() {
+            this.playerMenu.show = false;
+            this.show = false;
+        },
+        playerMenuSleep() {
+            let p = this.playerMenu.player;
+            this.closeForPlayerMenu();
+            if (p) {
+                bus.$emit('dlg.open', 'sleep', p);
+            }
+        },
+        playerMenuAlarms() {
+            let p = this.playerMenu.player;
+            this.closeForPlayerMenu();
+            if (p) {
+                bus.$emit('dlg.open', 'playersettings', p, 'alarms');
+            }
+        },
+        playerMenuPresets() {
+            let p = this.playerMenu.player;
+            this.closeForPlayerMenu();
+            if (p) {
+                bus.$emit('dlg.open', 'presetseditor', p.id, p.name);
+            }
+        },
+        transferPlayerQueue(fromId, toId, modeVal, toName) {
+            let mode = 0==modeVal ? 'copy' : 1==modeVal ? 'move' : 'swap';
+            lmsCommand("", ["material-skin", "transferqueue", "from:"+fromId, "to:"+toId, "mode:"+mode]).then(({data}) => {
+                if (undefined!=data && undefined!=data.result && undefined!=data.result.error) {
+                    bus.$emit('showError', undefined, data.result.error);
+                    return;
+                }
+                if (0==modeVal) {
+                    bus.$emit('showMessage', i18n("Queue copied to '%1'", toName));
+                } else {
+                    this.$store.commit('setPlayer', toId);
+                }
+                bus.$emit('refreshStatus', toId);
+            }).catch(err => {
+                bus.$emit('showError', err, i18n("Failed to transfer queue"));
+            });
+        },
+        playerMenuTransfer() {
+            let target = this.playerMenu.player;
+            let from = this.$store.state.player;
+            let players = this.$store.state.players || [];
+            this.playerMenu.show = false;
+            if (!target || !from || players.length<2) {
+                return;
+            }
+            this.show = false;
+            let opts = [
+                { val:0, title:i18n("Copy the queue to") },
+                { val:1, title:i18n("Move the queue to") },
+                { val:2, title:i18n("Swap the queue with") }
+            ];
+            if (from.id==target.id) {
+                let list = [];
+                for (let i=0, len=players.length; i<len; ++i) {
+                    if (players[i].id!=from.id) {
+                        list.push({
+                            val: players[i].id,
+                            title: players[i].name,
+                            icon: players[i].icon ? players[i].icon.icon : undefined,
+                            svg: players[i].icon ? players[i].icon.svg : undefined
+                        });
+                    }
+                }
+                choose(i18n("Transfer queue"), list, {options:opts, key:'movequeue', def:1}).then(choice => {
+                    if (!choice || !choice.item) {
+                        return;
+                    }
+                    let modeVal = choice.option ? choice.option.val : 1;
+                    this.transferPlayerQueue(from.id, choice.item.val, modeVal, choice.item.title);
+                });
+                return;
+            }
+            let directed = [
+                { val:0, title:i18n("Copy the queue to")+" "+target.name },
+                { val:1, title:i18n("Move the queue to")+" "+target.name },
+                { val:2, title:i18n("Swap the queue with")+" "+target.name }
+            ];
+            choose(i18n("Transfer queue"), directed, {key:'movequeue', def:1}).then(choice => {
+                if (undefined==choice) {
+                    return;
+                }
+                let modeVal = undefined!=choice.val ? choice.val : (choice.item ? choice.item.val : 1);
+                this.transferPlayerQueue(from.id, target.id, modeVal, target.name);
+            });
+        },
         cancelDrawerClose() {
             if (undefined!=this.closeDrawerTimer) {
                 clearTimeout(this.closeDrawerTimer);
@@ -646,9 +804,30 @@ Vue.component('lms-navdrawer', {
                 this.menuAction(TB_MANAGE_PLAYERS.id);
             }
         },
+        /* Craig's Material navigates to queryParams.appSettings. LyrPlay (and any
+           other host) intercepts that URL. minim-app-settings is only the
+           Lyrion.app sentinel, handled inside the skin. */
+        hostAppSettingsHref() {
+            var href = (typeof queryParams !== 'undefined' && queryParams.appSettings) ? (''+queryParams.appSettings) : '';
+            if (!href || href==='minim-app-settings' || href.indexOf('minim-app-settings')>=0) {
+                return undefined;
+            }
+            return href;
+        },
+        openHostAppSettings(event) {
+            var href = this.hostAppSettingsHref();
+            this.show = false;
+            if (href) {
+                return;
+            }
+            if (event && event.preventDefault) {
+                event.preventDefault();
+            }
+            bus.$emit('dlg.open', 'appsettings');
+        },
         menuAction(id) {
             if (TB_APP_SETTINGS.id==id) {
-                bus.$emit('dlg.open', 'appsettings');
+                this.openHostAppSettings();
             } else if (TB_UI_SETTINGS.id==id) {
                 bus.$emit('dlg.open', 'uisettings');
             } else if (TB_PLAYER_SETTINGS.id==id) {
@@ -834,6 +1013,12 @@ Vue.component('lms-navdrawer', {
         player () {
             return this.$store.state.player
         },
+        desktopLayout() {
+            return this.$store.state.desktopLayout
+        },
+        canTransferPlayerQueue() {
+            return !!(this.$store.state.players && this.$store.state.players.length>1)
+        },
         players () {
             return this.$store.state.players
         },
@@ -939,6 +1124,10 @@ Vue.component('lms-navdrawer', {
     },
     watch: {
         'show': function(newVal) {
+            let app = document.querySelector('.lms-app');
+            if (app) {
+                app.classList.toggle('nd-open', !!newVal);
+            }
             bus.$emit('navdrawer', newVal);
             this.$store.commit('menuVisible', {name:'navdrawer', shown:newVal});
             if (newVal) {
@@ -969,6 +1158,10 @@ Vue.component('lms-navdrawer', {
         }
     },
     beforeDestroy() {
+        let app = document.querySelector('.lms-app');
+        if (app) {
+            app.classList.remove('nd-open');
+        }
         this.cancelSleepTimer();
         this.cancelStatusTimer();
         this.cancelDrawerClose();

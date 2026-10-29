@@ -10,13 +10,13 @@ Vue.component('lms-bottomnav', {
     template: `
 <v-footer class="lms-footer" v-bind:class="{'trans-footer':useTransparentFooter, 'nav-text':nowPlayingFull&&!coloredToolbars, 'nav-shortcut-footer':useShortcutNav}" id="nav-bar">
  <!-- One/dual-line miniplayer modes: fixed browse/queue + search, then scrollable shortcuts -->
- <div v-if="useShortcutNav" class="nav-shortcut-bar" v-bind:class="{'nav-shortcuts-overflow':shortcutOverflow}">
+ <div v-if="useShortcutNav" class="nav-shortcut-bar" v-bind:class="{'nav-shortcuts-overflow':shortcutOverflow, 'nav-shortcuts-drop':shortcutDropHover}" @dragover.prevent="onShortcutDragOver" @dragenter.prevent="onShortcutDragEnter" @dragleave="onShortcutDragLeave" @drop.prevent="onShortcutDrop">
   <div class="nav-shortcut-fixed">
-   <v-btn flat icon class="nav-page-toggle" @click="toggleBrowseQueue" :title="pageToggleTitle">
+   <v-btn flat icon class="nav-page-toggle" v-bind:class="{'nav-shortcut-active':pageToggleActive}" @click="toggleBrowseQueue" :title="pageToggleTitle">
     <v-icon v-if="pageToggleActive" class="nav-shortcut-icon">{{pageToggleActiveIcon}}</v-icon>
     <img v-else class="nav-svg-img nav-shortcut-icon" :src="pageToggleInactiveSvg | svgIcon(darkUi|(coloredToolbars&&!useTransparentFooter))" oncontextmenu="return false;"></img>
    </v-btn>
-   <label for="browse-search-input" class="v-btn v-btn--flat v-btn--icon nav-search-fixed" @click.stop="openSearch" :title="searchTitle" v-if="showSearchBtn">
+   <label for="browse-search-input" class="v-btn v-btn--flat v-btn--icon nav-search-fixed" v-bind:class="{'nav-shortcut-active':searchShortcutActive}" @click.stop="openSearch" :title="searchTitle" v-if="showSearchBtn">
     <img class="nav-svg-img nav-shortcut-icon" :src="searchSvg | svgIcon(darkUi|(coloredToolbars&&!useTransparentFooter))" oncontextmenu="return false;"></img>
    </label>
   </div>
@@ -24,7 +24,16 @@ Vue.component('lms-bottomnav', {
   <div class="nav-shortcuts-wrap" v-bind:class="{'nav-shortcuts-overflow':shortcutOverflow, 'nav-shortcuts-can-left':shortcutCanLeft, 'nav-shortcuts-can-right':shortcutCanRight}">
    <div class="nav-shortcuts-fade" aria-hidden="true"></div>
    <div class="nav-shortcuts-scroll" ref="shortcutScroll" @scroll.passive="updateShortcutOverflow" @touchstart.passive="shortcutTouchStart" @touchmove.passive="shortcutTouchMove" @touchend.passive="shortcutTouchEnd" @touchcancel.passive="shortcutTouchEnd">
-    <v-btn flat icon class="nav-shortcut-btn" v-for="(item, index) in scrollShortcuts" :key="'ns-'+item.id+'-'+index" @click="openShortcut(item, $event)" :title="item.title" v-bind:class="{'nav-shortcut-active':isShortcutActive(item), 'nav-shortcut-player-prefs':item.id==PLAYER_PREFS_SHORTCUT}">
+    <v-btn flat icon class="nav-shortcut-btn" v-for="(item, index) in scrollShortcuts" :key="'ns-'+item.id+'-'+index"
+     @click="openShortcut(item, $event)" :title="item.title"
+     :draggable="canUnpinShortcut(item)"
+     @dragstart="shortcutHtmlDragStart(item, $event)"
+     @dragend="shortcutHtmlDragEnd(item, $event)"
+     @touchstart="shortcutBtnTouchStart(item, $event)"
+     @touchmove="shortcutBtnTouchMove(item, $event)"
+     @touchend="shortcutBtnTouchEnd(item, $event)"
+     @touchcancel="shortcutBtnTouchEnd(item, $event)"
+     v-bind:class="{'nav-shortcut-active':isShortcutActive(item), 'nav-shortcut-player-prefs':item.id==PLAYER_PREFS_SHORTCUT, 'nav-shortcut-dragging':shortcutGhost && shortcutGhost.id==item.id}">
      <v-icon v-if="undefined!=item.icon" class="nav-shortcut-icon">{{item.icon}}</v-icon>
      <img v-else-if="item.svg" class="nav-svg-img nav-shortcut-icon" :src="item.svg | svgIcon(darkUi|(coloredToolbars&&!useTransparentFooter))" oncontextmenu="return false;"></img>
     </v-btn>
@@ -59,6 +68,8 @@ Vue.component('lms-bottomnav', {
             shortcutCanRight: false,
             shortcutTouchActive: false,
             shortcutsCollapsed: false,
+            shortcutDropHover: false,
+            shortcutGhost: null,
             npPlayerPrefsAvailable: false,
             npPlayerPrefsTitle: ''
         }
@@ -97,6 +108,14 @@ Vue.component('lms-bottomnav', {
             if (undefined!=id) {
                 this.activeShortcutId = id;
             }
+        }.bind(this));
+        bus.$on('shortcutPinDrag', function(msg) {
+            this.onBrowsePinDrag(msg);
+        }.bind(this));
+        bus.$on('shortcutSizeChanged', function() {
+            this.$nextTick(function() {
+                this.updateShortcutOverflow();
+            }.bind(this));
         }.bind(this));
         bus.$on('browse-shortcut', function(id) {
             if (undefined!=id) {
@@ -139,9 +158,14 @@ Vue.component('lms-bottomnav', {
             bus.$emit('requestNpPlayerPrefsAvailable');
             this.updateShortcutOverflow();
             this.observeShortcutScroll();
+            this.bindShortcutPinch();
         }.bind(this));
     },
     beforeDestroy() {
+        if (this._scGhostEl && this._scGhostEl.parentNode) {
+            this._scGhostEl.parentNode.removeChild(this._scGhostEl);
+            this._scGhostEl = undefined;
+        }
         if (this._shortcutResize) {
             window.removeEventListener('resize', this._shortcutResize);
         }
@@ -175,7 +199,7 @@ Vue.component('lms-bottomnav', {
                 for (let i=0, items=view.top, len=items.length; i<len; ++i) {
                     let item = items[i];
                     if ((undefined==item.menu || item.menu.length<1 || item.menu[0]!=PLAY_ACTION) && item.stdItem!=STD_ITEM_RANDOM_MIX && !view.hidden.has(item.id) && item.id!=START_RANDOM_MIX_ID && (item.id!=TOP_RADIO_ID || !lmsOptions.combineAppsAndRadio)) {
-                        this.shortcuts.push({id:item.id, icon:item.icon, svg:item.svg, title:item.title});
+                        this.shortcuts.push({id:item.id, icon:item.icon, svg:item.svg, title:item.title, isPinned:!!item.isPinned});
                     }
                 }
                 // Home first in the scrollable strip (search is fixed separately)
@@ -209,6 +233,203 @@ Vue.component('lms-bottomnav', {
         setShortcutScrollTouch(active) {
             this.shortcutTouchActive = active;
             bus.$emit('shortcutScrollTouch', active);
+        },
+        canUnpinShortcut(item) {
+            return !!(item && item.isPinned && item.id!=HOME_SHORTCUT && item.id!=PLAYER_PREFS_SHORTCUT);
+        },
+        shortcutBarRect() {
+            let el = this.$el && this.$el.querySelector ? this.$el.querySelector('.nav-shortcut-bar') : null;
+            return el ? el.getBoundingClientRect() : null;
+        },
+        pointInShortcutBar(x, y) {
+            let r = this.shortcutBarRect();
+            if (!r) { return false; }
+            return x>=r.left && x<=r.right && y>=r.top && y<=r.bottom;
+        },
+        setShortcutGhost(item, x, y) {
+            if (!item) {
+                this.shortcutGhost = null;
+                if (this._scGhostEl) {
+                    this._scGhostEl.style.display = 'none';
+                }
+                return;
+            }
+            this.shortcutGhost = { id: item.id, icon: item.icon, svg: item.svg };
+            let el = this._scGhostEl;
+            if (!el) {
+                el = document.createElement('div');
+                el.className = 'nav-shortcut-ghost';
+                document.body.appendChild(el);
+                this._scGhostEl = el;
+            }
+            el.innerHTML = '';
+            if (item.icon) {
+                let ic = document.createElement('i');
+                ic.className = 'v-icon material-icons nav-shortcut-icon';
+                ic.textContent = item.icon;
+                el.appendChild(ic);
+            }
+            el.style.display = 'flex';
+            el.style.left = x + 'px';
+            el.style.top = y + 'px';
+        },
+        unpinShortcut(item) {
+            if (!this.canUnpinShortcut(item)) {
+                return;
+            }
+            bus.$emit('unpinShortcutId', item.id);
+        },
+        onShortcutDragEnter() {
+            if (undefined!=window.mskBrowseDrag || window.mskShortcutDrag) {
+                this.shortcutDropHover = true;
+            }
+        },
+        onShortcutDragOver() {
+            if (undefined!=window.mskBrowseDrag || window.mskShortcutDrag) {
+                this.shortcutDropHover = true;
+            }
+        },
+        onShortcutDragLeave() {
+            this.shortcutDropHover = false;
+        },
+        onShortcutDrop() {
+            this.shortcutDropHover = false;
+            if (window.mskShortcutDrag) {
+                this._scDroppedOnBar = true;
+                return;
+            }
+            let idx = window.mskBrowseDrag;
+            if (undefined==idx) {
+                return;
+            }
+            bus.$emit('pinBrowseDragItem', idx);
+        },
+        shortcutHtmlDragStart(item, ev) {
+            if (!this.canUnpinShortcut(item)) {
+                try { ev.preventDefault(); } catch (e) {}
+                return;
+            }
+            this._scDroppedOnBar = false;
+            window.mskShortcutDrag = item.id;
+            this._scHtmlDragItem = item;
+            try {
+                ev.dataTransfer.effectAllowed = 'move';
+                ev.dataTransfer.setData('text/plain', item.title || '');
+            } catch (e2) {}
+        },
+        shortcutHtmlDragEnd(item) {
+            let stay = !!this._scDroppedOnBar;
+            this._scDroppedOnBar = false;
+            window.mskShortcutDrag = undefined;
+            this._scHtmlDragItem = undefined;
+            this.shortcutDropHover = false;
+            if (!stay) {
+                this.unpinShortcut(item);
+            }
+        },
+        shortcutBtnTouchStart(item, ev) {
+            if (!ev || !ev.touches || !ev.touches[0]) {
+                return;
+            }
+            if (!this.canUnpinShortcut(item)) {
+                this._scDrag = undefined;
+                return;
+            }
+            let t = ev.touches[0];
+            this._scDrag = { item: item, x: t.clientX, y: t.clientY, started: false };
+        },
+        shortcutBtnTouchMove(item, ev) {
+            let d = this._scDrag;
+            if (!d || !ev.touches || !ev.touches[0]) {
+                return;
+            }
+            let t = ev.touches[0];
+            let dx = t.clientX - d.x;
+            let dy = t.clientY - d.y;
+            if (!d.started) {
+                if (Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.15) {
+                    this._scDrag = undefined;
+                    return;
+                }
+                if (Math.abs(dy) > 16 || Math.abs(dx) > 22) {
+                    d.started = true;
+                    this._scDragSkipClick = true;
+                    this.setShortcutScrollTouch(true);
+                    try { ev.preventDefault(); } catch (e) {}
+                    this.setShortcutGhost(d.item, t.clientX, t.clientY);
+                }
+                return;
+            }
+            try { ev.preventDefault(); } catch (e2) {}
+            this.setShortcutGhost(d.item, t.clientX, t.clientY);
+            this.shortcutDropHover = this.pointInShortcutBar(t.clientX, t.clientY);
+        },
+        shortcutBtnTouchEnd(item, ev) {
+            let d = this._scDrag;
+            this._scDrag = undefined;
+            if (!d || !d.started) {
+                this.setShortcutGhost(null);
+                this.shortcutDropHover = false;
+                return;
+            }
+            let t = (ev && ev.changedTouches && ev.changedTouches[0]) ? ev.changedTouches[0] : null;
+            let x = t ? t.clientX : 0;
+            let y = t ? t.clientY : 0;
+            let onBar = this.pointInShortcutBar(x, y);
+            this.setShortcutGhost(null);
+            this.shortcutDropHover = false;
+            this._scDragSkipClick = true;
+            setTimeout(function() { this._scDragSkipClick = false; }.bind(this), 400);
+            if (!onBar) {
+                this.unpinShortcut(d.item);
+            }
+        },
+        onBrowsePinDrag(msg) {
+            if (!msg || !msg.phase) {
+                return;
+            }
+            if (msg.phase==='start' || msg.phase==='move') {
+                this.setShortcutGhost({ id: 'pin-drag', icon: msg.icon, svg: msg.svg }, msg.x, msg.y);
+                this.shortcutDropHover = this.pointInShortcutBar(msg.x, msg.y);
+                return;
+            }
+            if (msg.phase==='end') {
+                let onBar = this.pointInShortcutBar(msg.x, msg.y);
+                this.setShortcutGhost(null);
+                this.shortcutDropHover = false;
+                if (onBar && undefined!=msg.index) {
+                    bus.$emit('pinBrowseDragItem', msg.index);
+                }
+            }
+        },
+        bindShortcutPinch() {
+            let el = this.$el && this.$el.querySelector ? this.$el.querySelector('.nav-shortcut-bar') : null;
+            if (!el || el._scPinchBound) {
+                return;
+            }
+            el._scPinchBound = true;
+            let self = this;
+            let opts = { passive: false };
+            el.addEventListener('gesturestart', function(ev) {
+                try { ev.preventDefault(); } catch (e) {}
+                self._scPinchBase = clampShortcutSize(self.$store.state.shortcutSize);
+                self._scPinchLive = self._scPinchBase;
+            }, opts);
+            el.addEventListener('gesturechange', function(ev) {
+                try { ev.preventDefault(); } catch (e) {}
+                let scale = ev.scale || 1;
+                let delta = Math.round((scale - 1) / 0.14);
+                let next = clampShortcutSize((self._scPinchBase || 3) + delta);
+                if (next !== self._scPinchLive) {
+                    self._scPinchLive = next;
+                    applyShortcutSize(next);
+                }
+            }, opts);
+            el.addEventListener('gestureend', function(ev) {
+                try { ev.preventDefault(); } catch (e) {}
+                let n = clampShortcutSize(self._scPinchLive || self._scPinchBase || self.$store.state.shortcutSize);
+                self.$store.commit('setUiSettings', { shortcutSize: n });
+            }, opts);
         },
         shortcutTouchStart() {
             this.setShortcutScrollTouch(true);
@@ -251,13 +472,17 @@ Vue.component('lms-bottomnav', {
             if (item.id==PLAYER_PREFS_SHORTCUT) {
                 return false;
             }
-            // When not on browse, only Home is "active" for orientation
-            if (this.$store.state.page!='browse' && this.$store.state.page!='queue') {
-                return item.id==HOME_SHORTCUT && this.$store.state.page=='browse';
+            // Queue uses the page toggle. Now Playing has no browse highlight.
+            if (this.$store.state.page!='browse') {
+                return false;
             }
             return item.id==this.activeShortcutId;
         },
         openShortcut(item, ev) {
+            if (this._scDragSkipClick) {
+                this._scDragSkipClick = false;
+                return;
+            }
             if (item && item.id==PLAYER_PREFS_SHORTCUT) {
                 // Always open/toggle the player options bottom drawer (presets/input/DSP)
                 if (ev) {
@@ -271,9 +496,10 @@ Vue.component('lms-bottomnav', {
                 return;
             }
             this.activeShortcutId = item.id;
-            bus.$emit('browse-shortcut', item.id);
+            bus.$emit('browse-shortcut', item.id, {title: item.title, isPinned: !!item.isPinned});
         },
         openSearch() {
+            window._mskLibSearchArm = true;
             if (typeof focusBrowseSearchInput==='function') {
                 focusBrowseSearchInput();
             }
@@ -347,6 +573,131 @@ Vue.component('lms-bottomnav', {
             this.shortcutsCollapsed = collapsed;
             this.applyShortcutsCollapsedClass(collapsed);
         },
+        /* Shortcut show/hide uses the same 0.22s linear as the dock snap.
+           An inline cubic-bezier on the np-bar ran beside that linear and
+           read as a second, bouncing move. clearDockFooterDrag can leave
+           transition:none, which would hide the stylesheet timing — clear
+           that override and do not install another curve. */
+        armShortcutCollapseMotion() {
+            try {
+                if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                    return;
+                }
+            } catch (e) {}
+            let app = document.querySelector('.lms-app');
+            if (app) {
+                app.classList.add('nav-shortcut-collapse-motion');
+            }
+            let nodes = [document.getElementById('nav-bar'), document.getElementById('np-bar')];
+            for (let i=0; i<nodes.length; ++i) {
+                let el = nodes[i];
+                if (!el || el.classList.contains('nav-shortcut-drag') || el.classList.contains('np-bar-dock-dragging')) {
+                    continue;
+                }
+                if (el.style.transition==='none' || el.style.webkitTransition==='none') {
+                    el.style.transition = '';
+                    el.style.webkitTransition = '';
+                }
+            }
+            if (nodes[0]) {
+                void nodes[0].offsetHeight;
+            }
+            if (this._shortcutMotionTimer) {
+                clearTimeout(this._shortcutMotionTimer);
+            }
+            this._shortcutMotionTimer = setTimeout(function() {
+                this._shortcutMotionTimer = undefined;
+                if (app) {
+                    app.classList.remove('nav-shortcut-collapse-motion');
+                }
+                let fade = document.querySelector('.msk-bottom-fade');
+                let bar = document.getElementById('np-bar');
+                if (fade && (!bar || !bar.classList.contains('np-bar-dock-dragging'))) {
+                    fade.style.transition = '';
+                    fade.style.webkitTransition = '';
+                }
+            }.bind(this), 260);
+        },
+        /* Used px. getPropertyValue of calc() / min() is the specified text, and parseFloat is NaN. */
+        shortcutCssPx(name) {
+            let raw = '';
+            try {
+                raw = getComputedStyle(document.documentElement).getPropertyValue(name);
+            } catch (e) {}
+            let n = parseFloat(raw);
+            if (!isNaN(n) && /px\s*$/.test(String(raw))) {
+                return n;
+            }
+            let probe = document.createElement('div');
+            probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;width:0;height:var(' + name + ')';
+            document.documentElement.appendChild(probe);
+            let h = probe.offsetHeight || 0;
+            if (probe.parentNode) {
+                probe.parentNode.removeChild(probe);
+            }
+            return h;
+        },
+        /* Raised rest is 0. Docked or auto-collapsed drops by the shortcut strip, minus the home-indicator lift. */
+        shortcutFadeRestY() {
+            let app = document.querySelector('.lms-app');
+            if (!app || app.classList.contains('np-sheet-open')) {
+                return 0;
+            }
+            if (!app.classList.contains('np-bar-docked') && !app.classList.contains('nav-shortcuts-auto-collapsed')) {
+                return 0;
+            }
+            let lift = this.shortcutCssPx('--np-bar-dock-lift');
+            if (!(lift > 0)) {
+                let footer = document.getElementById('nav-bar');
+                lift = footer && footer.offsetHeight ? footer.offsetHeight : 0;
+            }
+            let rest = this.shortcutCssPx('--np-home-rest');
+            if (!(rest > 0) || rest >= lift) {
+                rest = 0;
+            }
+            return Math.max(0, Math.round(lift - rest));
+        },
+        applyShortcutFadeRest(fade) {
+            fade = fade || document.querySelector('.msk-bottom-fade');
+            if (!fade) {
+                return;
+            }
+            let t = 'translate3d(0,' + this.shortcutFadeRestY() + 'px,0)';
+            fade.style.transform = t;
+            fade.style.webkitTransform = t;
+        },
+        /* Pixel translate. A CSS var inside transform often waits for the next scroll on iOS. */
+        syncShortcutFade(collapsed) {
+            let fade = document.querySelector('.msk-bottom-fade');
+            if (!fade) {
+                return;
+            }
+            this._shortcutFadeHold = !!collapsed;
+            let y = collapsed ? this.shortcutFadeRestY() : 0;
+            let ease = 'transform 0.22s linear';
+            try {
+                if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                    ease = 'none';
+                }
+            } catch (e) {}
+            fade.style.transition = ease;
+            fade.style.webkitTransition = ease;
+            try { void fade.offsetHeight; } catch (e2) {}
+            fade.style.transform = 'translate3d(0,' + y + 'px,0)';
+            fade.style.webkitTransform = 'translate3d(0,' + y + 'px,0)';
+        },
+        clearShortcutFadeInline() {
+            this._shortcutFadeHold = false;
+            let fade = document.querySelector('.msk-bottom-fade');
+            if (!fade) {
+                return;
+            }
+            fade.style.transition = '';
+            fade.style.webkitTransition = '';
+            // Leave used pixels. Emptying the inline transform hands the fade back to a
+            // CSS calc that iOS does not paint until the next scroll.
+            this.applyShortcutFadeRest(fade);
+        },
         applyShortcutsCollapsedClass(collapsed) {
             try {
                 let app = document.querySelector('.lms-app');
@@ -356,13 +707,20 @@ Vue.component('lms-bottomnav', {
                 // When already docked, shortcuts are hidden by dock CSS — don't stack states
                 if (app.classList.contains('np-bar-docked') || app.classList.contains('np-sheet-open')) {
                     app.classList.remove('nav-shortcuts-auto-collapsed');
+                    this.clearShortcutFadeInline();
                     return;
                 }
-                if (collapsed && this.autoCollapseEnabled) {
+                let want = !!(collapsed && this.autoCollapseEnabled);
+                if (app.classList.contains('nav-shortcuts-auto-collapsed')===want) {
+                    return;
+                }
+                this.armShortcutCollapseMotion();
+                if (want) {
                     app.classList.add('nav-shortcuts-auto-collapsed');
                 } else {
                     app.classList.remove('nav-shortcuts-auto-collapsed');
                 }
+                this.syncShortcutFade(want);
             } catch (e) {}
         },
         onContentScroll(scrollTop) {
@@ -447,6 +805,9 @@ Vue.component('lms-bottomnav', {
         pageToggleActive() {
             return 'queue'==this.$store.state.page;
         },
+        searchShortcutActive() {
+            return 'browse'==this.$store.state.page && this.activeShortcutId==SEARCH_SHORTCUT;
+        },
         pageToggleActiveIcon() {
             return 'library_music';
         },
@@ -462,32 +823,12 @@ Vue.component('lms-bottomnav', {
         searchSvg() {
             return (ACTIONS[SEARCH_LIB_ACTION] && ACTIONS[SEARCH_LIB_ACTION].svg) ? ACTIONS[SEARCH_LIB_ACTION].svg : 'search-library';
         },
-        /* Scrollable strip: home + player prefs (if available) + pinned items (search is fixed) */
+        /* Scrollable strip: home + pinned items. Search is fixed.
+           Player options stay in the pull-to-refresh menu, not this bar. */
         scrollShortcuts() {
-            let list = this.shortcuts.filter(function(s) {
+            return this.shortcuts.filter(function(s) {
                 return s.id!=SEARCH_SHORTCUT && s.id!=PLAYER_PREFS_SHORTCUT;
             });
-            if (this.npPlayerPrefsAvailable) {
-                let prefs = {
-                    id: PLAYER_PREFS_SHORTCUT,
-                    icon: 'tune',
-                    title: this.npPlayerPrefsTitle || i18n('Player options')
-                };
-                // After Home when present, else first
-                let homeIdx = -1;
-                for (let i=0; i<list.length; ++i) {
-                    if (list[i].id==HOME_SHORTCUT) {
-                        homeIdx = i;
-                        break;
-                    }
-                }
-                if (homeIdx>=0) {
-                    list.splice(homeIdx+1, 0, prefs);
-                } else {
-                    list.unshift(prefs);
-                }
-            }
-            return list;
         }
     },
     watch: {

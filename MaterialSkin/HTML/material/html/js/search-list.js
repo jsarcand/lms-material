@@ -51,7 +51,7 @@ Vue.component('lms-search-list', {
     template: `
 <v-layout class="lms-search-list-row" style="min-width:0;max-width:100%;overflow:hidden;align-items:center">
  <form class="lms-search-list-form" @submit.prevent="submitSearch">
-  <v-text-field type="search" :label="compact ? undefined : (notFoundTimer ? i18n('Not found') : fieldLabel)" :placeholder="compact ? (notFoundTimer ? i18n('Not found') : fieldLabel) : undefined" :hint="compact ? undefined : filterHint" :persistent-hint="!compact" :hide-details="compact" single-line :error="notFoundTimer" clearable autocorrect="off" v-model="term" class="lms-search lib-search" @input="textChanged($event)" @input.native="onNativeInput($event)" @keydown.native="onNativeKey($event)" @keyup.native.enter="submitSearch($event)" @focus.native="onFocus" @blur="stopDebounce" @click:clear="cleared" ref="entry" style="min-width:0;flex:1 1 0;max-width:100%"></v-text-field>
+  <v-text-field type="text" :label="compact ? undefined : (notFoundTimer ? i18n('Not found') : fieldLabel)" :placeholder="compact ? (notFoundTimer ? i18n('Not found') : fieldLabel) : undefined" :hint="compact ? undefined : filterHint" :persistent-hint="!compact" :hide-details="compact" single-line :error="notFoundTimer" clearable autocorrect="off" autocomplete="off" autocapitalize="off" spellcheck="false" v-model="term" class="lms-search lib-search" @input="textChanged($event)" @input.native="onNativeInput($event)" @keydown.native="onNativeKey($event)" @keyup.native.enter="submitSearch($event)" @focus.native="onFocus" @blur="stopDebounce" @click:clear="cleared" ref="entry" style="min-width:0;flex:1 1 0;max-width:100%"></v-text-field>
  </form>
  <v-btn flat v-if="!empty" icon :title="filterPrevTitle" :disabled="notFoundTimer" style="margin-right:-6px!important;flex:0 0 auto" class="toolbar-button" @click="filterPrev()"><v-icon>arrow_upward</v-icon></v-btn>
  <v-btn flat v-if="!empty" icon :title="filterNextTitle" :disabled="notFoundTimer" style="margin-right:-6px!important;flex:0 0 auto" class="toolbar-button" @click="filterNext()"><v-icon>arrow_downward</v-icon></v-btn>
@@ -157,6 +157,13 @@ Vue.component('lms-search-list', {
                 focusEntry(this);
             }.bind(this));
         }.bind(this));
+        this._onSearchListClear = function(view) {
+            if (view && view!==this.view) {
+                return;
+            }
+            this.clearTermQuiet();
+        }.bind(this);
+        bus.$on('search-list-clear', this._onSearchListClear);
     },
     methods: {
         cancel() {
@@ -188,6 +195,9 @@ Vue.component('lms-search-list', {
             return this.term;
         },
         emitFilter() {
+            if (this._quietTerm) {
+                return;
+            }
             if (this.view && this.view.searchActive!=1) {
                 this.view.searchActive = 2;
             }
@@ -307,6 +317,26 @@ Vue.component('lms-search-list', {
             bus.$emit('browse-list-filter', '');
             this.$emit('scrollTo', -1, -1);
         },
+        /* Empty the field without re-opening filter mode. */
+        clearTermQuiet() {
+            this.stopDebounce();
+            this.stopNotFound();
+            this.lastSearch = undefined;
+            this.currentIndex = -1;
+            this._quietTerm = true;
+            if (!(null==this.term || ''===this.term)) {
+                this.term = '';
+            }
+            this.$nextTick(function() {
+                this._quietTerm = false;
+            }.bind(this));
+            try {
+                let input = typeof focusEntryInputEl==='function' ? focusEntryInputEl(this) : null;
+                if (input && document.activeElement===input && input.blur) {
+                    input.blur();
+                }
+            } catch (e) {}
+        },
         searchNow(backwards) {
             this.cancel();
             if (undefined==this.term) {
@@ -342,10 +372,16 @@ Vue.component('lms-search-list', {
     },
     watch: {
         term: function() {
+            if (this._quietTerm) {
+                return;
+            }
             this.emitFilter();
         }
     },
     beforeDestroy() {
+        if (this._onSearchListClear) {
+            bus.$off('search-list-clear', this._onSearchListClear);
+        }
         bus.$off('search-list-seed');
         bus.$emit('browse-list-filter', '');
         this.cancel();
