@@ -1,0 +1,115 @@
+PLUGIN_WIIMINTEGRATION
+	EN	Wiim Integration
+	FR	Intégration WiiM
+
+PLUGIN_WIIMINTEGRATION_DESC
+	EN	Full WiiM control in LMS (play/pause/skip/volume on all sources, Preset Bridge, UPnP monitoring)
+	FR	Contrôle complet des WiiM dans LMS (lecture/pause/suivant/volume sur toutes les sources, pont de préréglages, surveillance UPnP)
+
+PLUGIN_WIIMINTEGRATION_POLLING
+	EN	Polling interval (seconds)
+	FR	Intervalle de scrutation (secondes)
+
+PLUGIN_WIIMINTEGRATION_POLLING_DESC
+	EN	How often LMS polls a WiiM that is on an external source (4–30 seconds). LMS playback and power-off are polled more slowly. UPnP events still update immediately.
+	FR	Fréquence du sondage lorsqu’un WiiM est sur une source externe (4–30 secondes). La lecture LMS et l’arrêt sont sondés plus lentement. Les événements UPnP restent immédiats.
+
+PLUGIN_WIIMINTEGRATION_UPNP
+	EN	Enable UPnP events
+	FR	Activer les événements UPnP
+
+PLUGIN_WIIMINTEGRATION_UPNP_DESC
+	EN	Subscribe to WiiM UPnP events (Spotify Connect, AirPlay, track changes) so Now Playing updates immediately. HTTP polling is only a fallback.
+	FR	S’abonner aux événements UPnP WiiM (Spotify Connect, AirPlay, changement de piste) pour mettre à jour Lecture en cours tout de suite. Le sondage HTTP n’est qu’un repli.
+
+PLUGIN_WIIMINTEGRATION_DISPLAY
+	EN	Squeezebox Radio
+	FR	Squeezebox Radio
+
+PLUGIN_WIIMINTEGRATION_DISPLAY_DESC
+	EN	External playback is shown as a normal LMS remote stream.
+	FR	La lecture externe s’affiche comme un flux distant LMS ordinaire.
+
+PLUGIN_WIIMINTEGRATION_DISPLAY_NOTE
+	EN	Spotify, AirPlay, Bluetooth and the inputs appear on the Radio and Touch like any other stream: title, artist and art in Now Playing. Opening that screen does not lock the menu. There is no popup over the buttons.
+	FR	Spotify, AirPlay, Bluetooth et les entrées apparaissent sur la Radio et la Touch comme n’importe quel flux : titre, artiste et pochette dans Lecture en cours. Ouvrir cet écran ne bloque pas le menu. Aucun popup sur les boutons.
+
+PLUGIN_WIIMINTEGRATION_PRESET_URLS
+	EN	WiiM HTTP shortcuts
+	FR	Raccourcis HTTP WiiM
+
+PLUGIN_WIIMINTEGRATION_PRESET_URLS_DESC
+	EN	Paste into WiiM Home shortcuts. Use a clean /preset/N URL (no ?shuffle= or ?repeat=). That GET plays LMS preset N and applies this slot’s shuffle/repeat from the Material presets editor. Long JSON-RPC URLs target the player by MAC and are already URI-encoded.
+	FR	À coller dans les raccourcis WiiM Home. Utilisez une URL /preset/N sans ?shuffle= ni ?repeat=. Cet appel joue le préréglage LMS N et applique la lecture aléatoire / répétition du créneau dans l’éditeur Material. Les URL JSON-RPC longues visent le lecteur par MAC et sont déjà encodées.
+
+PLUGIN_WIIMINTEGRATION_JSONRPC
+	EN	LMS JSON-RPC (by MAC)
+	FR	JSON-RPC LMS (par MAC)
+
+PLUGIN_WIIMINTEGRATION_CONTROL_EXAMPLES
+	EN	Plugin HTTP examples (by IP)
+	FR	Exemples HTTP du plugin (par IP)
+
+WIIM_EXTRAS
+	EN	Wiim Extras
+	FR	Extras WiiM
+
+SELECT_SOURCE
+	EN	Select Source
+	FR	Sélectionner la source
+
+SELECT_PRESET
+	EN	Select Preset
+	FR	Sélectionner le préréglage
+
+MONITOR_PLAYBACK
+	EN	Monitor Playback
+	FR	Surveiller la lecture
+
+SELECT_LINEOUT
+	EN	Select Line Out
+	FR	Sélectionner la sortie ligne
+
+BOOKMARK_STREAM
+	EN	Add Stream to Bookmarks
+	FR	Ajouter le flux aux favoris
+
+WIIM_STREAMS
+	EN	WiiM Streams
+	FR	Flux WiiM
+
+STREAM_LISTEN
+	EN	Listen
+	FR	Écouter
+
+STREAM_NO_HTTP
+	EN	No HTTP stream to play here
+	FR	Pas de flux HTTP à jouer ici
+
+NO_WIIM_PLAYERS
+	EN	No WiiM players found
+	FR	Aucun lecteur WiiM trouvé
+
+DLNA_RENDERER
+	EN	DLNA redistribution
+	FR	Diffusion DLNA
+
+DLNA_RENDERER_ON
+	EN	Receive the WiiM stream
+	FR	Recevoir le flux WiiM
+
+DLNA_RENDERER_OFF
+	EN	Stop receiving
+	FR	Ne plus recevoir
+
+DLNA_SSDP_ON
+	EN	Visible on the network
+	FR	Visible sur le réseau
+
+DLNA_SSDP_OFF
+	EN	Network announcement failed
+	FR	Annonce réseau impossible
+
+DLNA_NO_PLAYERS
+	EN	No other Lyrion player is connected
+	FR	Aucune autre platine Lyrion n’est connectée

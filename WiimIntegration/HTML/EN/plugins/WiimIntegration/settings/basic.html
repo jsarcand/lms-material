@@ -1,0 +1,55 @@
+[% PROCESS settings/header.html %]
+
+[% WRAPPER setting title="PLUGIN_WIIMINTEGRATION" desc="" %]
+	<div class="prefDesc">[% "PLUGIN_WIIMINTEGRATION_DESC" | string %]</div>
+[% END %]
+
+[% WRAPPER setting title="PLUGIN_WIIMINTEGRATION_POLLING" desc="PLUGIN_WIIMINTEGRATION_POLLING_DESC" %]
+	<input type="text" class="stdedit sliderInput_4_30_1" name="pref_polling_interval" id="polling_interval" value="[% prefs.pref_polling_interval %]" size="5">
+[% END %]
+
+[% WRAPPER setting title="PLUGIN_WIIMINTEGRATION_UPNP" desc="PLUGIN_WIIMINTEGRATION_UPNP_DESC" %]
+	<input type="checkbox" name="pref_enable_upnp" id="enable_upnp" value="1" [% IF prefs.pref_enable_upnp %]checked[% END %]>
+[% END %]
+
+[% WRAPPER setting title="PLUGIN_WIIMINTEGRATION_DISPLAY" desc="PLUGIN_WIIMINTEGRATION_DISPLAY_DESC" %]
+	<div class="prefDesc">[% "PLUGIN_WIIMINTEGRATION_DISPLAY_NOTE" | string %]</div>
+[% END %]
+
+[% WRAPPER setting title="PLUGIN_WIIMINTEGRATION_PRESET_URLS" desc="PLUGIN_WIIMINTEGRATION_PRESET_URLS_DESC" %]
+	<div class="prefDesc">
+	[% IF wiim_preset_urls && wiim_preset_urls.size %]
+		[% FOREACH entry = wiim_preset_urls %]
+			<p><strong>[% entry.name | html %]</strong> — [% entry.ip | html %] / [% entry.mac | html %]</p>
+			[% IF entry.jsonrpc %]
+			<p><em>[% "PLUGIN_WIIMINTEGRATION_JSONRPC" | string %]</em></p>
+			<ul>
+			[% FOREACH jr = entry.jsonrpc %]
+				<li>[% jr.label | html %]: <code style="word-break:break-all">[% jr.url | html %]</code></li>
+			[% END %]
+			</ul>
+			[% END %]
+			<p><em>[% "PLUGIN_WIIMINTEGRATION_CONTROL_EXAMPLES" | string %]</em></p>
+			<ul>
+				<li>Preset 1: <code>[% entry.url | html %]</code></li>
+				<li>Play: <code>[% entry.control_play | html %]</code></li>
+				<li>Pause: <code>[% entry.control_pause | html %]</code></li>
+				<li>Shuffle: <code>[% entry.control_shuffle | html %]</code></li>
+			[% IF entry.examples %]
+			[% FOREACH ex = entry.examples %]
+				<li><code>[% ex | html %]</code></li>
+			[% END %]
+			[% END %]
+			</ul>
+			[% IF entry.legacy_url %]
+			<p>Legacy: <code>[% entry.legacy_url | html %]</code></p>
+			[% END %]
+			<hr>
+		[% END %]
+	[% ELSE %]
+		<em>[% "NO_WIIM_PLAYERS" | string %]</em>
+	[% END %]
+	</div>
+[% END %]
+
+[% PROCESS settings/footer.html %]

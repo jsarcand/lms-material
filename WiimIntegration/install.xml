@@ -1,0 +1,18 @@
+<?xml version='1.0' standalone='yes'?>
+<extensions>
+  <name>PLUGIN_WIIMINTEGRATION</name>
+  <module>Plugins::WiimIntegration::Plugin</module>
+  <version>1.0.47</version>
+  <description>PLUGIN_WIIMINTEGRATION_DESC</description>
+  <creator>JS Arcand assisted by Grok</creator>
+  <email>info@jsarcand.com</email>
+  <defaultState>enabled</defaultState>
+  <category>tools</category>
+  <type>2</type>
+  <optionsURL>plugins/WiimIntegration/settings/basic.html</optionsURL>
+  <targetApplication>
+    <id>Lyrion Music Server</id>
+    <minVersion>8.0</minVersion>
+    <maxVersion>*</maxVersion>
+  </targetApplication>
+</extensions>
